@@ -1,8 +1,8 @@
 [
     {
-        "nombre": "Elizabeth",
+        "nombre": "Elibeth",
         "emoji": "🛍️",
-        "telefono": "5213332012658",
+        "telefono": "5213323379399",
         "palabras_clave": [
             "agente de ventas",
             "asistente de finanzas",
@@ -37,12 +37,15 @@
             "vendedor de mostrador",
             "vendedor mostrador"
         ],
-        "calendar_id": "talreclutamiento01@gmail.com"
+        "calendar_id": "talreclutamiento01@gmail.com",
+        "naves": [
+            "1"
+        ]
     },
     {
         "nombre": "Michelle",
         "emoji": "🚗",
-        "telefono": "5213314057808 ",
+        "telefono": "5213323379399",
         "palabras_clave": [
             "atencion al cliente",
             "becario",
@@ -73,12 +76,15 @@
             "transporte",
             "traspasos"
         ],
-        "calendar_id": "jeferhsdvirgo@gmail.com"
+        "calendar_id": "jeferhsdvirgo@gmail.com",
+        "naves": [
+            "1"
+        ]
     },
     {
         "nombre": "Isabel",
         "emoji": "💻",
-        "telefono": "5213329567145",
+        "telefono": "5213323379399",
         "palabras_clave": [
             "acomodador",
             "almacen",
@@ -99,8 +105,6 @@
             "mkt",
             "montacargas",
             "montacarguista",
-            "operador de almacen",
-            "operador general",
             "programador",
             "redes",
             "sistemas",
@@ -111,10 +115,13 @@
             "vigilancia",
             "seguridad"
         ],
-        "calendar_id": "reclutamientotcinnovacion@gmail.com"
+        "calendar_id": "reclutamientotcinnovacion@gmail.com",
+        "naves": [
+            "1"
+        ]
     },
     {
-        "nombre": "Coordinación General",
+        "nombre": "Gerente de Reclutamiento",
         "emoji": "🚨",
         "telefono": "5213323379399",
         "palabras_clave": [
@@ -127,20 +134,34 @@
             "lo que haya",
             "lo que sea"
         ],
-        "calendar_id": "oscxrma@gmail.com"
+        "calendar_id": "oscxrma@gmail.com",
+        "naves": [
+            "1"
+        ]
     },
     {
         "nombre": "Sra. Paty",
         "emoji": "📦",
-        "telefono": "5213320707333 ",
+        "telefono": "5213323379399",
         "palabras_clave": [
             "auxiliar de recibo",
             "recibo",
             "vehiculo",
             "operador de vehiculo",
             "mantenimiento",
-            "operador de mantenimiento"
+            "operador de mantenimiento",
+            "reparto",
+            "operador de almacen",
+            "operador general",
+            "vehiculo",
+            "auxiliar de almacen",
+            "auxiliar de reparto",
+            "auxiliar de chofer",
+            "aux general"
         ],
-        "calendar_id": "oscxrma@gmail.com"
+        "calendar_id": "rhumanossdvirgo@gmail.com",
+        "naves": [
+            "1"
+        ]
     }
 ]
