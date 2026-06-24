@@ -1,0 +1,155 @@
+[
+  {
+    "nombre": "Patricia Tovar",
+    "emoji": "💻",
+    "telefono": "5213322459123",
+    "calendar_id": "reclutamientotcinnovacion@gmail.com",
+    "naves": [
+      "1",
+      "3"
+    ],
+    "vacantes": [
+      {
+        "nave": "1",
+        "nombre": "CHECADOR DE ALMACEN"
+      },
+      {
+        "nave": "1",
+        "nombre": "OPERADOR DE ALMACEN"
+      },
+      {
+        "nave": "1",
+        "nombre": "OPERADOR DE MANTENIMIENTO"
+      },
+      {
+        "nave": "1",
+        "nombre": "OPERADOR DE ESTACIONAMIENTO"
+      },
+      {
+        "nave": "1",
+        "nombre": "OPERADOR DE MOTO"
+      },
+      {
+        "nave": "1",
+        "nombre": "OPERADOR DE REPARTO"
+      },
+      {
+        "nave": "1",
+        "nombre": "VIGILANTE"
+      }
+    ]
+  },
+  {
+    "nombre": "Sra. Paty",
+    "emoji": "📦",
+    "telefono": "5213320707333",
+    "calendar_id": "rhumanossdvirgo@gmail.com",
+    "naves": [
+      "2"
+    ],
+    "vacantes": [
+      {
+        "nave": "2",
+        "nombre": "CHECADOR DE CONTROL INTERNO"
+      },
+      {
+        "nave": "2",
+        "nombre": "OPERADOR DE ALMACEN"
+      },
+      {
+        "nave": "2",
+        "nombre": "GERENTE CEDIS"
+      }
+    ]
+  },
+  {
+    "nombre": "Michelle",
+    "emoji": "🚗",
+    "telefono": "5213314057808",
+    "calendar_id": "jeferhsdvirgo@gmail.com",
+    "naves": [
+      "1",
+      "3"
+    ],
+    "vacantes": [
+      {
+        "nave": "1",
+        "nombre": "CHECADOR DE CONTROL INTERNO"
+      },
+      {
+        "nave": "1",
+        "nombre": "EMPACADOR"
+      },
+      {
+        "nave": "1",
+        "nombre": "OPERADOR DE MANTENIMIENTO"
+      },
+      {
+        "nave": "1",
+        "nombre": "CAJA GENERAL"
+      },
+      {
+        "nave": "1",
+        "nombre": "AUXILIAR DE COMPRAS"
+      },
+      {
+        "nave": "1",
+        "nombre": "AUXILIAR CONTABLE"
+      },
+      {
+        "nave": "1",
+        "nombre": "OPERADOR DE ALMACEN"
+      }
+    ]
+  },
+  {
+    "nombre": "Elibeth",
+    "emoji": "🛍️",
+    "telefono": "5213332012658",
+    "calendar_id": "talreclutamiento01@gmail.com",
+    "naves": [
+      "1",
+      "2",
+      "3"
+    ],
+    "vacantes": [
+      {
+        "nave": "1",
+        "nombre": "AUXILIAR DE COMPRAS"
+      },
+      {
+        "nave": "1",
+        "nombre": "AUXILIAR CONTABLE"
+      },
+      {
+        "nave": "1",
+        "nombre": "JEFE DE COMPRAS"
+      },
+      {
+        "nave": "1",
+        "nombre": "GENERALISTA RH"
+      },
+      {
+        "nave": "1",
+        "nombre": "MEDICO"
+      }
+    ]
+  },
+  {
+    "nombre": "Gerente de Reclutamiento",
+    "emoji": "🚨",
+    "telefono": "5213323379399",
+    "calendar_id": "talreclutamiento01@gmail.com",
+    "naves": [
+      "1",
+      "2",
+      "3"
+    ],
+    "vacantes": []
+  },
+  {
+    "nombre": "DESHABILITADAS",
+    "emoji": "🚫",
+    "vacantes": []
+  }
+]

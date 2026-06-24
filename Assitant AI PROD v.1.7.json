@@ -1,0 +1,4048 @@
+{
+  "name": "Assitant AI PROD v.1.7",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "messages",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -2128,
+        1360
+      ],
+      "id": "2d5bc4b9-09a7-4f55-844c-de43a8e18317",
+      "name": "Webhook",
+      "webhookId": "6244dc40-7039-4e3a-8454-ac48d9975532"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ \n  $(\"SepararJSON\").isExecuted ? \"[SISTEMA: \" + $(\"SepararJSON\").first().json.mensaje_usuario + \"]\" : \n  $(\"AvisoMeme\").isExecuted ? $(\"AvisoMeme\").first().json.text : \n  $(\"TranscribirAudio\").isExecuted ? $(\"TranscribirAudio\").first().json.content?.parts?.[0]?.text : \n  ($(\"JuntarMsj\").isExecuted && $(\"JuntarMsj\").first().json.mensaje_completo) ? $(\"JuntarMsj\").first().json.mensaje_completo : \n  '[Mensaje sin texto]' \n}}",
+        "options": {
+          "systemMessage": "={{ $('CargarPrompt').first().json.system_prompt_procesado.replace(/\\{\\{RECLUTADOR_ASIGNADO\\}\\}/g, $('ResolverReclutador').first().json.nombre_reclutador) }}"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        4816,
+        1616
+      ],
+      "id": "1a361022-2f3f-4440-a11c-f68778556c76",
+      "name": "AI Chat",
+      "retryOnFail": true,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "content": "FLUJO DE CHAT",
+        "height": 1216,
+        "width": 2944,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        3760,
+        912
+      ],
+      "typeVersion": 1,
+      "id": "6c68c13a-5add-46e4-88d7-226630782c7a",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "RECORDATORIOS\n\n",
+        "height": 608,
+        "width": 2496,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -2128,
+        1632
+      ],
+      "typeVersion": 1,
+      "id": "1b16f034-acd6-48e4-8715-334f2ee1c382",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "content": "ANALIZADOR DE CV / AUDIO",
+        "height": 1072,
+        "width": 2688,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1024,
+        1008
+      ],
+      "typeVersion": 1,
+      "id": "67afed04-f65d-42c8-953e-a8d718a89e31",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "3b31c6d6-1305-4d06-b355-7ee47c38cf14",
+              "leftValue": "={{ $('Webhook').item.json.body.payload.hasMedia }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        816,
+        1456
+      ],
+      "id": "c0c15a8f-e639-4d8f-962d-7c490cdbbdf6",
+      "name": "¿Texto o Media?"
+    },
+    {
+      "parameters": {
+        "content": "INICIO",
+        "height": 432,
+        "width": 3088,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -2128,
+        1184
+      ],
+      "typeVersion": 1,
+      "id": "8c9421fa-c0d3-4511-8a7e-f02895220e0e",
+      "name": "Sticky Note3"
+    },
+    {
+      "parameters": {
+        "jsCode": "for (const item of items) {\n  if (item.binary && item.binary.data) {\n    item.binary.data.fileName = 'audio.ogg';\n    item.binary.data.fileExtension = 'ogg';\n    item.binary.data.mimeType = 'audio/ogg';\n  }\n}\nreturn items;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3280,
+        1056
+      ],
+      "id": "f1a903b3-80cc-435a-b7e0-08eb75e069a8",
+      "name": "CambiarFormato"
+    },
+    {
+      "parameters": {
+        "name": "={{ $binary.data.fileName }}",
+        "driveId": {
+          "__rl": true,
+          "value": "My Drive",
+          "mode": "list",
+          "cachedResultName": "My Drive",
+          "cachedResultUrl": "https://drive.google.com/drive/my-drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "1JdlL8leGCYHldacxDtyTNxWrtZ59o2C-",
+          "mode": "list",
+          "cachedResultName": "CV",
+          "cachedResultUrl": "https://drive.google.com/drive/folders/1JdlL8leGCYHldacxDtyTNxWrtZ59o2C-"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        3504,
+        1328
+      ],
+      "id": "2881489c-9792-4611-8939-079929007596",
+      "name": "SubirCV",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "qlxKSpDPGqjS6Vp0",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Cargar archivo\nconst parser = require('/home/node/virgo_files/functions/parse_special_codes.js');\n\n// 2. Obtener datos de entrada\nconst item = $input.first();\nconst aiResponse = item.json.output || item.json.text || \"\";\n\n// 3. Preparar contexto\nconst webhookData = $('Webhook').first().json.body.payload;\nconst context = { \n  phone: webhookData.from,\n  executionId: $execution.id \n};\n\n// 4. Ejecutar parser externo\nconst result = parser(aiResponse, context);\n\n// ---------------------------------------------------------\n// 5. PARCHES Y ETIQUETAS SECRETAS\n// ---------------------------------------------------------\n\n// Limpieza inicial de MEMORY_UPDATE\nif (result.message_to_user) {\n  result.message_to_user = result.message_to_user.split('MEMORY_UPDATE')[0].trim();\n}\n\n// ACTUALIZAR_NOMBRE\nif (aiResponse.includes('ACTUALIZAR_NOMBRE')) {\n  const match = aiResponse.match(/ACTUALIZAR_NOMBRE\\s*\\|\\s*([^|]+)\\s*\\|/i);\n  if (match?.[1]) {\n    result.nombre_detectado = match[1].trim();\n  }\n}\n\n// ACTUALIZAR_VACANTE\nif (aiResponse.includes('ACTUALIZAR_VACANTE')) {\n  const match = aiResponse.match(/ACTUALIZAR_VACANTE\\s*\\|\\s*([^|]+)\\s*\\|/i);\n  if (match?.[1]) {\n    result.vacante_detectada = match[1].trim();\n  }\n}\n\n// ACTUALIZAR_NAVE\nif (aiResponse.includes('ACTUALIZAR_NAVE')) {\n  const match = aiResponse.match(/ACTUALIZAR_NAVE\\s*\\|\\s*([^|]+)\\s*\\|/i);\n  if (match?.[1]) {\n    result.nave_detectada = match[1].trim();\n  }\n}\n\n// PRIVACIDAD_ACEPTADA\nif (aiResponse.includes('PRIVACIDAD_ACEPTADA')) {\n  result.acepto_privacidad = true;\n}\n\n// CITA_CANCELADA\nif (aiResponse.includes('CITA_CANCELADA')) {\n  result.cita_cancelada = true;\n}\n\n// CITA_CONFIRMADA\nif (aiResponse.includes('CITA_CONFIRMADA')) {\n  const match = aiResponse.match(/CITA_CONFIRMADA[\\s:|]*(.*?)([|\\n]|$)/i);\n  if (match?.[1]) {\n    result.fecha_entrevista_detectada = match[1].replace(/\\|/g, '').trim();\n  }\n}\n\n// HUMAN_ALERT\n// C. Rescate de Alerta Humana ROBUSTO\nif (aiResponse.includes('HUMAN_ALERT')) {\n    const mensajeHumanoDefault =\n        \"Gracias por explicarme 😊 Voy a compartir tu caso con el equipo de reclutamiento para que puedan revisarlo y darte seguimiento por este medio.\";\n\n    let fragmento = aiResponse\n        .split(/HUMAN_ALERT/i)[1]\n        ?.split(/MEMORY_UPDATE/i)[0] || \"\";\n\n    fragmento = fragmento.trim();\n\n    // Quitar pipes sobrantes al inicio\n    fragmento = fragmento.replace(/^\\s*\\|\\s*/, \"\").trim();\n\n    const partesRaw = fragmento.split(\"|\").map(p => p.trim());\n\n    // Formato correcto:\n    // HUMAN_ALERT | Nombre | Resumen interno | Mensaje visible\n    let nombre = \"\";\n    let resumen = \"\";\n    let mensajeVisible = \"\";\n\n    const primerCampo = partesRaw[0] || \"\";\n\n    const primerCampoPareceResumen =\n        /candidato|documento|constancia|rfc|ine|cv|solicit|agend|conflict|no cuenta|no tiene/i.test(primerCampo);\n\n    if (partesRaw.length >= 3 && !primerCampoPareceResumen) {\n        nombre = partesRaw[0];\n        resumen = partesRaw[1];\n        mensajeVisible = partesRaw.slice(2).join(\" | \").trim();\n    } else if (partesRaw.length >= 2 && primerCampoPareceResumen) {\n        nombre = $('ObtenerDatosCandidato').first()?.json?.nombre_chat\n              || $('ObtenerDatosCandidato').first()?.json?.nombre_ine\n              || $('ObtenerDatosCandidato').first()?.json?.nombre_solicitud\n              || \"Candidato\";\n\n        resumen = partesRaw[0];\n        mensajeVisible = partesRaw.slice(1).join(\" | \").trim();\n    } else if (partesRaw.length >= 2) {\n        nombre = partesRaw[0];\n        resumen = partesRaw[1];\n        mensajeVisible = mensajeHumanoDefault;\n    } else {\n        nombre = $('ObtenerDatosCandidato').first()?.json?.nombre_chat\n              || $('ObtenerDatosCandidato').first()?.json?.nombre_ine\n              || $('ObtenerDatosCandidato').first()?.json?.nombre_solicitud\n              || \"Candidato\";\n\n        resumen = \"El candidato solicitó apoyo de reclutamiento humano.\";\n        mensajeVisible = mensajeHumanoDefault;\n    }\n\n    if (\n        !mensajeVisible ||\n        /^el candidato/i.test(mensajeVisible) ||\n        /impidiendo el agendamiento/i.test(mensajeVisible) ||\n        /solicitó escalamiento/i.test(mensajeVisible)\n    ) {\n        mensajeVisible = mensajeHumanoDefault;\n    }\n\n    result.human_alert_nombre = nombre.trim();\n    result.human_alert_resumen = resumen.trim();\n    result.message_to_user = mensajeVisible.trim();\n}\n\n// CV_MANUAL\nif (aiResponse.includes('CV_MANUAL')) {\n  const match = aiResponse.match(/CV_MANUAL[\\s:|]*(\\{[\\s\\S]*?\\})/i);\n\n  if (match?.[1]) {\n    try {\n      const jsonLimpio = match[1]\n        .replace(/```json/gi, '')\n        .replace(/```/g, '')\n        .replace(/[\\n\\r\\t]/g, ' ')\n        .trim();\n\n      const cvData = JSON.parse(jsonLimpio);\n\n      result.experiencia_manual = cvData.experiencia;\n      result.vacante_manual = cvData.vacante;\n      result.datos_cv_manual = cvData;\n      result.es_cv_manual = true;\n\n      if (cvData.nombre && cvData.nombre !== \"Desconocido\") {\n        result.nombre_detectado = cvData.nombre;\n      }\n\n    } catch (e) {\n      result.datos_cv_manual = {\n        error: \"La IA formateó mal el JSON\",\n        experiencia: \"Candidato llenó solicitud manual por chat.\"\n      };\n      result.es_cv_manual = true;\n    }\n  }\n}\n\n// RESPUESTAS_FILTRO\nif (aiResponse.includes('RESPUESTAS_FILTRO')) {\n  const match = aiResponse.match(\n    /RESPUESTAS_FILTRO[\\s:|]*([\\s\\S]*?)(?=\\n[A-Z_]+\\s*\\||$)/i\n  );\n\n  if (match?.[1]) {\n    result.respuestas_filtro_detectadas = match[1]\n      .replace(/\\|/g, '')\n      .trim();\n  }\n}\n\n// ENVIAR_UBICACION\nif (aiResponse.includes('ENVIAR_UBICACION')) {\n  result.enviar_ubicacion = true;\n}\n\n// ---------------------------------------------------------\n// 6. LIMPIEZA VISUAL PROFUNDA\n// ---------------------------------------------------------\n\nif (result.message_to_user) {\n  result.message_to_user = result.message_to_user\n    .replace(/ACTUALIZAR_NOMBRE\\s*\\|\\s*[^|]+\\s*\\|/gi, '')\n    .replace(/ACTUALIZAR_VACANTE\\s*\\|\\s*[^|]+\\s*\\|/gi, '')\n    .replace(/ACTUALIZAR_NAVE\\s*\\|\\s*[^|]+\\s*\\|/gi, '')\n    // Limpieza de etiquetas internas de vacantes (no deben llegar al candidato)\n    .replace(/^\\s*\\[REQUISITO EXCLUSIVO:\\s*[^\\]]+\\]\\s*$/gim, '')\n    .replace(/\\s*\\[REQUISITO EXCLUSIVO:\\s*[^\\]]+\\]\\s*/gi, '')\n    .replace(/^\\s*\\[(CONTROL_INTERNO|PERFIL|CONDICIONES_OPERATIVAS|REQUISITO_FISICO):[^\\]]+\\]\\s*$/gim, '')\n    .replace(/\\s*\\[(CONTROL_INTERNO|PERFIL|CONDICIONES_OPERATIVAS|REQUISITO_FISICO):[^\\]]+\\]\\s*/gi, '')\n    .replace(/PRIVACIDAD_ACEPTADA\\s*\\|?/gi, '')\n    .replace(/CITA_CONFIRMADA[\\s:|]*(.*?)([|\\n]|$)/gi, '')\n    .replace(/CITA_CANCELADA[\\s:|]*(.*?)([|\\n]|$)/gi, '')\n    .replace(/ENVIAR_UBICACION[\\s:|]*(.*?)([|\\n]|$)/gi, '')\n    .replace(/RESPUESTAS_FILTRO[\\s:|]*([\\s\\S]*?)(?=\\n[A-Z_]+\\s*\\||$)/gi, '')\n    .replace(/CV_MANUAL[\\s:|]*\\{[\\s\\S]*?\\}/gi, '')\n    .replace(/```json/gi, '')\n    .replace(/```/g, '')\n    .replace(/[ \\t]+\\n/g, '\\n')\n    .replace(/\\n{3,}/g, '\\n\\n')\n    result.message_to_user = result.message_to_user.replace(/^\\s*\\[REQUISITO EXCLUSIVO:\\s*[^\\]]+\\]\\s*$/gim, '').trim();\n    result.message_to_user = result.message_to_user.replace(/\\s*\\[REQUISITO EXCLUSIVO:\\s*[^\\]]+\\]\\s*/gi, '').trim();\n    result.message_to_user = result.message_to_user.replace(/^\\s*\\[(CONTROL_INTERNO|PERFIL|CONDICIONES_OPERATIVAS|REQUISITO_FISICO):[^\\]]+\\]\\s*$/gim, '')\n    result.message_to_user = result.message_to_user.replace(/\\s*\\[(CONTROL_INTERNO|PERFIL|CONDICIONES_OPERATIVAS|REQUISITO_FISICO):[^\\]]+\\]\\s*/gi, '')\n    .trim();\n\n  if (result.fecha_entrevista_detectada) {\n    result.message_to_user = result.message_to_user\n      .replace(result.fecha_entrevista_detectada, '')\n      .replace(/\\|/g, '')\n      .trim();\n  }\n\n  // Protección final contra filtrado de HUMAN_ALERT\n  if (\n      /^el candidato/i.test(result.message_to_user) ||\n      result.message_to_user.includes(\"impidiendo el agendamiento\") ||\n      result.message_to_user.includes(\"Solicitó escalamiento\") ||\n      result.message_to_user.includes(\"solicitó escalamiento\")\n  ) {\n      result.message_to_user =\n          \"Gracias por explicarme 😊 Voy a compartir tu caso con el equipo de reclutamiento para que puedan revisarlo y darte seguimiento por este medio.\";\n  }\n  \n  if (\n      result.message_to_user.includes(\"|\") &&\n      /^el candidato/i.test(result.message_to_user)\n  ) {\n      const partes = result.message_to_user.split(\"|\").map(p => p.trim()).filter(Boolean);\n      result.message_to_user = partes[partes.length - 1] ||\n          \"Gracias por explicarme 😊 Voy a compartir tu caso con el equipo de reclutamiento para que puedan revisarlo y darte seguimiento por este medio.\";\n  }\n\n  result.message_to_user = result.message_to_user\n    .replace(/^[|\\s]+/, '')\n    .trim();\n}\n\n// Protección final si quedó vacío\nif (!result.message_to_user || result.message_to_user.trim() === \"\") {\n  result.message_to_user =\n    \"Gracias por tu mensaje 😊 Permíteme revisar la información para poder ayudarte mejor.\";\n}\n\n// ---------------------------------------------------------\n// 7. SPLIT DE MENSAJES\n// ---------------------------------------------------------\n\nlet mensajes = [result.message_to_user];\n\nif (result.message_to_user.includes('[SPLIT]')) {\n  mensajes = result.message_to_user\n    .split(/\\[SPLIT\\]/i)\n    .map(m => m.trim())\n    .filter(m => m !== \"\");\n}\n\nlet output = [];\n\nfor (let msg of mensajes) {\n  let itemCopia = JSON.parse(JSON.stringify(result));\n\n  itemCopia.message_to_user = msg;\n\n  if (result.nombre_detectado) itemCopia.nombre_detectado = result.nombre_detectado;\n  if (result.acepto_privacidad) itemCopia.acepto_privacidad = true;\n  if (result.experiencia_manual) itemCopia.experiencia_manual = result.experiencia_manual;\n  if (result.vacante_manual) itemCopia.vacante_manual = result.vacante_manual;\n  if (result.respuestas_filtro_detectadas) itemCopia.respuestas_filtro_detectadas = result.respuestas_filtro_detectadas;\n  if (result.vacante_detectada) itemCopia.vacante_detectada = result.vacante_detectada;\n  if (result.datos_cv_manual) itemCopia.datos_cv_manual = result.datos_cv_manual;\n  if (result.es_cv_manual) itemCopia.es_cv_manual = result.es_cv_manual;\n  if (result.fecha_entrevista_detectada) itemCopia.fecha_entrevista_detectada = result.fecha_entrevista_detectada;\n  if (result.nave_detectada) itemCopia.nave_detectada = result.nave_detectada;\n\n  if (result.human_alert_nombre) itemCopia.human_alert_nombre = result.human_alert_nombre;\n  if (result.human_alert_resumen) itemCopia.human_alert_resumen = result.human_alert_resumen;\n  if(result.human_alert_nombre) itemCopia.human_alert_nombre = result.human_alert_nombre;\n  if(result.human_alert_resumen) itemCopia.human_alert_resumen = result.human_alert_resumen;\n  if(result.nave_detectada) itemCopia.nave_detectada = result.nave_detectada;\n\n  output.push({ json: itemCopia });\n}\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5168,
+        1616
+      ],
+      "id": "0e80b496-e9ca-4282-987f-7d1a52efa0e1",
+      "name": "Leer"
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Webhook').first().json.body.payload.from }}",
+        "contextWindowLength": 8
+      },
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        4784,
+        1856
+      ],
+      "id": "e911883c-70ff-4167-a95c-d83161164077",
+      "name": "Postgres Chat Memory",
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO candidatos (\n  telefono, estado, ultima_interaccion, vacante_interes, \n  resumen_ia, filtros_tecnicos, cv_manual, fecha_entrevista, privacidad_aceptada, \n  nombre_chat, nombre_solicitud, edad, correo, experiencia, nave_interes\n)\nVALUES (\n  $1, \n  CASE \n    WHEN $13::boolean = TRUE THEN 'CV_RECIBIDO'\n    WHEN $3 = 'true' THEN 'CITA_AGENDADA' \n    WHEN $6 = 'true' THEN 'INTERESADO' \n    WHEN $10::boolean = TRUE THEN 'INTERESADO' \n    ELSE 'NUEVO' \n  END, \n  NOW(), $4, $5, $7, $8::jsonb, $9, $10::boolean,\n  CASE WHEN $2 != 'Candidato' THEN $2 ELSE NULLIF($11, '') END, \n  CASE WHEN $8::jsonb IS NOT NULL THEN ($8::jsonb->>'nombre') ELSE NULL END,\n  CASE WHEN $8::jsonb IS NOT NULL THEN ($8::jsonb->>'edad') ELSE NULL END,\n  CASE WHEN $8::jsonb IS NOT NULL THEN ($8::jsonb->>'correo') ELSE NULL END,\n  CASE WHEN $8::jsonb IS NOT NULL THEN ($8::jsonb->>'experiencia') ELSE NULL END,\n  NULLIF($12, '')\n)\nON CONFLICT (telefono) \nDO UPDATE SET \n  ultima_interaccion = NOW(),\n  estado = CASE \n    WHEN $13::boolean = TRUE THEN 'CV_RECIBIDO'\n    WHEN $3 = 'true' THEN 'CITA_AGENDADA' \n    WHEN $6 = 'true' THEN 'INTERESADO' \n    WHEN ($10::boolean = TRUE OR candidatos.privacidad_aceptada = TRUE) AND candidatos.estado = 'NUEVO' THEN 'INTERESADO' \n    ELSE candidatos.estado \n  END,\n  vacante_interes = COALESCE(NULLIF($4, ''), candidatos.vacante_interes),\n  resumen_ia = COALESCE(NULLIF($5, ''), candidatos.resumen_ia),\n  filtros_tecnicos = COALESCE(NULLIF($7, ''), candidatos.filtros_tecnicos),\n  cv_manual = CASE WHEN $8::jsonb IS NOT NULL THEN $8::jsonb ELSE candidatos.cv_manual END,\n  fecha_entrevista = COALESCE(NULLIF($9, ''), candidatos.fecha_entrevista),\n  privacidad_aceptada = CASE WHEN $10::boolean = TRUE THEN TRUE ELSE candidatos.privacidad_aceptada END,\n  nombre_chat = CASE WHEN $2 != 'Candidato' THEN $2 ELSE COALESCE(candidatos.nombre_chat, NULLIF($11, '')) END,\n  nombre_solicitud = CASE WHEN $8::jsonb IS NOT NULL AND ($8::jsonb->>'nombre') IS NOT NULL THEN ($8::jsonb->>'nombre') ELSE candidatos.nombre_solicitud END,\n  edad = CASE WHEN $8::jsonb IS NOT NULL AND ($8::jsonb->>'edad') IS NOT NULL THEN ($8::jsonb->>'edad') ELSE candidatos.edad END,\n  correo = CASE WHEN $8::jsonb IS NOT NULL AND ($8::jsonb->>'correo') IS NOT NULL THEN ($8::jsonb->>'correo') ELSE candidatos.correo END,\n  experiencia = CASE WHEN $8::jsonb IS NOT NULL AND ($8::jsonb->>'experiencia') IS NOT NULL THEN ($8::jsonb->>'experiencia') ELSE candidatos.experiencia END,\n  nave_interes = COALESCE(NULLIF($12, ''), candidatos.nave_interes);",
+        "options": {
+          "queryReplacement": "={{ [\n  $('GetInfo').first().json.number,\n  $('Leer').first().json.nombre_detectado || 'Candidato',\n  $('Leer').first().json.cita_creada || $('Leer').first().json.fecha_entrevista_detectada ? 'true' : 'false',\n  $('Leer').first().json.vacante_detectada || $('Leer').first().json.vacante_manual || '',\n  ($('Leer').first().json.resumen_generado || '').includes('MEMORY_UPDATE')\n    ? ($('Leer').first().json.resumen_generado || '').split('MEMORY_UPDATE')[1].split('|')[1].trim()\n    : ($('Leer').first().json.resumen_generado || ''),\n  $('Leer').first().json.cita_cancelada ? 'true' : 'false',\n  $('Leer').first().json.respuestas_filtro_detectadas || null,\n  $('Leer').first().json.datos_cv_manual ? JSON.stringify($('Leer').first().json.datos_cv_manual) : null,\n  $('Leer').first().json.fecha_entrevista_detectada || null,\n  $('Leer').first().json.acepto_privacidad || false,\n  $('Webhook').first().json.body.payload._data?.notifyName || '',\n  $('Leer').first().json.nave_detectada || '',\n  $('Leer').first().json.es_cv_manual || false\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        5568,
+        1536
+      ],
+      "id": "d1b14e52-6f78-417f-9dd6-1a6ecd6772c5",
+      "name": "AlmacenarMensajes",
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM candidatos \n-- Buscamos gente que mostró interés pero se quedó callada\nWHERE estado IN ('INTERESADO', 'NUEVO')\n-- Y que no ha hablado en los últimos 15 minutos\nAND ultima_interaccion < (NOW() - INTERVAL '30 minutes');",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1376,
+        2080
+      ],
+      "id": "0175199c-8b1f-4d80-a128-b69117b77ab5",
+      "name": "Recuerda",
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "642fdbb3-14eb-4068-9491-774ee542f746",
+              "leftValue": "={{ $json.telefono }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1152,
+        2080
+      ],
+      "id": "06a2ac1d-bbea-4c27-8753-3bd88397d573",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE candidatos \nSET estado = 'RECORDATORIO_ENVIADO' \nWHERE telefono = $1;\n\nINSERT INTO conversation_history (telefono, role, content)\nVALUES ($1, 'assistant', 'Hola, notamos que dejaste de responder. ¿Sigues disponible para continuar tu proceso?');",
+        "options": {
+          "queryReplacement": "={{ $('Recuerda').item.json.telefono }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -704,
+        2064
+      ],
+      "id": "94e49146-6b67-4520-a9d5-9d651d30e813",
+      "name": "CambiarEstado",
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Start Typing",
+        "session": "={{ $('Webhook').item.json.body.session }}",
+        "chatId": "={{ $('Webhook').item.json.body.payload.from }}",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        3504,
+        1904
+      ],
+      "id": "27442cb5-2efb-436e-8829-74c53f0252c6",
+      "name": "Escribiendo...",
+      "credentials": {
+        "wahaApi": {
+          "id": "OBarvY73V8DKtYv0",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "={{ $('Webhook').first().json.body.session }}",
+        "chatId": "={{ $('Webhook').first().json.body.payload.from }}",
+        "text": "={{ $json.message_to_user }}",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        6240,
+        1472
+      ],
+      "id": "bac7dc7a-ba46-4a5b-80d9-c5ccc47eeb9e",
+      "name": "MensajeUsuario",
+      "credentials": {
+        "wahaApi": {
+          "id": "OBarvY73V8DKtYv0",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {
+          "temperature": 0.6
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        4656,
+        1856
+      ],
+      "id": "499fe087-dc8f-417a-80d5-0a691b9e8dbb",
+      "name": "IA CHAT",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "QZklxwEDRZxFLQzG",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Start Typing",
+        "session": "={{ $('Webhook').item.json.body.session }}",
+        "chatId": "={{ $('Webhook').item.json.body.payload.from }}",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        1040,
+        1264
+      ],
+      "id": "73fceed3-97e6-4347-8f4a-10dd0823c836",
+      "name": "Escribiendo...1",
+      "credentials": {
+        "wahaApi": {
+          "id": "OBarvY73V8DKtYv0",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM candidatos WHERE telefono = $1;",
+        "options": {
+          "queryReplacement": "={{ $('GetInfo').item.json.number }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        144,
+        1360
+      ],
+      "id": "30f0a005-8d41-4f82-b482-c69dcd49ad2b",
+      "name": "ObtenerDatosCandidato",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\n\nlet prompt = fs.readFileSync('/home/node/virgo_files/prompts/chat_prompt.md', 'utf8');\nlet menuNavesTxt = \"\";\ntry { menuNavesTxt = fs.readFileSync('/home/node/virgo_files/prompts/menu_naves.txt', 'utf8'); } catch(e) {}\n\nconst webhookData = $('Webhook').first().json.body?.payload || {};\nconst dbData = $('ObtenerDatosCandidato').first()?.json || {};\n\nlet naveActual = dbData.nave_interes || \"Pendiente\";\nconst estadoActual = dbData.estado || 'NUEVO';\n\nconst timeZone = 'America/Mexico_City';\nconst nowObj = new Date();\nconst fechaActual = nowObj.toLocaleString('es-MX', { timeZone, weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: 'numeric', hour12: true });\nconst anioActual = nowObj.getFullYear();\nconst mananaObj = new Date(nowObj);\nmananaObj.setDate(mananaObj.getDate() + 1);\nconst fechaManana = mananaObj.toLocaleDateString('es-MX', { timeZone, weekday: 'long', day: 'numeric', month: 'long' });\n\nlet menuTxt = \"\";\nlet detalleTxt = \"\";\nconst mapaNaves = {\n    \"1\": \"Dulcería (Mandarina)\",\n    \"2\": \"CEDIS\",\n    \"3\": \"Materias Primas\",\n    \"4\": \"Desechables\",\n    \"5\": \"Sonrisas\"\n};\n\nconst naveElegida = dbData.nave_interes || \"\";\n\n// 🚀 OPTIMIZACIÓN TOKENS: estados donde el candidato NO necesita ver el\n// catálogo de vacantes (ya pasó esa etapa o está fuera del flujo de selección).\n// La ubicación/horario de entrevista NO depende de este catálogo (usa sección 3.6\n// del prompt, que siempre está disponible), así que es seguro omitirlo aquí.\nconst estadosSinCatalogo = [\n    'CITA_AGENDADA',\n    'DOCUMENTOS_NO_COINCIDEN',\n    'CV_RECIBIDO',\n    'INE_VALIDADA'\n];\nconst necesitaCatalogo = !estadosSinCatalogo.includes(estadoActual);\n\nif (!necesitaCatalogo) {\n    menuTxt = \"[Catálogo omitido: no aplica en esta etapa del proceso]\";\n    detalleTxt = \"[Catálogo omitido: no aplica en esta etapa del proceso]\";\n} else if (naveElegida && naveElegida !== \"Pendiente\") {\n    // ✅ Ya eligió nave → solo cargamos SU nave\n    for (const ext of ['md', 'txt']) {\n        try {\n            menuTxt = fs.readFileSync(`/home/node/virgo_files/prompts/menu_vacantes_${naveElegida}.${ext}`, 'utf8');\n            break;\n        } catch(e) {}\n    }\n    for (const ext of ['md', 'txt']) {\n        try {\n            detalleTxt = fs.readFileSync(`/home/node/virgo_files/prompts/detalle_vacantes_${naveElegida}.${ext}`, 'utf8');\n            break;\n        } catch(e) {}\n    }\n} else {\n    // 🔍 Sin nave → cargamos TODAS para que la IA sugiera dónde está la vacante\n    for (let i = 1; i <= 5; i++) {\n        for (const ext of ['md', 'txt']) {\n            try {\n                let menu = fs.readFileSync(`/home/node/virgo_files/prompts/menu_vacantes_${i}.${ext}`, 'utf8');\n                if (menu.trim()) menuTxt += `\\n--- SUCURSAL ${i}: ${mapaNaves[i]} ---\\n${menu}\\n`;\n                break;\n            } catch(e) {}\n        }\n        for (const ext of ['md', 'txt']) {\n            try {\n                let detalle = fs.readFileSync(`/home/node/virgo_files/prompts/detalle_vacantes_${i}.${ext}`, 'utf8');\n                if (detalle.trim()) detalleTxt += `\\n--- SUCURSAL ${i}: ${mapaNaves[i]} ---\\n${detalle}\\n`;\n                break;\n            } catch(e) {}\n        }\n    }\n}\n\nif (menuTxt === \"\") menuTxt = \"No hay vacantes en ninguna sucursal por el momento.\";\nif (detalleTxt === \"\") detalleTxt = \"Información no disponible.\";\n\nlet nombreReal = dbData.nombre_chat || dbData.nombre_ine || dbData.nombre_solicitud || 'Desconocido';\nif (nombreReal === 'Candidato' || nombreReal === 'No registrado') nombreReal = 'Desconocido';\n\nlet semaforoIne = \"PENDIENTE\";\nif (dbData.nombre_confirmado === true || dbData.estado === 'INE_VALIDADA' || dbData.cv_manual) semaforoIne = \"VERIFICADO\";\n\nprompt = prompt.replace(/{{NOMBRE_WHATSAPP}}/g, webhookData._data?.notifyName || 'Usuario');\nprompt = prompt.replace(/{{TELEFONO_ID}}/g, $('GetInfo').first()?.json?.number || '000');\nprompt = prompt.replace(/{{NAVE_ACTUAL}}/g, naveActual);\nprompt = prompt.replace(/{{MENU_NAVES}}/g, menuNavesTxt);\nprompt = prompt.replace(/{{MENU_VACANTES}}/g, menuTxt);\nprompt = prompt.replace(/{{DETALLE_VACANTES}}/g, detalleTxt);\nprompt = prompt.replace(/{{FECHA_HORA_ACTUAL}}/g, fechaActual);\nprompt = prompt.replace(/{{FECHA_MANANA}}/g, fechaManana);\nprompt = prompt.replace(/{{ANIO_ACTUAL}}/g, anioActual);\nprompt = prompt.replace(/{{STATUS_INE}}/g, semaforoIne);\nprompt = prompt.replace(/{{NOMBRE_REGISTRADO}}/g, nombreReal);\nprompt = prompt.replace(/{{ESTADO_ACTUAL}}/g, estadoActual);\nprompt = prompt.replace(/{{VACANTE_INTERES}}/g, dbData.vacante_interes || 'Ninguna');\nprompt = prompt.replace(/{{RESUMEN_ANTERIOR}}/g, dbData.resumen_ia || 'Conversación nueva.');\n\nreturn { json: { system_prompt_procesado: prompt } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3728,
+        1616
+      ],
+      "id": "4746a82c-0a87-4f79-9b0d-b3dbcadad8a2",
+      "name": "CargarPrompt"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1872,
+        1008
+      ],
+      "id": "30d80453-de2f-4c86-9b4f-888af79b5fb0",
+      "name": "Error Trigger"
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "={{ $('Webhook').item.json.body.session }}",
+        "chatId": "={{ $('GetInfo').first().json.number }}@c.us",
+        "text": "Hola. 🚨 Hemos notado en nuestros registros que no te has presentado a tus últimas 3 entrevistas programadas. Por políticas de Talentos Creativos e Innovación, no es posible agendar una nueva cita en este momento. Agradecemos tu interés y te deseamos mucho éxito en tu búsqueda.",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        816,
+        1264
+      ],
+      "id": "1bdfb558-ae68-48ef-acc1-8a7e987e3b56",
+      "name": "Aviso",
+      "credentials": {
+        "wahaApi": {
+          "id": "OBarvY73V8DKtYv0",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "=default",
+        "chatId": "={{ $json.telefono }}@c.us",
+        "text": "=Hola {{ $json.nombre }}, notamos que dejaste de responder. ¿Sigues disponible para continuar tu proceso?",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        -928,
+        2064
+      ],
+      "id": "06f69eae-8faf-44c8-a061-364ce37835b0",
+      "name": "RecordarProceso",
+      "credentials": {
+        "wahaApi": {
+          "id": "OBarvY73V8DKtYv0",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "MANEJO DE ERRORES\n",
+        "height": 960,
+        "width": 2496
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -2128,
+        208
+      ],
+      "typeVersion": 1,
+      "id": "989f8521-3266-4e64-b3df-706be674d587",
+      "name": "Sticky Note4"
+    },
+    {
+      "parameters": {
+        "resource": "audio",
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-flash",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-flash"
+        },
+        "inputType": "binary",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        3504,
+        1056
+      ],
+      "id": "ffae2e41-53e7-4af1-9c38-905939d8e730",
+      "name": "TranscribirAudio",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "QZklxwEDRZxFLQzG",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. OBTENER EL JSON LIMPIO DE GEMINI\nconst item = $input.first();\nconst rawText = item.json.content?.parts?.[0]?.text || item.json.output || item.json.text || \"{}\";\n\nconst jsonMatch = rawText.match(/\\{[\\s\\S]*\\}/);\nconst cleanJson = jsonMatch ? jsonMatch[0] : rawText.replace(/```json|```/g, '').trim();\n\nlet datos = {};\ntry { datos = JSON.parse(cleanJson); } catch (e) { datos = {}; }\n\n// 2. EXTRAER VARIABLES BÁSICAS\nconst tipo = (datos.tipo_documento || \"GENERICO\").toUpperCase();\nconst nombreOriginal = datos.nombre_completo || \"Candidato\";\nconst nombreLimpio = nombreOriginal\n    .normalize(\"NFD\").replace(/[\\u0300-\\u036f]/g, \"\")\n    .replace(/[^a-zA-Z0-9 ]/g, \"\")\n    .replace(/\\s+/g, \"_\");\nconst vacanteAnuncio = datos.vacante_anuncio || \"General\";\n\nlet telefono = $('GetInfo').first().json.number;\n\n// 3. RENOMBRAR ARCHIVO FÍSICO\nlet binaryData = {};\ntry { binaryData = $('DescargarMedia').first().binary; } catch(e) { binaryData = item.binary; }\n\nif (binaryData) {\n    const key = Object.keys(binaryData)[0];\n    if (binaryData[key]) {\n        const ext = (binaryData[key].fileExtension || \"pdf\").replace('.', '');\n        binaryData[key].fileName = `${tipo}_${nombreLimpio}_${telefono}.${ext}`;\n    }\n}\n\nlet edadCalculada = null;\nif (datos.fecha_nacimiento && datos.fecha_nacimiento !== \"No visible\" && datos.fecha_nacimiento !== \"null\") {\n    const matchAno = datos.fecha_nacimiento.match(/\\d{4}/);\n    if (matchAno) {\n        edadCalculada = (new Date().getFullYear() - parseInt(matchAno[0])).toString() + \" años\";\n    }\n}\nlet nombreWhatsApp = $('Webhook').first().json.body.payload._data?.notifyName || \"Candidato\";\n\n// 4. LÓGICA DEL MENSAJE PARA SOFÍA (AI CHAT)\nconst dbData = $('ObtenerDatosCandidato').first().json || {};\nlet msgUsuario = datos.mensaje_usuario || \"\"; \n\n// 🚀 MAGIA: Rescatamos el texto del candidato que acompaña a la imagen\nconst captionUsuario = $('Webhook').first().json.body.payload.body || \"\";\n\nif (!msgUsuario || msgUsuario === \"null\") {\n    if (tipo === \"SOLICITUD\" && dbData.estado !== 'CV_RECIBIDO') {\n        msgUsuario = \"El candidato acaba de enviar la PRIMERA foto de su solicitud (frente). Agradécele e indícale que por favor envíe también la foto de la PARTE TRASERA para tener su expediente completo. Dile que si su solicitud solo tiene un lado o ya mandó ambas, responda 'Listo'.\";\n    } else if (tipo === \"ANUNCIO\") {\n        // Armamos el contexto de la imagen + lo que escribió el usuario\n        msgUsuario = `[SISTEMA: El candidato te envió una captura de pantalla del anuncio de la vacante: *${vacanteAnuncio}*.`;\n        if (captionUsuario) {\n            msgUsuario += ` Además, escribió este mensaje: \"${captionUsuario}\".`;\n        }\n        msgUsuario += ` OBLIGATORIO: Atiéndelo de forma natural, asume que le interesa esa vacante y muéstrale los detalles o pregúntale si quiere aplicar.]`;\n    } else if (tipo === \"INE\") {\n        if (dbData.datos_rfc) {\n            msgUsuario = \"[SISTEMA: AMBOS DOCUMENTOS COMPLETOS. El candidato entregó INE y RFC. Revisa INMEDIATAMENTE tu calendario y ofrécele fechas de entrevista.]\";\n        } else {\n            msgUsuario = \"[SISTEMA: El candidato entregó su INE, pero FALTA SU CONSTANCIA. Agradécele por el INE y pídele obligatoriamente su Constancia de Situación Fiscal (RFC). TIENES ESTRICTAMENTE PROHIBIDO AGENDAR CITA AÚN.]\";\n        }\n    } else if (tipo === \"CONSTANCIA\") {\n        if (dbData.datos_ine) {\n            msgUsuario = \"[SISTEMA: AMBOS DOCUMENTOS COMPLETOS. El candidato entregó INE y RFC. Revisa INMEDIATAMENTE tu calendario y ofrécele fechas de entrevista.]\";\n        } else {\n            msgUsuario = \"[SISTEMA: El candidato entregó su Constancia (RFC), pero FALTA SU INE. Agradécele por la Constancia y pídele obligatoriamente la foto frontal de su INE. TIENES ESTRICTAMENTE PROHIBIDO AGENDAR CITA AÚN.]\";\n        }\n    } else if (tipo === \"CV\" || (tipo === \"SOLICITUD\" && dbData.estado === 'CV_RECIBIDO')) {\n        if (!datos.correo) {\n            msgUsuario = \"[SISTEMA: CV Recibido. Pregunta ÚNICAMENTE: '¡Recibí tu documento y tu perfil está súper bien! 👏 Antes de continuar, ¿me podrías proporcionar tu correo electrónico, por favor? 📧']\";\n        } else {\n            msgUsuario = \"[SISTEMA: CV Recibido. Pregunta ÚNICAMENTE: '¡Recibí tu documento y tu perfil está súper bien! 👏 Antes de continuar, me gustaría hacerte una pregunta rápida: ¿Te encuentras laborando actualmente? 💼']\";\n        }\n    } else {\n        msgUsuario = \"El candidato envió un documento. Confírmale de recibido de forma amable.\";\n    }\n} else if (tipo === \"ANUNCIO\") {\n    msgUsuario = `[SISTEMA: El candidato te envió una foto del anuncio de la vacante: *${vacanteAnuncio}*. Mensaje: \"${captionUsuario}\". Atiéndelo.]`;\n}\n\n// 5. SALIDA\nreturn {\n    json: {\n        nombre: nombreOriginal,\n        telefono: telefono,\n        tipo_origen: tipo,\n        cv_manual: datos,\n        experiencia: datos.experiencia || \"\",\n        veredicto: datos.veredicto || null,\n        motivo: datos.motivo || null,\n        resumen_excel: datos.resumen_excel || null,\n        fecha_nacimiento: datos.fecha_nacimiento || \"No visible\",\n        vacante_anuncio: vacanteAnuncio,\n        mensaje_usuario: msgUsuario,\n        edad_calculada: edadCalculada,\n        nombre_chat: nombreWhatsApp,\n        correo: datos.correo || null,\n    },\n    binary: binaryData\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2384,
+        1520
+      ],
+      "id": "3a1193fb-a141-4614-adeb-cfbcea0194b4",
+      "name": "SepararJSON"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "af84644c-a90f-45f3-85d3-c6d22a873329",
+              "name": "nombre",
+              "value": "={{ $json.nombre }}",
+              "type": "string"
+            },
+            {
+              "id": "53b26a3b-fa30-43e8-b1c4-801fc48785b4",
+              "name": "telefono",
+              "value": "={{ $('GetInfo').item.json.number }}",
+              "type": "string"
+            },
+            {
+              "id": "30533886-0647-4f45-9857-5a55d8f14a88",
+              "name": "correo",
+              "value": "={{$json.correo}}",
+              "type": "string"
+            },
+            {
+              "id": "6fe3227e-7efd-4a36-b22c-e55bb07a770a",
+              "name": "vacante_interes",
+              "value": "={{ $json.vacante_solicitada || $json.vacante_interes }}",
+              "type": "string"
+            },
+            {
+              "id": "f575001f-2a79-4761-9e4a-c95ec8843b4e",
+              "name": "=veredicto",
+              "value": "={{ $json.veredicto }}",
+              "type": "string"
+            },
+            {
+              "id": "b652857f-6bac-4369-82f9-f4e35be791c6",
+              "name": "mensaje_usuario",
+              "value": "={{ $json.mensaje_usuario }}",
+              "type": "string"
+            },
+            {
+              "id": "db470049-7909-4246-b329-adf984fc3e3d",
+              "name": "cv_manual",
+              "value": "={{ $json.cv_manual }}",
+              "type": "string"
+            },
+            {
+              "id": "4414305c-24ff-4d47-b111-d8d49f3c3be0",
+              "name": "resumen_excel",
+              "value": "={{ $json.resumen_excel }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2608,
+        1520
+      ],
+      "id": "df531854-9171-4235-9f42-643ef55fb979",
+      "name": "DatosListos"
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "={{ $('Webhook').item.json.body.session }}",
+        "chatId": "={{ $('Webhook').item.json.body.payload.from }}",
+        "text": "={{ $json.message_to_user }}",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        5792,
+        1200
+      ],
+      "id": "0e7f7ac3-edc8-44c1-a32b-63b6e460eb2e",
+      "name": "CVManual",
+      "credentials": {
+        "wahaApi": {
+          "id": "OBarvY73V8DKtYv0",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "http://waha:3000/api/contacts",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "wahaApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "contactId",
+              "value": "={{ $('Webhook').item.json.body.payload.from }}"
+            },
+            {
+              "name": "session",
+              "value": "default"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "virgo_secret_key"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -1216,
+        1360
+      ],
+      "id": "a50be585-3791-4e7a-8538-5086721487a5",
+      "name": "GetInfo",
+      "credentials": {
+        "wahaApi": {
+          "id": "OBarvY73V8DKtYv0",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\n\n// 1. DATOS DEL CANDIDATO\n// Lee de $input para ser compatible con cualquier nodo upstream\n// (ObtenerDatosCandidato en producción, Edit Fields en testing)\nconst dbData = $input.first()?.json || {};\nconst naveActual = String(dbData.nave_interes || '').trim() || '1';\nconst vacante = (dbData.vacante_interes || 'General').toUpperCase().trim();\n\n// 2. CARGAR RECLUTADOR_VACANTES\nconst ruta = '/home/node/virgo_files/prompts/reclutador_vacantes.json';\nlet equipo = [];\ntry {\n    equipo = JSON.parse(fs.readFileSync(ruta, 'utf8'));\n} catch (e) {\n    equipo = [{\n        nombre: 'Gerente de Reclutamiento',\n        emoji: '🚨',\n        telefono: '5213323379399',\n        calendar_id: 'talreclutamiento01@gmail.com',\n        naves: ['1','2','3'],\n        vacantes: []\n    }];\n}\n\nconst gerente = equipo.find(r => r.nombre === 'Gerente de Reclutamiento') || equipo[equipo.length - 1];\n\n// 3. BUSCAR MATCHES: ignorando acentos y mayusculas\nconst cleanStr = (s) => s ? s.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toUpperCase().trim() : '';\nconst vacanteClean = cleanStr(vacante);\nconst vacanteDesconocida = !vacanteClean || vacanteClean === 'GENERAL' || vacanteClean === '';\n\nconst matches = equipo.filter(r =>\n    r.nombre !== gerente.nombre &&\n    Array.isArray(r.vacantes) &&\n    r.vacantes.length > 0 &&\n    (\n        vacanteDesconocida\n            ? r.naves.includes(naveActual)   // solo filtra por nave\n            : r.vacantes.some(v => v.nave === naveActual && cleanStr(v.nombre) === vacanteClean)\n    )\n);\n\n// 4. FALLBACK: nadie tiene la vacante → Gerente\nconst candidatos = matches.length > 0 ? matches : [gerente];\n\n// 5. SI SOLO HAY 1: salida directa, sin turno\nif (candidatos.length === 1) {\n    return {\n        json: {\n            nombre_reclutador: candidatos[0].nombre,\n            telefono_reclutador: candidatos[0].telefono,\n            calendar_id: candidatos[0].calendar_id,\n            vacante_detectada: vacante,\n            nave_candidato: naveActual,\n            grupo_turno: null,\n            turno_total: 1,\n            candidatos_turno: null\n        }\n    };\n}\n\n// 6. HAY MÚLTIPLES: preparar datos para TurnoReclutador (Postgres)\nconst grupoKey = candidatos\n    .map(r => r.nombre)\n    .sort()\n    .join('|')\n    .substring(0, 100);\n\nreturn {\n    json: {\n        vacante_detectada: vacante,\n        nave_candidato: naveActual,\n        grupo_turno: grupoKey,\n        turno_total: candidatos.length,\n        candidatos_turno: JSON.stringify(\n            candidatos.map(r => ({\n                nombre: r.nombre,\n                telefono: r.telefono,\n                calendar_id: r.calendar_id,\n                emoji: r.emoji || '📅'\n            }))\n        )\n    }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3872,
+        1616
+      ],
+      "id": "27d95af8-899a-441b-96d2-0b9e2b5768c5",
+      "name": "DefinirAgenda"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. OBTENER DATOS DEL USUARIO\nconst dbData = $('ObtenerDatosCandidato').first()?.json || {};\nconst infoWhatsapp = $('GetInfo').first()?.json?.[0] || {};\n\n// 🌟 MAGIA: Tomamos el reclutador EXACTO que ya asignó el sistema de turnos\nconst reclutadorAsignado = $('ResolverReclutador').first()?.json || {};\n\n// 2. BÚSQUEDA DEL MENSAJE ORIGINAL\nlet ultimoMensajeUsuario = \"No se detectó texto\";\ntry {\n    const webhookBody = $('Webhook').first().json.body;\n    ultimoMensajeUsuario = webhookBody.payload?.body || webhookBody.message?.body || webhookBody.body || \"Mensaje multimedia o sin texto\";\n} catch(e) {}\n\n// 3. RESCATAR NOMBRE Y MOTIVO DE LA IA\nconst rawAiResponse = $('AI Chat').first()?.json?.output || $('AI Chat').first()?.json?.text || \"\";\nlet nombreRescatadoIA = \"\";\nlet motivoRescatadoIA = \"El usuario solicitó hablar con un humano.\";\n\nif (rawAiResponse.includes('HUMAN_ALERT')) {\n    let fragmento = rawAiResponse.split('HUMAN_ALERT')[1].split('MEMORY_UPDATE')[0];\n    let partes = fragmento.split('|').map(p => p.trim());\n    if (partes.length >= 4) { nombreRescatadoIA = partes[1]; motivoRescatadoIA = partes[2]; }\n    else if (partes.length === 3) { nombreRescatadoIA = partes[1]; }\n}\n\nlet nombre = dbData.nombre || nombreRescatadoIA || \"Candidato\";\nconst telefono = dbData.telefono || infoWhatsapp.id?.user || \"0000000000\";\nlet vacante = dbData.vacante_interes || \"General\";\n\n// 4. USAR LOS DATOS DEL NODO RESOLVER_RECLUTADOR\nconst nombreDestino = reclutadorAsignado.nombre_reclutador || \"Equipo de Reclutamiento\";\nconst telefonoDestino = reclutadorAsignado.telefono_reclutador || \"5213323379399\";\n\n// 5. SALIDA\nreturn {\n    json: {\n        telefono_destino: telefonoDestino.replace('@c.us', ''),\n        nombre_candidato: nombre,          \n        telefono_candidato: telefono,      \n        vacante: vacante,                 \n        mensaje_alerta: `🚨 *SOLICITUD DE ATENCIÓN HUMANA*\\n\\nHola ${nombreDestino}, este usuario pide hablar con un reclutador:\\n\\n👤 *${nombre}*\\n📱 wa.me/${telefono}\\n💼 Interés: ${vacante}\\n\\n💬 *Mensaje literal:* \"${ultimoMensajeUsuario}\"\\n\\n🤖 *Resumen Sofía:* _${motivoRescatadoIA}_`\n    }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6016,
+        1008
+      ],
+      "id": "eb253044-7c21-4a92-ae26-c90d3f5d9624",
+      "name": "PrepararAlertaHumano"
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "=default",
+        "chatId": "={{ $json.telefono_destino }}@c.us",
+        "text": "={{ $json.mensaje_alerta }}",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        6240,
+        1008
+      ],
+      "id": "83230245-5d88-4606-b8c5-13d13eddee34",
+      "name": "NotificarPersonal1",
+      "credentials": {
+        "wahaApi": {
+          "id": "OBarvY73V8DKtYv0",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "={{ $('Webhook').item.json.body.session }}",
+        "chatId": "={{ $('Webhook').item.json.body.payload.from }}",
+        "text": "={{ $json.text_para_whatsapp }}",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        5792,
+        1008
+      ],
+      "id": "64d4780c-6787-4975-b05d-238ca167b80c",
+      "name": "MensajeEscalado",
+      "credentials": {
+        "wahaApi": {
+          "id": "OBarvY73V8DKtYv0",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO candidatos (telefono, nombre, estado, ultima_interaccion, vacante_interes, resumen_ia, escalado, escalated_at)\nVALUES (\n  $1, \n  $2, \n  'ESCALADO', \n  NOW(),\n  $3,\n  'El usuario solicitó hablar con un humano (Opción Menú).',\n  TRUE,\n  NOW()\n)\nON CONFLICT (telefono) \nDO UPDATE SET \n  ultima_interaccion = NOW(),\n  estado = 'ESCALADO',\n  resumen_ia = 'El usuario solicitó hablar con un humano (Opción Menú).',\n  escalado = TRUE,\n  escalated_at = NOW();",
+        "options": {
+          "queryReplacement": "={{ [\n  $('PrepararAlertaHumano').item.json.telefono_candidato, \n  $('PrepararAlertaHumano').item.json.nombre_candidato,\n  $('PrepararAlertaHumano').item.json.vacante\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        6464,
+        1008
+      ],
+      "id": "02aab3b9-9c55-4d60-95ce-ba100cd4828e",
+      "name": "AlmacenarMensajes1",
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Borrar logs de más de 30 días\nDELETE FROM system_logs WHERE timestamp < NOW() - INTERVAL '30 days';\n\n-- (Opcional) Borrar historial de chat muy viejo\nDELETE FROM conversation_history WHERE timestamp < NOW() - INTERVAL '60 days';\nDELETE FROM processed_webhooks WHERE processed_at < NOW() - INTERVAL '24 hours';",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1488,
+        496
+      ],
+      "id": "a55793bd-0add-4b59-99af-ccaf7badb1ef",
+      "name": "LimpiarBD",
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Location",
+        "session": "={{ $('Webhook').first().json.body.session }}",
+        "chatId": "={{ $('Webhook').first().json.body.payload.from }}",
+        "latitude": "={{ $json.latitud }}",
+        "longitude": "={{ $json.longitud }}",
+        "title": "={{ $json.titulo }}",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        6496,
+        1184
+      ],
+      "id": "377e9092-4e07-4b6b-9db8-3a1864f88e5b",
+      "name": "EnvUbicación",
+      "credentials": {
+        "wahaApi": {
+          "id": "OBarvY73V8DKtYv0",
+          "name": "WAHA account"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1600,
+        2080
+      ],
+      "id": "ae0b257b-6823-49d8-98cd-ec3518b50609",
+      "name": "Vigilante"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 20
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1600,
+        1760
+      ],
+      "id": "3cca1712-3bd0-4553-8ea7-3c234f988ffc",
+      "name": "RecordatorioEntrevista"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "3d2604a8-55eb-472a-b4d6-5a701a30defc",
+              "leftValue": "={{ $('DatosListos').item.json.tipo_origen }}",
+              "rightValue": "INVALIDO",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2816,
+        1520
+      ],
+      "id": "cdae1fc0-c3d8-4380-ba2c-572f49def454",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        5792,
+        1392
+      ],
+      "id": "b2c34719-8d65-4a16-aa9f-4965ee240687",
+      "name": "Loop Over Items"
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        6016,
+        1392
+      ],
+      "id": "ab9952be-2502-4e00-8356-17aefc9851b0",
+      "name": "Wait",
+      "webhookId": "e9352d04-1854-4b5c-a751-788f11625c4d"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE(\n    (SELECT EXTRACT(EPOCH FROM (NOW() - last_message_at)) \n     FROM rate_limiting \n     WHERE telefono = $1), \n    9999) AS segundos_inactivo;",
+        "options": {
+          "queryReplacement": "={{ $('GetInfo').item.json.number }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -304,
+        1360
+      ],
+      "id": "d3968f0d-86d7-49a5-9dde-66d624bafffb",
+      "name": "ChecarMensajes",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e41c3d0e-302e-4f70-933a-e422431a28e2",
+              "leftValue": "={{ $json.segundos_inactivo.toNumber() }}",
+              "rightValue": 4.5,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -80,
+        1360
+      ],
+      "id": "04e3a1c7-c979-4266-bf81-89997d42635f",
+      "name": "If4"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO conversation_history (telefono, role, content)\nVALUES ($1, 'user_temp', $2);",
+        "options": {
+          "queryReplacement": "={{ [ $('GetInfo').item.json.number, $('Webhook').item.json.body.payload.body || '[Mensaje sin texto]' ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -720,
+        1360
+      ],
+      "id": "31355ac9-a5b2-4e03-a876-8d3665e71047",
+      "name": "MsjCorto",
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH recolectados AS (\n    DELETE FROM conversation_history\n    WHERE telefono = $1 AND role = 'user_temp'\n    RETURNING content\n)\nSELECT STRING_AGG(content, '. ') AS mensaje_completo FROM recolectados;",
+        "options": {
+          "queryReplacement": "={{ $('GetInfo').item.json.number }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4480,
+        1632
+      ],
+      "id": "dec58291-c7bd-4fa2-9d58-b76a1892c8be",
+      "name": "JuntarMsj",
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -528,
+        1360
+      ],
+      "id": "bf906ae4-0693-4cef-8ea6-a2f65163e161",
+      "name": "Wait2",
+      "webhookId": "856945bb-7fdd-48e0-bf79-5508cad9be31"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1fK89aef01qpdVsmkVyWs-kaKyR3r6vKBtkMbiRmLx54",
+          "mode": "list",
+          "cachedResultName": "Candidatos",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1fK89aef01qpdVsmkVyWs-kaKyR3r6vKBtkMbiRmLx54/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 286836876,
+          "mode": "list",
+          "cachedResultName": "Faltistas",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1fK89aef01qpdVsmkVyWs-kaKyR3r6vKBtkMbiRmLx54/edit#gid=286836876"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Telefono",
+              "lookupValue": "={{ $('GetInfo').first().json.number }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        368,
+        1360
+      ],
+      "id": "3e376b27-cb6f-407b-a5bb-fb6913e68e03",
+      "name": "Faltas",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "iF9ddFN2XS1egKEm",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "4e1bb43f-057a-4a3e-a0f8-40087b4bc207",
+              "leftValue": "={{ $json.Faltas || 0 }}",
+              "rightValue": 3,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        592,
+        1360
+      ],
+      "id": "e7675848-856f-468d-ad9d-10abe90059fa",
+      "name": "¿Tiene3Faltas?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "25940a34-8e6f-486c-a839-95c74099e09a",
+              "leftValue": "={{ $json._data.body }}",
+              "rightValue": "📍",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "d3df5e7f-ccdc-430d-b20c-e2833432bdc7",
+              "leftValue": "={{ $json._data.body }}",
+              "rightValue": "📍 Ubicación",
+              "operator": {
+                "type": "string",
+                "operation": "notContains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": "",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        6016,
+        1200
+      ],
+      "id": "6e6a3ee1-74cc-411a-a9e4-455f16c2ef33",
+      "name": "¿Ubicacion?",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "0686e5ef-9dcb-4e37-9751-2954035b272b",
+              "leftValue": "={{ $json.mensaje_completo }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        4624,
+        1632
+      ],
+      "id": "086ed5cf-2f47-4073-b43c-199605a82190",
+      "name": "¿HayMensajes?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH update_candidato AS (\n    INSERT INTO candidatos (\n        telefono, vacante_interes, experiencia, resumen_ia, tiene_cv, estado, \n        ultima_interaccion, datos_ine, datos_rfc, cv_manual, nombre_confirmado, \n        veredicto, motivo_analisis, link_cv, nombre_chat, edad, correo, \n        filtros_tecnicos, nombre_ine, nombre_constancia, nombre_solicitud\n    ) VALUES (\n        $1, COALESCE(NULLIF($3, ''), 'General'),\n        CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $5 ELSE NULL END,\n        CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN 'CV Recibido y Analizado por Gemini' ELSE NULL END,\n        CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN TRUE ELSE FALSE END,\n        CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN 'CV_RECIBIDO' ELSE 'NUEVO' END,\n        NOW(),\n        CASE WHEN $4 = 'INE' THEN $7::jsonb ELSE NULL END,\n        CASE WHEN $4 = 'CONSTANCIA' THEN $7::text ELSE NULL END,\n        CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $7::jsonb ELSE NULL END, \n        CASE WHEN $4 IN ('INE', 'CONSTANCIA') THEN TRUE ELSE FALSE END,\n        CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $8 ELSE NULL END,\n        CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $9 ELSE NULL END,\n        CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $10 ELSE NULL END, \n        $11, $12, $13,\n        CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $14 ELSE NULL END,\n        CASE WHEN $4 = 'INE' THEN $2 ELSE NULL END, \n        CASE WHEN $4 = 'CONSTANCIA' THEN $2 ELSE NULL END, \n        CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $2 ELSE NULL END\n    )\n    ON CONFLICT (telefono) DO UPDATE SET\n        ultima_interaccion = NOW(),\n        vacante_interes = COALESCE(NULLIF($3, ''), candidatos.vacante_interes),\n        experiencia = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $5 ELSE candidatos.experiencia END,\n        tiene_cv = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN TRUE ELSE candidatos.tiene_cv END,\n        cv_manual = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $7::jsonb ELSE candidatos.cv_manual END,\n        veredicto = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN COALESCE($8, candidatos.veredicto) ELSE candidatos.veredicto END,\n        motivo_analisis = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN COALESCE($9, candidatos.motivo_analisis) ELSE candidatos.motivo_analisis END,\n        link_cv = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN COALESCE($10, candidatos.link_cv) ELSE candidatos.link_cv END,\n        filtros_tecnicos = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN COALESCE($14, candidatos.filtros_tecnicos) ELSE candidatos.filtros_tecnicos END,\n        nombre_confirmado = CASE WHEN $4 IN ('INE', 'CONSTANCIA') THEN TRUE ELSE candidatos.nombre_confirmado END,\n        datos_ine = CASE WHEN $4 = 'INE' THEN $7::jsonb ELSE candidatos.datos_ine END,\n        datos_rfc = CASE WHEN $4 = 'CONSTANCIA' THEN $7::text ELSE candidatos.datos_rfc END,\n        nombre_ine = CASE WHEN $4 = 'INE' THEN $2 ELSE candidatos.nombre_ine END,\n        nombre_constancia = CASE WHEN $4 = 'CONSTANCIA' THEN $2 ELSE candidatos.nombre_constancia END,\n        nombre_solicitud = CASE WHEN $4 IN ('CV', 'SOLICITUD') AND candidatos.nombre_solicitud IS NULL THEN $2 ELSE candidatos.nombre_solicitud END,\n        nombre_chat = COALESCE(candidatos.nombre_chat, NULLIF($11, '')),\n        edad = COALESCE(NULLIF($12, ''), candidatos.edad),\n        correo = COALESCE(NULLIF($13, ''), candidatos.correo),\n        estado = CASE \n            WHEN $4 IN ('CV', 'SOLICITUD') THEN 'CV_RECIBIDO'\n            WHEN ($4 = 'INE' OR candidatos.datos_ine IS NOT NULL) AND ($4 = 'CONSTANCIA' OR candidatos.datos_rfc IS NOT NULL) THEN 'INE_VALIDADA'\n            ELSE candidatos.estado\n        END,\n        resumen_ia = CASE \n            WHEN ($4 = 'INE' OR candidatos.datos_ine IS NOT NULL) AND ($4 = 'CONSTANCIA' OR candidatos.datos_rfc IS NOT NULL) THEN 'El candidato completó su INE y RFC. El siguiente paso es agendar la cita.'\n            WHEN $4 IN ('INE', 'CONSTANCIA') THEN 'Candidato entregó documento parcial (' || $4 || '). Esperando el faltante.'\n            ELSE candidatos.resumen_ia\n        END\n)\nINSERT INTO conversation_history (telefono, role, content)\nVALUES ($1, 'assistant', $6);",
+        "options": {
+          "queryReplacement": "={{ [\n  $('GetInfo').first().json.number,                                   \n  $('SepararJSON').first().json.nombre || 'Candidato',                \n  $('ObtenerDatosCandidato').first()?.json?.vacante_interes || $('SepararJSON').first().json.vacante_anuncio || '', \n  $('SepararJSON').first().json.tipo_origen || 'CV',                  \n  $('SepararJSON').first().json.experiencia || $('SepararJSON').first().json.resumen_excel || '',\n  $('SepararJSON').first().json.mensaje_usuario || '',                \n  $('SepararJSON').first().json.cv_manual ? JSON.stringify($('SepararJSON').first().json.cv_manual) : null, \n  $('SepararJSON').first().json.veredicto || null,                    \n  $('SepararJSON').first().json.motivo || null,                       \n  $('SubirCV').first()?.json?.webViewLink || null,                    \n  $('Webhook').first().json.body.payload._data?.notifyName || '',     \n  $('SepararJSON').first().json.edad_calculada || null,               \n  $('SepararJSON').first().json.correo || null,\n  null\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3504,
+        1712
+      ],
+      "id": "740a1876-34a9-4a03-95f3-46ed97b481f1",
+      "name": "Actualizar_Expediente",
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Trae a todos los candidatos que hayan cambiado su estado o platicado en los últimos 6 minutos\nSELECT * FROM candidatos;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1488,
+        272
+      ],
+      "id": "cbfb6acf-d3c5-4eaf-9561-85a591137b39",
+      "name": "Buscar Actualizados",
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c3980ebd-b8f9-44dc-89b5-a83aa69175f8",
+              "leftValue": "={{ $json.fecha_entrevista_detectada }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        5536,
+        1728
+      ],
+      "id": "68e4f0e4-4c05-4c60-9b7d-80e377872d13",
+      "name": "¿Se Agendo Cita?"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Obtenemos los datos desde el contexto del chat\nconst dbData = $('ObtenerDatosCandidato').first()?.json || {};\nconst chatData = $input.first().json;\n\n// 🌟 MAGIA: Tomamos el reclutador EXACTO que ya asignó el sistema de turnos previamente\nconst reclutadorAsignado = $('ResolverReclutador').first()?.json || {};\n\nlet vacanteDetectada = chatData.vacante_detectada || dbData.vacante_interes || \"General\";\nlet nombreCandidato = dbData.nombre_ine || dbData.nombre_chat || \"Candidato\";\nlet telefonoCandidato = $('GetInfo').first()?.json?.number || dbData.telefono || \"0000000000\";\nlet fechaCita = chatData.fecha_entrevista_detectada || \"Fecha por confirmar\";\n\nlet naveCandidato = dbData.nave_interes || \"No especificada\";\nlet resumenIA = \"Sin resumen previo disponible.\";\nconst rawResumen = dbData.resumen_ia || \"\";\n\nif (rawResumen.includes(\"MEMORY_UPDATE\")) {\n    const bloqueResumen = rawResumen.split(\"MEMORY_UPDATE\")[1]?.split(\"|\")?.[1]?.trim() || rawResumen;\n    resumenIA = expandirResumenComprimido(bloqueResumen);\n} else {\n    resumenIA = rawResumen || \"Sin resumen previo disponible.\";\n}\nlet filtrosTecnicos = dbData.filtros_tecnicos || \"Pendiente\";\n\n// 🚀 Expande el formato comprimido \"N:X V:X E:X Priv:S CV:S INE:N RFC:N Cita:fecha/N Notas:X\"\n// a texto legible para el reclutador humano. Si el resumen no viene en ese formato\n// (ej. quedó en el formato largo anterior), se regresa tal cual sin modificar.\nfunction expandirResumenComprimido(texto) {\n    if (!texto) return \"Sin resumen previo disponible.\";\n\n    const esFormatoComprimido = /\\bN:|V:|E:|Priv:|CV:|INE:|RFC:|Cita:/.test(texto);\n    if (!esFormatoComprimido) return texto;\n\n    const get = (regex) => {\n        const m = texto.match(regex);\n        return m ? m[1].trim() : null;\n    };\n\n    const nombre = get(/N:([^V]*?)(?=\\s+V:|$)/);\n    const vacante = get(/V:([^E]*?)(?=\\s+E:|$)/);\n    const etapa = get(/E:([^P]*?)(?=\\s+Priv:|$)/);\n    const privacidad = get(/Priv:([^\\s]*)/);\n    const cv = get(/CV:([^\\s]*)/);\n    const ine = get(/INE:([^\\s]*)/);\n    const rfc = get(/RFC:([^\\s]*)/);\n    const cita = get(/Cita:([^N]*?)(?=\\s+Notas:|$)/);\n    const notas = get(/Notas:(.*)$/);\n\n    const siNo = (v) => v === 'S' ? 'Sí' : v === 'N' ? 'No' : (v || 'N/D');\n\n    let partes = [];\n    if (nombre) partes.push(`Nombre: ${nombre}`);\n    if (vacante) partes.push(`Vacante: ${vacante}`);\n    if (etapa) partes.push(`Etapa: ${etapa}`);\n    if (privacidad) partes.push(`Privacidad aceptada: ${siNo(privacidad)}`);\n    if (cv) partes.push(`CV recibido: ${siNo(cv)}`);\n    if (ine) partes.push(`INE recibido: ${siNo(ine)}`);\n    if (rfc) partes.push(`RFC recibido: ${siNo(rfc)}`);\n    if (cita) partes.push(`Cita: ${cita.trim() === 'N' ? 'pendiente' : cita.trim()}`);\n    if (notas) partes.push(`Notas: ${notas.trim()}`);\n\n    return partes.length ? partes.join('. ') + '.' : texto;\n}\n\n// 2. Extraemos los datos del reclutador que ganó el turno\nlet nombreReclutador = reclutadorAsignado.nombre_reclutador || \"Equipo de Reclutamiento\";\nlet telefonoDestino = reclutadorAsignado.telefono_reclutador || \"5213323379399\";\n\n// 3. ARMAR EL MENSAJE DE ÉXITO\nlet mensaje_alerta = `📅 *¡NUEVA ENTREVISTA AGENDADA!* \\n\\nHola ${nombreReclutador}, el bot acaba de cerrar una cita con éxito:\\n\\n👤 *Candidato:* ${nombreCandidato}\\n📱 *Tel:* wa.me/${telefonoCandidato}\\n💼 *Vacante:* ${vacanteDetectada}\\n🏢 *Nave/Sucursal:* ${naveCandidato}\\n⏰ *Fecha:* ${fechaCita}\\n\\n📝 *RESUMEN DEL CANDIDATO (IA):*\\n${resumenIA}\\n\\n⚙️ *FILTROS TÉCNICOS:*\\n${filtrosTecnicos}\\n\\n_Todos los documentos (CV, INE, RFC) ya están listos y cargados en tu Google Sheets._{https://drive.google.com/drive/folders/1teiQYm9gXvmwZfBkFLV7nsTEiljrCfpf?usp=sharing}`;\n\nreturn {\n    json: {\n        telefono_destino: telefonoDestino.replace('@c.us', ''),\n        mensaje_alerta: mensaje_alerta\n    }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5728,
+        1712
+      ],
+      "id": "20a705db-1504-45ae-b991-e1eedb49ec8f",
+      "name": "AlertaCandidato",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "=default",
+        "chatId": "={{ $json.telefono_destino }}@c.us",
+        "text": "={{ $json.mensaje_alerta }}",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        5904,
+        1712
+      ],
+      "id": "09430ef4-f23d-4e90-b9f1-ee8f182a4044",
+      "name": "NuevoCandidato",
+      "credentials": {
+        "wahaApi": {
+          "id": "OBarvY73V8DKtYv0",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Webhook').item.json.body.payload.media.url.replace('localhost','waha') }} ",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "virgo_secret_key"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        1264,
+        1264
+      ],
+      "id": "37d720ed-df0c-4439-a49d-96bb6a56e40a",
+      "name": "DescargarMedia",
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "4eb9c65c-5743-4432-a5a8-aa26966eba84",
+              "leftValue": "={{ $('Webhook').item.json.body.payload.media.mimetype }}",
+              "rightValue": "audio",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1488,
+        1264
+      ],
+      "id": "183457b0-328f-4577-9e53-b0e30a8c4fba",
+      "name": "¿Es Audio?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "29a8d85e-e1b6-48cb-ad0a-6433d265d5a8",
+              "leftValue": "={{ $('Webhook').item.json.body.payload.media.mimetype }}",
+              "rightValue": "word",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1712,
+        1360
+      ],
+      "id": "f0e7dc2d-68ef-49f6-98ac-8144cf875450",
+      "name": "¿Es Word?"
+    },
+    {
+      "parameters": {
+        "resource": "document",
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-flash",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-flash"
+        },
+        "text": "=Eres el Reclutador Experto de Grupo Virgo y, por encima de todo, un **ANALISTA DE SEGURIDAD Y VALIDACIÓN DE DOCUMENTOS**. Tu prioridad número uno es garantizar que ninguna imagen de broma, meme, personaje de ficción, animal u objeto sea aceptado como un documento oficial.\n\nDebes analizar la imagen adjunta. No seas \"amable\" en tu interpretación; si no cumple con los criterios estrictos de un documento válido, recházalo de inmediato con la categoría `INVALIDO`.\n\nAquí está el catálogo completo de vacantes disponibles:\n{{ $json.detalle_vacantes }}\n💼 LA VACANTE QUE EL CANDIDATO SOLICITÓ ES: {{ $('ObtenerDatosCandidato').first().json.vacante_interes || 'General' }}\n\n--- NORMAS DE VALIDACIÓN Y CLASIFICACIÓN ESTRICTA ---\nIdentifica el tipo de documento basándote ÚNICAMENTE en estos marcadores oficiales:\n\n1. **INE (Credencial de Elector Mexicana):**\n   - **Marcadores:** Texto legible \"Instituto Nacional Electoral\" o \"INE\", logotipo de la herradura, una FOTOGRAFÍA DE UN ROSTRO HUMANO REAL (no caricaturas, no personajes de ficción), Clave de Elector y/o CURP.\n   - **Rechazo:** Si es la foto de un personaje de película (ej. Elaine Benes de Seinfeld), de un cartón, o si no se distinguen los marcadores oficiales, clasifica como INVALIDO.\n\n2. **CONSTANCIA (Constancia de Situación Fiscal o CIF del SAT):**\n   - **Marcadores:** Logotipo legible del \"SAT\" o el Escudo Nacional de México con la leyenda \"Hacienda\". El título debe ser visible (\"Constancia de Situación Fiscal\" o \"Cédula de Identificación Fiscal\" con código QR grande). Debe contener un RFC estructurado (ej. ABCDE12345XYZ).\n   - **Rechazo:** Una hoja en blanco, una foto borrosa de un papel cualquiera, o una foto de un personaje de ficción como Elaine NO SON UNA CONSTANCIA. Si no tiene el logo del SAT o el código QR de validación, clasifica como INVALIDO.\n\n3. **SOLICITUD (Formato preimpreso de papelería):**\n   - **Marcadores:** Una fotografía de un formulario preimpreso (normalmente fondo amarillo/verde) con cuadrículas vacías y texto rellenado a mano con tinta de pluma. Debe leerse claramente \"Solicitud de Empleo\".\n   - **Rechazo:** Un papel arrugado sin la estructura de cuadrícula preimpresa o una foto de un personaje no son solicitudes. Clasifica como INVALIDO.\n\n4. **CV (Currículum Vitae digital o impreso):**\n   - **Marcadores:** Estructura clara de CV, títulos de secciones legibles (Experiencia, Educación, Habilidades), un ROSTRO HUMANO REAL (si hay foto), y texto técnico legible.\n   - **Rechazo:** Una foto borrosa, un CV vacío o de broma (ej. \"CV del Guasón\"), clasifica como INVALIDO.\n\n5. **ANUNCIO:**\n   - **Marcadores:** Un cartel, imagen publicitaria o flyer impreso donde se ofrezca explícitamente una vacante de empleo, sueldo y requisitos.\n\n⛔ **REGLA DE ORO DE RECHAZO DE BROMAS:** Si la imagen contiene fotos de memes, capturas de pantalla de series o películas (como Elaine de Seinfeld), personajes de caricatura, animales, objetos (ej. una tasa de café), fotos de paisajes, comida, o si es totalmente ilegible, **CLASIFÍCALA ESTRICTAMENTE COMO INVALIDO**. Tienes prohibido inventar datos o asumir que es un documento borroso.\n\n--- FORMATO DE SALIDA (JSON ESTRICTO) ---\nResponde ÚNICAMENTE con JSON válido (sin bloques de código).\n\n{\n  \"tipo_documento\": \"INE, CV, SOLICITUD, ANUNCIO, CONSTANCIA o INVALIDO\",\n  \"nombre_completo\": \"Si es válido y visible. Si es INVALIDO, pon null.\",\n  \"correo\": \"Visible en CV/Solicitud. Si no, null.\",\n  \"institucion\": \"SAT, INE, SOLICITUD o null.\",\n  \"clave_elector\": \"Visible en INE. Si no, null.\",\n  \"curp\": \"Visible en INE/Constancia. Si no, null.\",\n  \"rfc\": \"Visible en Constancia/RFC. Si no, null.\",\n  \"veredicto\": \"VIABLE, CARTERA_GENERAL, RECHAZADO o null. Si es INVALIDO, veredicto: RECHAZADO.\",\n  \"experiencia\": \"Visible en CV/Solicitud. Si no, null.\",\n  \"motivo\": \"Si es INVALIDO, explica brevemente por qué lo rechazaste (ej. 'La imagen es una foto de un personaje de ficción, no un documento official').\",\n  \"mensaje_usuario\": \"Aquí va el mensaje según las reglas de abajo (si aplica).\"\n}\n\n--- REGLAS DE MENSAJES (mensaje_usuario) ---\n1. Si el veredicto es RECHAZADO (porque el documento es INVALIDO): \"¡Hola! Oye, estuve revisando la foto que me enviaste pero fíjate que no pude identificarla como un documento oficial válido (INE, RFC o Solicitud). 🧐 ¿Podrías apoyarme mandando de nuevo una foto clara de tu documento real por favor? ¡Así podré agilizar tu trámite! 😊\"\n2. Si el veredicto es VIABLE/CARTERA_GENERAL/REUBICACION: (Mantén tus reglas de mensajes estándar para CV y Solicitudes)\n3. Si el documento es CONSTANCIA (SAT) o INE: Pon null en el mensaje, el sistema se encargará.",
+        "inputType": "binary",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        2160,
+        1520
+      ],
+      "id": "0baab0f3-3c8b-4f6c-a975-99fcfb074122",
+      "name": "Analyze document",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "QZklxwEDRZxFLQzG",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "={{ $('Webhook').item.json.body.session }}",
+        "chatId": "={{ $('Webhook').item.json.body.payload.from }}",
+        "text": "=😅Veo que me enviaste un documento de Word. Por estrictas políticas de ciberseguridad, mi sistema corporativo no me permite abrir este tipo de archivos. \n\n🛡️*¿Podrías apoyarme guardando tu documento como PDF o simplemente tomándole una Fotografía clara 📸 y volviéndolo a enviar por aquí, por favor? ¡Gracias! ✨",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        1936,
+        1200
+      ],
+      "id": "a08ba67c-16ea-4969-9752-aadb6f228a42",
+      "name": "PedirPDF",
+      "credentials": {
+        "wahaApi": {
+          "id": "OBarvY73V8DKtYv0",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "897fa460-f948-43b3-8595-8d0df8270672",
+              "name": "text",
+              "value": "=[NOTA INTERNA: El usuario te acaba de mandar una imagen irrelevante (un meme, un sticker, una selfie, su mascota, etc.) en lugar de su documento. ¡Reacciona como humana! Ríete un poco (ej. '¡Ay! jaja' o '¡Qué buen sticker!') y dile en tono súper casual que crees que se equivocó porque ahí no ves sus datos. OJO, el usuario también escribió este texto junto a la imagen: '\" + $('Webhook').first().json.body.payload.body + \"'. Responde a su texto de forma natural y luego pídele amablemente que te mande la de su INE o CV para poder avanzar.]",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        3504,
+        1520
+      ],
+      "id": "b2e1666b-3f3b-4abc-bf51-80c337154033",
+      "name": "AvisoMeme"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "dedup-condition-01",
+              "leftValue": "={{ $json.message_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1440,
+        1360
+      ],
+      "id": "aa1b8137-cbb7-4224-9e32-85984933dca5",
+      "name": "¿Es Duplicado?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\n\n// 1. Leer el equipo desde el JSON externo\nconst rutaArchivo = '/home/node/virgo_files/functions/config_reclutadores.json';\nlet equipo = [];\n\ntry {\n    const rawData = fs.readFileSync(rutaArchivo, 'utf8');\n    equipo = JSON.parse(rawData);\n} catch (error) {\n    console.log('Error leyendo config_reclutadores.json: ' + error.message);\n    equipo = [{\n        nombre: 'Admin',\n        emoji: '🛡️',\n        telefono: '5213323379399',\n        calendar_id: 'sistemasdulvirgo@gmail.com'\n    }];\n}\n\n// 2. Limpiar espacios y filtrar solo los que tienen calendar_id válido\nequipo = equipo\n    .map(r => ({\n        ...r,\n        telefono: (r.telefono || '').trim(),       // FIX 1: quitar espacios\n        calendar_id: (r.calendar_id || '').trim()  // FIX 1: quitar espacios\n    }))\n    .filter(r => r.calendar_id.includes('@'));\n\n// 3. FIX 2: Eliminar calendar_ids duplicados\n//    Si dos reclutadores comparten calendario, solo se consulta una vez\n//    pero se notifica a ambos reclutadores\nconst calendariosVistos = {};\nconst equipoSinDuplicados = [];\n\nfor (const reclutador of equipo) {\n    if (!calendariosVistos[reclutador.calendar_id]) {\n        // Primer reclutador con este calendario\n        calendariosVistos[reclutador.calendar_id] = [reclutador];\n        equipoSinDuplicados.push(reclutador);\n    } else {\n        // Calendario ya existe: agregar este reclutador como \"extra\"\n        // para que también reciba notificación\n        calendariosVistos[reclutador.calendar_id].push(reclutador);\n    }\n}\n\n// 4. Calcular rango de mañana\nconst manana = new Date();\nmanana.setDate(manana.getDate() + 1);\n\nconst inicioManana = new Date(manana);\ninicioManana.setHours(0, 0, 0, 0);\n\nconst finManana = new Date(manana);\nfinManana.setHours(23, 59, 59, 999);\n\n// 5. FIX 3: Pasar datos del reclutador explícitamente en cada item\n//    incluyendo reclutadores extra que comparten el mismo calendario\nreturn equipoSinDuplicados.map(reclutador => ({\n    json: {\n        nombre_reclutador: reclutador.nombre,\n        emoji: reclutador.emoji || '📅',\n        telefono_reclutador: reclutador.telefono,\n        calendar_id: reclutador.calendar_id,\n        time_min: inicioManana.toISOString(),\n        time_max: finManana.toISOString(),\n        // Lista de todos los reclutadores que comparten este calendario\n        // (para notificar a cada uno)\n        reclutadores_extra: calendariosVistos[reclutador.calendar_id]\n            .slice(1) // el primero ya es el principal\n            .map(r => ({\n                nombre: r.nombre,\n                emoji: r.emoji || '📅',\n                telefono: r.telefono\n            }))\n    }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1376,
+        1760
+      ],
+      "id": "a5f081cc-f7dd-41f9-801f-525f18f77d31",
+      "name": "CargarReclutadores"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "={{ $json.calendar_id }}",
+          "mode": "id"
+        },
+        "limit": 20,
+        "timeMin": "={{ $json.time_min }}",
+        "timeMax": "={{ $json.time_max }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        -1152,
+        1760
+      ],
+      "id": "9d0032f6-b977-4be3-b3ca-3a994de99c3a",
+      "name": "BuscarEventosDinamico",
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "UdvlrdeY3pl15MOk",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "fix2-cond-01",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -928,
+        1760
+      ],
+      "id": "dd9a42ea-525c-4057-88c3-b62d8371530b",
+      "name": "¿TieneEventos?"
+    },
+    {
+      "parameters": {
+        "jsCode": "const resultados = [];\nconst eventos = $input.all();\nconst eventosProcesados = new Set(); \n\nlet todosLosReclutadores = [];\ntry {\n    todosLosReclutadores = $('CargarReclutadores').all().map(r => r.json);\n} catch(e) {}\n\nfor (let i = 0; i < eventos.length; i++) {\n    const evento = eventos[i].json;\n    \n    if (!evento.id || eventosProcesados.has(evento.id)) continue;\n    eventosProcesados.add(evento.id);\n\n    const descripcion = evento.description || '';\n    \n    // 🔎 BUSCAMOS EL TELÉFONO (Filtro de seguridad)\n    const telMatch = descripcion.match(/Tel[:\\s]*([0-9]{10,13})/i);\n    const telefonoCandidato = telMatch ? telMatch[1] : null;\n\n    // 🚫 SI NO HAY TELÉFONO, NO ES UNA CITA LISTA. LA IGNORAMOS.\n    if (!telefonoCandidato) {\n        continue; \n    }\n\n    const nombreMatch = descripcion.match(/Nombre[:\\s]*([^\\n]+)/i);\n    const nombreCandidato = nombreMatch ? nombreMatch[1].trim() : 'Nombre';\n\n    let horaFormateada = 'hora por confirmar';\n    try {\n        const fechaISO = evento.start?.dateTime || evento.start?.date;\n        const fecha = new Date(fechaISO);\n        horaFormateada = fecha.toLocaleString('es-MX', {\n            timeZone: 'America/Mexico_City',\n            weekday: 'long',\n            day: 'numeric',\n            month: 'long',\n            hour: '2-digit',\n            minute: '2-digit',\n            hour12: true\n        });\n    } catch(e) {}\n\n    let nombreReclutador = 'Tu equipo';\n    let emojiReclutador = '📅';\n    let telefonoReclutador = '5213323379399';\n    let reclutadoresExtra = [];\n\n    const recData = todosLosReclutadores.find(r => \n        evento.organizer?.email === r.calendar_id || \n        evento.creator?.email === r.calendar_id ||\n        (evento.attendees && evento.attendees.some(a => a.email === r.calendar_id))\n    );\n\n    const reclutadorFinal = recData || (todosLosReclutadores.length > 0 ? todosLosReclutadores[0] : null);\n\n    if (reclutadorFinal) {\n        nombreReclutador = reclutadorFinal.nombre_reclutador || nombreReclutador;\n        emojiReclutador = reclutadorFinal.emoji || emojiReclutador;\n        telefonoReclutador = reclutadorFinal.telefono_reclutador || telefonoReclutador;\n        reclutadoresExtra = reclutadorFinal.reclutadores_extra || [];\n    }\n\n    const mensajeReclutador = `⏰ *¡RECORDATORIO DE ENTREVISTA MAÑANA!* ${emojiReclutador}\\n\\nHola ${nombreReclutador}, tienes una cita programada:\\n\\n👤 *Candidato:* ${nombreCandidato}\\n📱 *Tel:* wa.me/${telefonoCandidato}\\n🕒 *Cuando:* ${horaFormateada}\\n\\n📝 _Evento: ${evento.summary || 'Entrevista'}_`;\n\n    const mensajeCandidato = `Hola ${nombreCandidato}, te recordamos que mañana tienes tu entrevista:\\n\\n🕒 ${horaFormateada}\\n\\nTe esperamos. Cualquier duda, escríbenos. ✨`;\n\n    resultados.push({\n        json: {\n            mensaje_reclutador: mensajeReclutador,\n            telefono_reclutador: telefonoReclutador,\n            mensaje_candidato: mensajeCandidato,\n            telefono_candidato: telefonoCandidato,\n            evento_valido: true,\n            reclutadores_extra: reclutadoresExtra\n        }\n    });\n}\n\nreturn resultados;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -704,
+        1760
+      ],
+      "id": "fc66ff65-3be0-4918-ab0f-eb501ba9c09b",
+      "name": "PrepararAvisoDinamico"
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "=default",
+        "chatId": "={{ $json.telefono_reclutador }}@c.us",
+        "text": "={{ $json.mensaje_reclutador }}",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        -480,
+        1664
+      ],
+      "id": "59a63462-b7c5-4b47-96ca-c61b2516c826",
+      "name": "NotificarReclutador",
+      "credentials": {
+        "wahaApi": {
+          "id": "OBarvY73V8DKtYv0",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "fix2-cond-candidato",
+              "leftValue": "={{ $json.telefono_candidato }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -480,
+        1856
+      ],
+      "id": "eba1afef-32c4-4f12-b072-48b32e23a9cb",
+      "name": "¿HayTelCandidato?"
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "=default",
+        "chatId": "={{ $json.telefono_candidato }}@c.us",
+        "text": "={{ $json.mensaje_candidato }}",
+        "linkPreview": false,
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        -256,
+        1856
+      ],
+      "id": "fc4f53f3-960d-40f0-b5ea-8e2025fee0d4",
+      "name": "NotificarCandidato",
+      "credentials": {
+        "wahaApi": {
+          "id": "OBarvY73V8DKtYv0",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// CONFIGURACIÓN\nconst DIAS_LIMITE = 30; \nconst CARPETA_NOMBRE = 'CV_Pruebas';\nconst ahora = new Date();\nconst resultados = [];\n\nfor (const item of items) {\n    const archivo = item.json;\n\n    // Saltar carpetas\n    if (archivo.mimeType === 'application/vnd.google-apps.folder') continue;\n\n    // Buscar la fecha sin importar cómo la llame Google Drive\n    const fechaTexto = archivo.createdTime || archivo.modifiedTime || archivo.sharedWithMeTime;\n    \n    let diasDesdeCreacion = 0; \n\n    if (fechaTexto) {\n        const fechaCreacion = new Date(fechaTexto);\n        // Diferencia en días\n        diasDesdeCreacion = Math.floor((ahora - fechaCreacion) / (1000 * 60 * 60 * 24));\n    } else {\n        // Si Google Drive se pone rebelde y oculta la fecha, asumimos que es viejo\n        // (Es seguro porque el nodo anterior ya filtró los nuevos)\n        diasDesdeCreacion = 999; \n    }\n\n    if (diasDesdeCreacion >= DIAS_LIMITE) {\n        // Blindaje para el tamaño del archivo (por si también lo oculta)\n        const tamañoMB = archivo.size ? (parseInt(archivo.size) / (1024 * 1024)).toFixed(2) : '1.50';\n        \n        resultados.push({\n            json: {\n                archivo_id: archivo.id,\n                archivo_nombre: archivo.name,\n                fecha_creacion: fechaTexto || \"Fecha oculta por API\",\n                dias_guardado: diasDesdeCreacion,\n                tamaño_mb: tamañoMB,\n                carpeta: CARPETA_NOMBRE,\n                dias_limite_config: DIAS_LIMITE\n            }\n        });\n    }\n}\n\nif (resultados.length === 0) {\n    return [{ json: { skip: true, nada_que_borrar: true, mensaje: `No hay archivos mayores a ${DIAS_LIMITE} días.` } }];\n}\n\nreturn resultados;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1264,
+        688
+      ],
+      "id": "136ce2b7-bcac-48eb-b04a-145e9e427a45",
+      "name": "FiltrarViejos"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "fix3-cond-01",
+              "leftValue": "={{ $json.nada_que_borrar }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1040,
+        688
+      ],
+      "id": "55c25292-5bcd-44d4-a945-5647d7483f49",
+      "name": "¿HayQueBorar?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO system_logs (\n    severity,\n    node_name,\n    execution_id,\n    error_message,\n    error_details,\n    user_phone\n) VALUES (\n    'info',\n    'LimpiezaDrive',\n    $1,\n    $2,\n    $3,\n    'SISTEMA'\n);",
+        "options": {
+          "queryReplacement": "={{ [\n  $execution.id,\n  'Archivo borrado de Drive: ' + $json.archivo_nombre,\n  JSON.stringify({ id: $json.archivo_id, carpeta: $json.carpeta, dias: $json.dias_guardado, tamaño_mb: $json.tamaño_mb })\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -816,
+        592
+      ],
+      "id": "262f7deb-d718-43ed-8a17-07875c7fd94b",
+      "name": "LogBorrado",
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "deleteFile",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $('FiltrarViejos').item.json.archivo_id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -816,
+        784
+      ],
+      "id": "393bd5b4-324c-4d3c-8ab8-bf176b92d644",
+      "name": "BorrarArchivo",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "qlxKSpDPGqjS6Vp0",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Miramos directo al nodo original FiltrarViejos para sacar los nombres y megabytes\nconst archivos = $('FiltrarViejos').all().map(i => i.json).filter(a => !a.nada_que_borrar);\n\nif (archivos.length === 0) return [{ json: { skip: true } }];\n\nconst espacioMB = archivos.reduce((acc, a) => acc + parseFloat(a.tamaño_mb || 0), 0).toFixed(2);\nconst espacioGB = (espacioMB / 1024).toFixed(3);\n\nconst listaArchivos = archivos.map(a => `• ${a.archivo_nombre} (${a.tamaño_mb} MB)`).join('\\n');\n\nconst mensaje = `🧹 *LIMPIEZA AUTOMÁTICA DE DRIVE* 🗂️\\n\\n✅ Archivos borrados: ${archivos.length}\\n💾 Espacio liberado: ~${espacioMB} MB (${espacioGB} GB)\\n\\n📋 *Detalle:*\\n${listaArchivos}\\n\\n_Carpeta: CV_Pruebas_`;\n\nreturn [{ json: { mensaje_resumen: mensaje, archivos_borrados: archivos.length, espacio_mb: espacioMB } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -592,
+        784
+      ],
+      "id": "012f70ab-f8e0-435a-b667-e99d76180825",
+      "name": "ArmarResumen"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "fix3-cond-skip",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -368,
+        784
+      ],
+      "id": "d6bf8232-de0c-4651-9b81-cde4a530202d",
+      "name": "¿EnviarResumen?"
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "=default",
+        "chatId": "=5213323379399@c.us",
+        "text": "={{ $json.mensaje_resumen }}",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        -144,
+        784
+      ],
+      "id": "7876b285-ce6a-48e9-82f3-23e9548482ca",
+      "name": "ReporteLimpiezaAdmin",
+      "credentials": {
+        "wahaApi": {
+          "id": "OBarvY73V8DKtYv0",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtHour": 3
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -1696,
+        592
+      ],
+      "id": "21bedd11-c68e-4c66-b6d5-029a1997ff4d",
+      "name": "Limpieza"
+    },
+    {
+      "parameters": {
+        "resource": "fileFolder",
+        "searchMethod": "query",
+        "queryString": "=createdTime < '{{$today.minus({days: 15}).format(\"yyyy-MM-dd\")}}T00:00:00'",
+        "returnAll": true,
+        "filter": {
+          "folderId": {
+            "__rl": true,
+            "value": "1JdlL8leGCYHldacxDtyTNxWrtZ59o2C-",
+            "mode": "list",
+            "cachedResultName": "CV",
+            "cachedResultUrl": "https://drive.google.com/drive/folders/1JdlL8leGCYHldacxDtyTNxWrtZ59o2C-"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -1488,
+        688
+      ],
+      "id": "66775d2f-a2e7-47f8-b5a7-a1baf1f47351",
+      "name": "BuscarArchivosViejos",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "qlxKSpDPGqjS6Vp0",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\n\n// 1. Obtener a qué nave pertenece este candidato\nconst dbData = $('ObtenerDatosCandidato').first()?.json || {};\nlet naveActual = dbData.nave_interes || \"1\";\n\nlet detalleTxt = \"Información no disponible.\";\n\n// 2. 🚀 LÓGICA DUAL: Intentar leer archivo .md primero, si no, buscar el .txt\ntry {\n    detalleTxt = fs.readFileSync(`/home/node/virgo_files/prompts/detalle_vacantes_${naveActual}.md`, 'utf8');\n} catch(e) {\n    try {\n        detalleTxt = fs.readFileSync(`/home/node/virgo_files/prompts/detalle_vacantes_${naveActual}.txt`, 'utf8');\n    } catch(error) { \n        console.log(`Error al leer detalles_vacantes_${naveActual} en la rama de CV`); \n    }\n}\n\n// 3. Se lo inyectamos al JSON para que Gemini evalúe con el catálogo correcto\nfor (const item of items) {\n    item.json.detalle_vacantes = detalleTxt;\n}\n\nreturn items;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1936,
+        1520
+      ],
+      "id": "cae71f0b-5197-4abc-bdc2-3f6882de860b",
+      "name": "Vacantes"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -1712,
+        272
+      ],
+      "id": "1588d428-3cb7-4b9f-8677-a6a7fafb822f",
+      "name": "Reloj"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b84f0751-1208-4006-9e82-8e2941c37234",
+              "leftValue": "={{ $('Webhook').item.json.body.payload.body }}",
+              "rightValue": "/reset_sofia",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1616,
+        1344
+      ],
+      "id": "5b128324-3645-4934-823c-1d3cd33a55c0",
+      "name": "If2"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM candidatos WHERE telefono = '5213322589901';\nDELETE FROM conversation_history WHERE telefono = '5213322589901';",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1440,
+        1216
+      ],
+      "id": "01ec2d6f-9ee3-4b2d-812f-5faf75a099db",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "=default",
+        "chatId": "=5213323379399@c.us",
+        "text": "Resteo listo",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        -1264,
+        1216
+      ],
+      "id": "375d0041-99e5-46ac-ad55-34d2772ef93e",
+      "name": "Borrado",
+      "credentials": {
+        "wahaApi": {
+          "id": "OBarvY73V8DKtYv0",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "=default",
+        "chatId": "=5213323379399@c.us",
+        "text": "=🚨 *ALERTA CRÍTICA EN BOT* 🚨\n👤 *Usuario:* {{ $json.telefono || 'Desconocido (Fallo antes de GetInfo)' }}\n❌ *Error:* {{ $('Error Trigger').item.json.execution.error.message }}\n📍 *Nodo:* {{ $('Error Trigger').item.json.execution.lastNodeExecuted }}\n🆔 *ID:* {{ $('Error Trigger').item.json.execution.id }}",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        -1408,
+        1008
+      ],
+      "id": "cbeb7e5b-a52b-4999-bb2f-81745f70440c",
+      "name": "AlertaAdmin",
+      "retryOnFail": true,
+      "credentials": {
+        "wahaApi": {
+          "id": "OBarvY73V8DKtYv0",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO system_logs (severity, node_name, execution_id, error_message, error_details, user_phone) \nVALUES ('high', $1, $2, $3, $4, $5);",
+        "options": {
+          "queryReplacement": "={{ $node[\"Error Trigger\"].json.execution.lastNodeExecuted }}, {{ $node[\"Error Trigger\"].json.execution.id }}, {{ $node[\"Error Trigger\"].json.execution.error.message }}, {{ JSON.stringify($node[\"Error Trigger\"].json) }}, {{ $node[\"BuscarTelefono\"].json[\"telefono\"] || 'Desconocido' }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1248,
+        1008
+      ],
+      "id": "b87cdd59-69c7-43b4-900a-88e15ce62f94",
+      "name": "LogError",
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\n\n// 1. Mensaje entrante\nconst item = $input.first().json;\nconst remitente = item.body?.payload?.from || \"\";\n\n// 2. Lista oficial de reclutadores de tu archivo\nlet equipo = [];\ntry {\n    equipo = JSON.parse(fs.readFileSync('/vf/virgo_data/functions/config_reclutadores/config_reclutadores.json', 'utf8'));\n} catch (error) {\n}\n\n// 3. Revisamos si el número coincide con alguien de tu equipo\nfor (const reclutador of equipo) {\n    if (reclutador.telefono && remitente.includes(reclutador.telefono.trim())) {\n        return [];\n    }\n}\nreturn [{ json: item }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1072,
+        1360
+      ],
+      "id": "ae5ab701-d613-46d3-8858-9d1768f260b0",
+      "name": "IgnorarEquipo"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE candidatos\nSET ultima_ejecucion_id = $1\nWHERE telefono = $2;",
+        "options": {
+          "queryReplacement": "={{ [ $execution.id, $('GetInfo').item.json.number ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -720,
+        1504
+      ],
+      "id": "9d4d466b-ae47-47e9-81c7-0a0791149c49",
+      "name": "ID_TEL",
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT telefono FROM candidatos WHERE ultima_ejecucion_id = $1 LIMIT 1;",
+        "options": {
+          "queryReplacement": "={{ $json.execution.id }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1568,
+        1008
+      ],
+      "id": "07627e49-8a17-4759-bee9-25beb9303b1c",
+      "name": "BuscarTelefono",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 3
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -1712,
+        1008
+      ],
+      "id": "7e4ab054-06fa-4751-9cda-feb9faa9766e",
+      "name": "Wait1",
+      "webhookId": "db0a92eb-4a68-4a9e-96b5-3214994d80aa"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c1d1cb33-adc7-4fd3-842d-9fa9a2cc27b9",
+              "leftValue": "={{ $('GetInfo').item.json.number }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -912,
+        1376
+      ],
+      "id": "fb60a18b-b913-4dfb-aa17-b5624548988c",
+      "name": "If3"
+    },
+    {
+      "parameters": {
+        "jsCode": "const dbData = $('ObtenerDatosCandidato').first()?.json || {};\n// Rescatamos el mensaje que la IA acaba de generar\nconst mensajeBot = $('¿Ubicacion?').first()?.json?._data?.body || \"\";\nconst nave = dbData.nave_interes || \"1\";\n\nlet lat = 20.6470157;\nlet lon = -103.3832611;\nlet titulo = \"Oficinas Matriz\";\n\n// 🧠 REGLA INTELIGENTE: Si el mensaje habla de la cita, FORZAMOS la Matriz\nif (mensajeBot.includes(\"Lugar de Entrevista\") || mensajeBot.includes(\"CITA_CONFIRMADA\")) {\n    lat = 20.6470157;\n    lon = -103.3832611;\n    titulo = \"📍 Oficinas Matriz (Entrevistas)\";\n} \n// Si NO es la entrevista, mandamos la ubicación de la Nave de trabajo\nelse {\n    if (nave == \"1\") { lat = 20.6470157; lon = -103.3832611; titulo = \"Dulcería Virgo\"; }\n    else if (nave == \"2\"){ lat = 20.6445581; lon = -103.363051; titulo = \"CEDIS Virgo\"; }\n    // else if (nave == \"4\") { lat = 20.6494763; lon = -103.3824028; titulo = \"Desechables Virgo\"; }\n    else if (nave == \"3\"){ lat = 20.6470157; lon = -103.3832611; titulo = \"Materias Primas\"; }\n    // else if (nave == \"5\"){ lat = 20.6470157; lon = -103.3832611; titulo = \"Sonrisas\"; }\n    else if (nave == \"4\"){ lat = 20.6470157; lon = -103.3832611; titulo = \"Vitali\"; }\n    else if (nave == \"5\"){ lat = 20.6470157; lon = -103.3832611; titulo = \"Talentos\"; }\n}\n\nreturn { json: { latitud: lat, longitud: lon, titulo: titulo } };"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6288,
+        1184
+      ],
+      "id": "72c9db79-dfc4-47a8-a8e2-9efa9d2a25d6",
+      "name": "Naves",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO processed_webhooks (message_id)\nVALUES ($1)\nON CONFLICT (message_id) DO NOTHING\nRETURNING message_id;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook').item.json.body.payload.id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1808,
+        1344
+      ],
+      "id": "974923f6-554a-4718-a935-bac2499e2cdb",
+      "name": "DeduplicarMensaje",
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a596263b-a268-448e-8e15-49a5de76016a",
+              "leftValue": "={{ $('Webhook').item.json.body.event }}",
+              "rightValue": "message",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "1d1c4cfa-d6b7-4930-8779-fc34ede4839d",
+              "leftValue": "={{ Math.floor(Date.now() / 1000) - $json.body.payload.timestamp }}",
+              "rightValue": 120,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            },
+            {
+              "id": "db9e8b7b-1923-4e32-882e-7990f0012cd3",
+              "leftValue": "={{ $json.body.payload.type }}",
+              "rightValue": "protocol",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            },
+            {
+              "id": "1ed1e1bd-82ea-45c5-aa04-5e2f8dbaa897",
+              "leftValue": "={{ $json.body.payload.type }}",
+              "rightValue": "e2e_notification",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            },
+            {
+              "id": "b7b4bedc-4f1b-474d-8048-87a2715df1c5",
+              "leftValue": "={{ $json.body.payload.fromMe }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1968,
+        1360
+      ],
+      "id": "04fc1305-62cb-4c7d-a207-23cbc56f592c",
+      "name": "¿Es Mensaje?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT grupo, ultimo_index, updated_at FROM reclutadores_turno;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        544,
+        1552
+      ],
+      "id": "a427d806-236b-448e-b0db-5113540afce1",
+      "name": "Execute a SQL query1",
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1H3Vke2GcI8EuXruJnsP5dZ3Ux5kt024Qsfucu0QC6eA",
+          "mode": "list",
+          "cachedResultName": "Candidatos",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1H3Vke2GcI8EuXruJnsP5dZ3Ux5kt024Qsfucu0QC6eA/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Candidatos",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1H3Vke2GcI8EuXruJnsP5dZ3Ux5kt024Qsfucu0QC6eA/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Telefono": "={{ $json.telefono }}",
+            "Nombre": "={{ $json.nombre_ine || $json.nombre_chat || '' }}",
+            "Edad": "={{ $json.edad || '' }}",
+            "Correo": "={{ $json.correo || '' }}",
+            "Dirección": "={{ $json.cv_manual?.direccion || $json.datos_ine?.direccion_completa || '' }}",
+            "Vacante": "={{ $json.vacante_interes }}",
+            "Entrego CV/Solicitud": "={{ $json.tiene_cv !== false ? 'Si' : 'Ni' || $json.cv_manual !== null ? 'No' : 'Si'}}",
+            "Experiencia": "={{ $json.cv_manual?.experiencia || $json.experiencia || '' }}",
+            "Entrego INE": "={{ $json.datos_ine !== null ? 'Si' : 'No'}}",
+            "CURP": "={{ $json.datos_ine?.curp || '' }}",
+            "RFC": "={{ $json.datos_rfc ? (typeof $json.datos_rfc === 'string' ? JSON.parse($json.datos_rfc).rfc : $json.datos_rfc.rfc) : '' }}",
+            "Ultima Actualizacion": "={{ $json.updated_at ? $json.updated_at.toDateTime().format('dd-MM-yyyy') : '' }}",
+            "Privacidad Aceptada": "={{ $json.privacidad_aceptada ? 'Sí ✅' : 'Pendiente ⏳' }}",
+            "Fecha Entrevista": "={{ $json.fecha_entrevista || \"\" }}",
+            "Veredicto": "={{ $json.veredicto }}",
+            "Link CV": "={{ $json.link_cv }}",
+            "FILTROS_TECNICOS": "={{ $json.filtros_tecnicos }}",
+            "Motivo": "={{ $json.motivo_analisis }}",
+            "ID_Match": "={{ $json.telefono }}_{{ $json.fecha_entrevista }}",
+            "Nave": "={{ $json.nave_interes == '1' ? 'Dulcería (Mandarina)' : $json.nave_interes == '2' ? 'CEDIS' : $json.nave_interes == '3' ? 'Materias Primas' : $json.nave_interes == '4' ? 'Desechables' : $json.nave_interes == '5' ? 'Sonrisas' : 'No asignada' }}"
+          },
+          "matchingColumns": [
+            "ID_Match"
+          ],
+          "schema": [
+            {
+              "id": "Nombre",
+              "displayName": "Nombre",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Edad",
+              "displayName": "Edad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Telefono",
+              "displayName": "Telefono",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Correo",
+              "displayName": "Correo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Dirección",
+              "displayName": "Dirección",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Vacante",
+              "displayName": "Vacante",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Entrego CV/Solicitud",
+              "displayName": "Entrego CV/Solicitud",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Experiencia",
+              "displayName": "Experiencia",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Entrego INE",
+              "displayName": "Entrego INE",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "RFC",
+              "displayName": "RFC",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "CURP",
+              "displayName": "CURP",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Ultima Actualizacion",
+              "displayName": "Ultima Actualizacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Privacidad Aceptada",
+              "displayName": "Privacidad Aceptada",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Fecha Entrevista",
+              "displayName": "Fecha Entrevista",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Veredicto",
+              "displayName": "Veredicto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Motivo",
+              "displayName": "Motivo",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Link CV",
+              "displayName": "Link CV",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "FILTROS_TECNICOS",
+              "displayName": "FILTROS_TECNICOS",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ID_Match",
+              "displayName": "ID_Match",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Nave",
+              "displayName": "Nave",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -1264,
+        272
+      ],
+      "id": "9bb56a09-0f9f-44c4-bd2a-367b3581cafb",
+      "name": "Actualizar Excel Maestro",
+      "retryOnFail": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "iF9ddFN2XS1egKEm",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "6d3115e6-6b39-4024-89e6-140be8c64331",
+              "leftValue": "={{ $('DefinirAgenda').first().json.grupo_turno}}",
+              "rightValue": "null",
+              "operator": {
+                "type": "boolean",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        4000,
+        1616
+      ],
+      "id": "e5f49e34-8b80-446b-9553-7cef34049183",
+      "name": "If5"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO reclutadores_turno (grupo, ultimo_index)\nVALUES ($1, 0)\nON CONFLICT (grupo) DO UPDATE\n    SET ultimo_index = (reclutadores_turno.ultimo_index + 1) % $2,\n        updated_at   = NOW()\nRETURNING ultimo_index;",
+        "options": {
+          "queryReplacement": "={{ $('DefinirAgenda').first().json.grupo_turno }}, {{ $('DefinirAgenda').first().json.turno_total }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4160,
+        1504
+      ],
+      "id": "6439a4e8-e655-49fe-9986-9bb04f769892",
+      "name": "TurnoReclutador",
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Este nodo corre DESPUÉS de TurnoReclutador (Postgres)\n// Si solo había 1 candidato, DefinirAgenda ya lo resolvió y grupo_turno = null\n// Si había varios, TurnoReclutador devuelve el index que toca ahora\n\nconst agenda = $('DefinirAgenda').first().json;\n\n// Caso 1: sin turno (1 solo reclutador o gerente fallback)\nif (!agenda.grupo_turno) {\n    return { json: agenda };\n}\n\n// Caso 2: turno activo → usar el index devuelto por Postgres\nconst turnoIndex = $input.first().json.ultimo_index ?? 0;\nconst candidatos = JSON.parse(agenda.candidatos_turno);\nconst asignado = candidatos[turnoIndex];\n\nreturn {\n    json: {\n        nombre_reclutador: asignado.nombre,\n        telefono_reclutador: asignado.telefono,\n        calendar_id: asignado.calendar_id,\n        vacante_detectada: agenda.vacante_detectada,\n        nave_candidato: agenda.nave_candidato,\n        grupo_turno: agenda.grupo_turno,\n        turno_index: turnoIndex\n    }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4336,
+        1632
+      ],
+      "id": "1c44d9de-f54c-4055-a315-8905781acdd2",
+      "name": "ResolverReclutador"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ JSON.stringify($json.detected_codes || []).includes('\"code\":\"HUMAN_ALERT\"') }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equals"
+                    },
+                    "id": "ef374dac-fba0-409c-929d-e1cb06e2f869"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "52646cab-dd03-458e-9d42-ee024a05c108",
+                    "leftValue": "={{ $json.es_cv_manual }}",
+                    "rightValue": true,
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "1bb6d14a-f338-4420-b76d-185931755abd",
+                    "leftValue": "={{ $('Leer').item.json.message_to_user }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEmpty",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Chat Normal"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "none"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        5584,
+        1216
+      ],
+      "id": "4c00b895-b676-4ac2-b034-2098a6bf1c7c",
+      "name": "Switch1"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Utiliza esta herramienta para gestionar el calendario.\n⚠️ CONTEXTO TEMPORAL CRÍTICO:\n- La fecha y hora actual EXACTA es: {{ $now.setZone('America/Mexico_City').toString() }}\n- El día de la semana es: {{ $now.setZone('America/Mexico_City').toFormat('cccc') }}\n- El año actual es: {{ $now.setZone('America/Mexico_City').year }}\n\nINSTRUCCIONES:\n1. Calcula todas las fechas relativas (\"mañana\", \"el viernes\", \"próxima semana\") basándote en la FECHA ACTUAL de arriba.\n2. JAMÁS agendes citas en el pasado (años 2024, 2025).\n3. Si el usuario dice \"viernes\" y hoy es lunes 16, el viernes es 20 (del mismo mes y año).\n4. DURACIÓN ESTRICTA: El evento debe durar exactamente 1 hora. El parámetro 'end' debe ser exactamente 60 minutos después del parámetro 'start'.",
+        "calendar": {
+          "__rl": true,
+          "value": "={{ $('ResolverReclutador').item.json.calendar_id }}",
+          "mode": "id"
+        },
+        "start": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Start', ``, 'string') }}",
+        "end": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('End', ``, 'string') }}",
+        "additionalFields": {
+          "description": "=Candidato: {{ $('ObtenerDatosCandidato').item.json.nombre }}\nTel: {{ $('ObtenerDatosCandidato').item.json.telefono }}\n\n--- DATOS VERIFICADOS (INE) ---\nNombre: {{ $('ObtenerDatosCandidato').item.json.datos_ine.nombre_completo }}\nDirección: {{ $('ObtenerDatosCandidato').item.json.datos_ine.direccion_completa }}\nCURP: {{ $('ObtenerDatosCandidato').item.json.datos_ine.curp }}\nFecha Nacimiento: {{ $('ObtenerDatosCandidato').item.json.datos_ine.fecha_nacimiento }}\n\n--- NOTAS DE IA ---\n{{ $fromAI(\"summary\", \"Resumen de la cita\", \"string\") }}",
+          "summary": "={{ $fromAI(\"summary\", \"Resumen de la cita\", \"string\") }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        5008,
+        1856
+      ],
+      "id": "b1b0df19-52e3-42f6-9e26-01de5555ff07",
+      "name": "CrearEvento",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "UdvlrdeY3pl15MOk",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Usa esta herramienta para dos cosas: 1) Verificar disponibilidad de horarios. 2) BUSCAR una cita existente si el usuario quiere cancelar o cambiar fecha (busca en un rango amplio de fechas). Devuelve la lista de eventos con sus detalles e IDs.\n\nCONTEXTO TEMPORAL CRÍTICO:\n- La fecha y hora actual EXACTA es: {{ $now.setZone('America/Mexico_City').toString() }}\n- El día de la semana es: {{ $now.setZone('America/Mexico_City').toFormat('cccc') }}\n- El año actual es: {{ $now.setZone('America/Mexico_City').year }}\n\nINSTRUCCIONES:\n1. Calcula todas las fechas relativas (\"mañana\", \"el viernes\", \"próxima semana\") basándote en la FECHA ACTUAL de arriba.\n2. JAMÁS agendes citas en el pasado (años 2024, 2025).\n3. Si el usuario dice \"viernes\" y hoy es lunes 16, el viernes es 20 (del mismo mes y año).\n",
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "={{ $('ResolverReclutador').item.json.calendar_id }}",
+          "mode": "id"
+        },
+        "limit": 10,
+        "timeMin": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('After', ``, 'string') }}",
+        "timeMax": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Before', ``, 'string') }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        4896,
+        1840
+      ],
+      "id": "9906a3ce-c149-42d9-a9bc-f2b9831caa85",
+      "name": "RevisarCalendario",
+      "notesInFlow": false,
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "UdvlrdeY3pl15MOk",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "calendar": {
+          "__rl": true,
+          "value": "={{ $('ResolverReclutador').item.json.calendar_id }}",
+          "mode": "id"
+        },
+        "eventId": "={{ $fromAI('Event_ID', 'ID del evento a borrar', 'string') }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        5120,
+        1856
+      ],
+      "id": "480717d6-ccc0-4024-89de-528407dc149a",
+      "name": "Eliminar",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "UdvlrdeY3pl15MOk",
+          "name": "Google Calendar account"
+        }
+      }
+    }
+  ],
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "headers": {
+            "accept": "application/json, text/plain, */*",
+            "content-type": "application/json",
+            "user-agent": "WAHA/2026.3.2",
+            "x-webhook-request-id": "aqr81cmqilxzzg",
+            "x-webhook-timestamp": "1781733200236",
+            "content-length": "3621",
+            "accept-encoding": "gzip, compress, deflate, br",
+            "host": "n8n:5678",
+            "connection": "keep-alive"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "id": "evt_01kvbs64bcrppkfv1b3ah2y9r9",
+            "timestamp": 1781733200236,
+            "event": "message",
+            "session": "default",
+            "metadata": {},
+            "me": {
+              "id": "5213332483278@c.us",
+              "pushName": "Sofia"
+            },
+            "payload": {
+              "id": "false_281453535449210@lid_AC63ABD04DB668E9164C058CA40B5852",
+              "timestamp": 1781733200,
+              "from": "281453535449210@lid",
+              "fromMe": false,
+              "source": "app",
+              "to": "5213332483278@c.us",
+              "body": "Soy su esposo",
+              "hasMedia": false,
+              "media": null,
+              "ack": 1,
+              "ackName": "SERVER",
+              "location": null,
+              "vCards": [],
+              "_data": {
+                "id": {
+                  "fromMe": false,
+                  "remote": "281453535449210@lid",
+                  "id": "AC63ABD04DB668E9164C058CA40B5852",
+                  "_serialized": "false_281453535449210@lid_AC63ABD04DB668E9164C058CA40B5852"
+                },
+                "viewed": false,
+                "body": "Soy su esposo",
+                "type": "chat",
+                "t": 1781733200,
+                "clientReceivedTsMillis": 1781733199211,
+                "serverStoreTimeMicros": 1781733200421701,
+                "notifyName": "sarahi",
+                "from": "281453535449210@lid",
+                "to": "5213332483278@c.us",
+                "ack": 1,
+                "invis": false,
+                "isNewMsg": true,
+                "star": false,
+                "kicNotified": false,
+                "recvFresh": true,
+                "isFromTemplate": false,
+                "isAdsMedia": false,
+                "pollInvalidated": false,
+                "isSentCagPollCreation": false,
+                "latestEditMsgKey": null,
+                "latestEditSenderTimestampMs": null,
+                "mentionedJidList": [],
+                "groupMentions": [],
+                "isEventCanceled": false,
+                "eventInvalidated": false,
+                "isVcardOverMmsDocument": false,
+                "isForwarded": false,
+                "isQuestion": false,
+                "isSpoiler": false,
+                "questionReplyQuotedMessage": null,
+                "questionResponsesCount": 0,
+                "readQuestionResponsesCount": 0,
+                "forwardsCount": 0,
+                "hasReaction": false,
+                "newsletterAdminProfile": null,
+                "expiredTimestamp": null,
+                "viewMode": "VISIBLE",
+                "messageSecret": {
+                  "0": 85,
+                  "1": 115,
+                  "2": 210,
+                  "3": 242,
+                  "4": 54,
+                  "5": 119,
+                  "6": 11,
+                  "7": 241,
+                  "8": 95,
+                  "9": 171,
+                  "10": 175,
+                  "11": 126,
+                  "12": 142,
+                  "13": 198,
+                  "14": 6,
+                  "15": 234,
+                  "16": 121,
+                  "17": 230,
+                  "18": 142,
+                  "19": 196,
+                  "20": 170,
+                  "21": 135,
+                  "22": 149,
+                  "23": 247,
+                  "24": 92,
+                  "25": 22,
+                  "26": 24,
+                  "27": 35,
+                  "28": 241,
+                  "29": 241,
+                  "30": 152,
+                  "31": 80
+                },
+                "productHeaderImageRejected": false,
+                "lastPlaybackProgress": 0,
+                "isDynamicReplyButtonsMsg": false,
+                "isCarouselCard": false,
+                "parentMsgId": null,
+                "callSilenceReason": null,
+                "isVideoCall": false,
+                "callDuration": null,
+                "callCreator": null,
+                "callParticipants": null,
+                "isCallLink": null,
+                "callLinkToken": null,
+                "terminatedByDeviceSwitch": null,
+                "selfOtherDeviceConnected": null,
+                "bytesSent": null,
+                "bytesReceived": null,
+                "isMdHistoryMsg": false,
+                "stickerSentTs": 0,
+                "isAvatar": false,
+                "lastUpdateFromServerTs": 0,
+                "invokedBotWid": null,
+                "bizBotType": null,
+                "aiMediaCollectionInfo": null,
+                "expectedImageCount": null,
+                "expectedVideoCount": null,
+                "botResponseTargetId": null,
+                "botPluginType": null,
+                "botPluginReferenceIndex": null,
+                "botPluginSearchProvider": null,
+                "botPluginSearchUrl": null,
+                "botPluginSearchQuery": null,
+                "botPluginMaybeParent": false,
+                "botReelPluginThumbnailCdnUrl": null,
+                "botMessageDisclaimerText": null,
+                "botSessionTransparencyType": null,
+                "botMsgBodyType": null,
+                "botModeSelection": null,
+                "botModeOverride": null,
+                "reportingTokenInfo": {
+                  "stanzaTs": 1781733200,
+                  "reportingToken": {
+                    "0": 182,
+                    "1": 67,
+                    "2": 245,
+                    "3": 121,
+                    "4": 149,
+                    "5": 152,
+                    "6": 198,
+                    "7": 118,
+                    "8": 90,
+                    "9": 158,
+                    "10": 217,
+                    "11": 85,
+                    "12": 250,
+                    "13": 115,
+                    "14": 22,
+                    "15": 24
+                  },
+                  "version": 2,
+                  "reportingTag": {
+                    "0": 1,
+                    "1": 20,
+                    "2": 186,
+                    "3": 203,
+                    "4": 21,
+                    "5": 164,
+                    "6": 5,
+                    "7": 230,
+                    "8": 9,
+                    "9": 94,
+                    "10": 160,
+                    "11": 35,
+                    "12": 42,
+                    "13": 130,
+                    "14": 11,
+                    "15": 185,
+                    "16": 68,
+                    "17": 21,
+                    "18": 79,
+                    "19": 44
+                  }
+                },
+                "hatchMetadataSync": null,
+                "requiresDirectConnection": null,
+                "bizContentPlaceholderType": null,
+                "hostedBizEncStateMismatch": false,
+                "senderOrRecipientAccountTypeHosted": false,
+                "placeholderCreatedWhenAccountIsHosted": false,
+                "groupHistoryBundleMessageKey": null,
+                "groupHistoryBundleMetadata": null,
+                "groupHistoryIndividualMessageInfo": null,
+                "nonJidMentions": null,
+                "links": []
+              }
+            },
+            "engine": "WEBJS",
+            "environment": {
+              "version": "2026.3.2",
+              "engine": "WEBJS",
+              "tier": "CORE",
+              "browser": "/usr/bin/chromium",
+              "platform": "linux/x64",
+              "worker": {
+                "id": null
+              }
+            }
+          },
+          "webhookUrl": "http://localhost:5678/webhook/messages",
+          "executionMode": "production"
+        },
+        "pairedItem": {
+          "item": 0
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "¿Es Mensaje?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Chat": {
+      "main": [
+        [
+          {
+            "node": "Leer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Texto o Media?": {
+      "main": [
+        [
+          {
+            "node": "Escribiendo...1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Escribiendo...",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CambiarFormato": {
+      "main": [
+        [
+          {
+            "node": "TranscribirAudio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer": {
+      "main": [
+        [
+          {
+            "node": "AlmacenarMensajes",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Se Agendo Cita?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Switch1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Chat",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recuerda": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "RecordarProceso",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escribiendo...": {
+      "main": [
+        [
+          {
+            "node": "CargarPrompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IA CHAT": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Chat",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escribiendo...1": {
+      "main": [
+        [
+          {
+            "node": "DescargarMedia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MensajeUsuario": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ObtenerDatosCandidato": {
+      "main": [
+        [
+          {
+            "node": "Faltas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CargarPrompt": {
+      "main": [
+        [
+          {
+            "node": "DefinirAgenda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Wait1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RecordarProceso": {
+      "main": [
+        [
+          {
+            "node": "CambiarEstado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TranscribirAudio": {
+      "main": [
+        [
+          {
+            "node": "CargarPrompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SepararJSON": {
+      "main": [
+        [
+          {
+            "node": "DatosListos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DatosListos": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GetInfo": {
+      "main": [
+        [
+          {
+            "node": "IgnorarEquipo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DefinirAgenda": {
+      "main": [
+        [
+          {
+            "node": "If5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PrepararAlertaHumano": {
+      "main": [
+        [
+          {
+            "node": "NotificarPersonal1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MensajeEscalado": {
+      "main": [
+        [
+          {
+            "node": "PrepararAlertaHumano",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "NotificarPersonal1": {
+      "main": [
+        [
+          {
+            "node": "AlmacenarMensajes1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vigilante": {
+      "main": [
+        [
+          {
+            "node": "Recuerda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RecordatorioEntrevista": {
+      "main": [
+        [
+          {
+            "node": "CargarReclutadores",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "AvisoMeme",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "SubirCV",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Actualizar_Expediente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [
+          {
+            "node": "¿Ubicacion?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "MensajeUsuario",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ChecarMensajes": {
+      "main": [
+        [
+          {
+            "node": "If4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If4": {
+      "main": [
+        [
+          {
+            "node": "ObtenerDatosCandidato",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MsjCorto": {
+      "main": [
+        [
+          {
+            "node": "Wait2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JuntarMsj": {
+      "main": [
+        [
+          {
+            "node": "¿HayMensajes?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait2": {
+      "main": [
+        [
+          {
+            "node": "ChecarMensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Faltas": {
+      "main": [
+        [
+          {
+            "node": "¿Tiene3Faltas?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Tiene3Faltas?": {
+      "main": [
+        [
+          {
+            "node": "Aviso",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Texto o Media?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Ubicacion?": {
+      "main": [
+        [
+          {
+            "node": "Naves",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿HayMensajes?": {
+      "main": [
+        [
+          {
+            "node": "AI Chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actualizar_Expediente": {
+      "main": [
+        [
+          {
+            "node": "CargarPrompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar Actualizados": {
+      "main": [
+        [
+          {
+            "node": "Actualizar Excel Maestro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Se Agendo Cita?": {
+      "main": [
+        [
+          {
+            "node": "AlertaCandidato",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AlertaCandidato": {
+      "main": [
+        [
+          {
+            "node": "NuevoCandidato",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DescargarMedia": {
+      "main": [
+        [
+          {
+            "node": "¿Es Audio?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es Audio?": {
+      "main": [
+        [
+          {
+            "node": "CambiarFormato",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Es Word?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es Word?": {
+      "main": [
+        [
+          {
+            "node": "PedirPDF",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Vacantes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze document": {
+      "main": [
+        [
+          {
+            "node": "SepararJSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AvisoMeme": {
+      "main": [
+        [
+          {
+            "node": "CargarPrompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es Duplicado?": {
+      "main": [
+        [
+          {
+            "node": "GetInfo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CargarReclutadores": {
+      "main": [
+        [
+          {
+            "node": "BuscarEventosDinamico",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BuscarEventosDinamico": {
+      "main": [
+        [
+          {
+            "node": "¿TieneEventos?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿TieneEventos?": {
+      "main": [
+        [
+          {
+            "node": "PrepararAvisoDinamico",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PrepararAvisoDinamico": {
+      "main": [
+        [
+          {
+            "node": "NotificarReclutador",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿HayTelCandidato?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿HayTelCandidato?": {
+      "main": [
+        [
+          {
+            "node": "NotificarCandidato",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FiltrarViejos": {
+      "main": [
+        [
+          {
+            "node": "¿HayQueBorar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿HayQueBorar?": {
+      "main": [
+        [
+          {
+            "node": "LogBorrado",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "BorrarArchivo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BorrarArchivo": {
+      "main": [
+        [
+          {
+            "node": "ArmarResumen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ArmarResumen": {
+      "main": [
+        [
+          {
+            "node": "¿EnviarResumen?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿EnviarResumen?": {
+      "main": [
+        [
+          {
+            "node": "ReporteLimpiezaAdmin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limpieza": {
+      "main": [
+        [
+          {
+            "node": "LimpiarBD",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "BuscarArchivosViejos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BuscarArchivosViejos": {
+      "main": [
+        [
+          {
+            "node": "FiltrarViejos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Vacantes": {
+      "main": [
+        [
+          {
+            "node": "Analyze document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reloj": {
+      "main": [
+        [
+          {
+            "node": "Buscar Actualizados",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If2": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Es Duplicado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Borrado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AlertaAdmin": {
+      "main": [
+        [
+          {
+            "node": "LogError",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IgnorarEquipo": {
+      "main": [
+        [
+          {
+            "node": "If3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BuscarTelefono": {
+      "main": [
+        [
+          {
+            "node": "AlertaAdmin",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait1": {
+      "main": [
+        [
+          {
+            "node": "BuscarTelefono",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If3": {
+      "main": [
+        [
+          {
+            "node": "MsjCorto",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "ID_TEL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Naves": {
+      "main": [
+        [
+          {
+            "node": "EnvUbicación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "EnvUbicación": {
+      "main": [
+        []
+      ]
+    },
+    "DeduplicarMensaje": {
+      "main": [
+        [
+          {
+            "node": "If2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es Mensaje?": {
+      "main": [
+        [
+          {
+            "node": "DeduplicarMensaje",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TurnoReclutador": {
+      "main": [
+        [
+          {
+            "node": "ResolverReclutador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ResolverReclutador": {
+      "main": [
+        [
+          {
+            "node": "JuntarMsj",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If5": {
+      "main": [
+        [
+          {
+            "node": "TurnoReclutador",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "ResolverReclutador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch1": {
+      "main": [
+        [
+          {
+            "node": "MensajeEscalado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "CVManual",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Loop Over Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CrearEvento": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Chat",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RevisarCalendario": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Chat",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Eliminar": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Chat",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false,
+    "timeSavedPerExecution": 5
+  },
+  "versionId": "ec4585e1-bf1b-4a09-89f6-c061e00e5251",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "dee31bcf1d2327582c0e4156e13b587f5779996960582a36461518ee5fc3826e"
+  },
+  "id": "fAvcpHPGiuAHntED",
+  "tags": []
+}
