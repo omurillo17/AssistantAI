@@ -2,7 +2,7 @@
   {
     "nombre": "Patricia Tovar",
     "emoji": "💻",
-    "telefono": "5213322459123",
+    "telefono": "5213329567145",
     "calendar_id": "reclutamientotcinnovacion@gmail.com",
     "naves": [
       "1",
@@ -10,34 +10,44 @@
     ],
     "vacantes": [
       {
-        "nave": "1",
-        "nombre": "CHECADOR DE ALMACEN"
+        "naves": [
+          "1"
+        ],
+        "nombre": "CHECADOR DE ALMACÉN",
+        "detalles": "[REQUISITO EXCLUSIVO:MASCULINO]\n-*Prestaciones de ley y superiores* \n-*$2,500 Semanales libres* \n-*$400 Bono de productividad mensual*\n-*$400 Vales de despensa mensual*\n-*Uniforme gratis*\n-*Seguro de vida*\n-*Descanso fijo Domingos* \n-*Caja de ahorro (opcional)*\n\n-*Horario*\n- Lunes a viernes \n7:55 am a 6:00pm  (1:30 de comida)\n-Sábados de 7:55  am a 1:30pm",
+        "id": "vac_0_0_1782748220287",
+        "activa": true
       },
       {
-        "nave": "1",
-        "nombre": "OPERADOR DE ALMACEN"
+        "naves": [
+          "1"
+        ],
+        "nombre": "OPERADOR DE MANTENIMIENTO",
+        "detalles": "[REQUISITO EXCLUSIVO:MASCULINO]\n-*Prestaciones de ley y superiores* \n-*$2,900 Semanales libres* \n-*$400 Bono de productividad mensual*\n-*$400 Vales despensa mensual*\n-*Uniforme gratis*\n-*Seguro de vida*\n-*Descanso fijo Domingos* \n-*Caja de ahorro (opcional)*\n\n-*Horario*\n- Lunes a viernes \n7:55 am a 6:00pm  (1:30 de comida)\nSábados de 7:55  am a 1:30pm",
+        "id": "vac_0_1_1782748220287",
+        "activa": true
       },
       {
-        "nave": "1",
-        "nombre": "OPERADOR DE MANTENIMIENTO"
+        "naves": [
+          "1"
+        ],
+        "nombre": "OPERADOR DE MOTO",
+        "detalles": "[REQUISITO EXCLUSIVO:MASCULINO]\n-*Prestaciones superiores a ley y superiores*\n-*$2,500 Semanales libres* \n-*$180 Comisiones diarias (aprox. como m�nimo )*\n-*Descanso fijo Domingos* \n-*Horario*\n- Lunes a viernes \n-7:55 am a 6:00pm  (1:30 de comida)\n-Sábados de 7:55  am a 1:30pm",
+        "id": "vac_0_2_1782748220287",
+        "activa": true
       },
       {
-        "nave": "1",
-        "nombre": "OPERADOR DE ESTACIONAMIENTO"
-      },
-      {
-        "nave": "1",
-        "nombre": "OPERADOR DE MOTO"
-      },
-      {
-        "nave": "1",
-        "nombre": "OPERADOR DE REPARTO"
-      },
-      {
-        "nave": "1",
-        "nombre": "VIGILANTE"
+        "naves": [
+          "1"
+        ],
+        "nombre": "OPERADOR DE ESTACIONAMIENTO",
+        "detalles": "-*Prestaciones de ley y superiores* \n-*$2,200 Semanales libres*\n-*Uniforme gratis*\n-*Seguro de vida*\n-*Descanso fijo Domingos* \n-*Caja de ahorro (opcional)*\n\n-*Horario*\n- Lunes a viernes \n7:55 am a 6:00pm  (1:30 de comida)\n-Sábados:7:55 am a 1:30pm",
+        "id": "vac_0_3_1782748220287",
+        "activa": true
       }
-    ]
+    ],
+    "reclutador_id": "rec_0_1782748220287",
+    "activo": true
   },
   {
     "nombre": "Sra. Paty",
@@ -49,18 +59,35 @@
     ],
     "vacantes": [
       {
-        "nave": "2",
-        "nombre": "CHECADOR DE CONTROL INTERNO"
+        "naves": [
+          "2"
+        ],
+        "nombre": "OPERADOR ALMACEN",
+        "detalles": "[REQUISITO EXCLUSIVO:MASCULINO]\n-*Prestaciones de ley y superiores* \n-*$2,500 Semanales libres* \n-*$400 Bono de productividad mensual*\n-*$400 Vales de despensa mensual*\n-*Uniforme gratis*\n-*Seguro de vida*\n-*Descanso fijo Domingos* \n-*Caja de ahorro (opcional)*\n-*Y más beneficios.. \n\n-*Horario*\n- Lunes a viernes \n7:55 am a 6:00pm  (1:30 de comida)\n-Sábados de 7:55  am a 1:30pm",
+        "id": "vac_1_0_1782748220287",
+        "activa": true
       },
       {
-        "nave": "2",
-        "nombre": "OPERADOR DE ALMACEN"
+        "naves": [
+          "2"
+        ],
+        "nombre": "OPERADOR DE VEHICULO",
+        "detalles": "[REQUISITO EXCLUSIVO:MASCULINO]\n-*Prestaciones de ley y superiores*\n-*$2,800 Semanales libres* \n-*$400 Bono de productividad mensual*\n-*$400 Vales de despensa mensual*\n-*$800 Gratificación (Será pagada en la 2 da semana y 4 ta semana del mes)*\nNota: una semana llegan $2,800.00 libres y otra $3,200.00 libres.\n*-Uniforme gratis*\n*-Seguro de vida*\n*-Descanso fijo Domingos* \n*-Caja de ahorro (opcional)*\n*-Prestaciones de Ley*\n\n-*Horario*\n- Lunes a viernes \n7:55 am a 6:00pm  (1:30 de comida)\n-Sábados de 7:55  am a 1:30pm\n",
+        "id": "vac_1_2_1782748220287",
+        "activa": true
       },
       {
-        "nave": "2",
-        "nombre": "GERENTE CEDIS"
+        "naves": [
+          "1"
+        ],
+        "nombre": "OPERADOR DE ALMACEN",
+        "detalles": "[REQUISITO EXCLUSIVO:MASCULINO]\n-*Prestaciones de ley y superiores* \n-*$2,500 Semanales libres* \n-*$400 Bono de productividad mensual*\n-*$400 Vales de despensa mensual*\n-*Uniforme gratis*\n-*Seguro de vida*\n-*Descanso fijo Domingos* \n-*Caja de ahorro (opcional)*\n-*Y más beneficios.. \n\n-*Horario*\n- Lunes a viernes \n7:55 am a 6:00pm  (1:30 de comida)\n-Sábados de 7:55  am a 1:30pm",
+        "id": "vac_2_0_1782748220287",
+        "activa": true
       }
-    ]
+    ],
+    "reclutador_id": "rec_1_1782748220287",
+    "activo": true
   },
   {
     "nombre": "Michelle",
@@ -73,34 +100,44 @@
     ],
     "vacantes": [
       {
-        "nave": "1",
-        "nombre": "CHECADOR DE CONTROL INTERNO"
+        "naves": [
+          "2"
+        ],
+        "nombre": "OPERADOR DE REPARTO",
+        "detalles": "[REQUISITO EXCLUSIVO:MASCULINO]\n-*Prestaciones de ley y superiores* \n-*$2,500 Semanales libres* \n-*$400 Bono de productividad mensual*\n-*$800 Vales de despensa mensual*\n-*Uniforme gratis*\n-*Seguro de vida*\n-*Descanso fijo Domingos* \n-*Caja de ahorro (opcional*\n-*Horario*\n- Lunes a viernes \n7:55 am a 6:00pm  (1:30 de comida)\n-Sábados de 7:55  am a 1:30pm",
+        "id": "vac_1_1_1782748220287",
+        "activa": true
       },
       {
-        "nave": "1",
-        "nombre": "EMPACADOR"
+        "naves": [
+          "1"
+        ],
+        "nombre": "OPERADOR DE MANTENIMIENTO",
+        "detalles": "[REQUISITO EXCLUSIVO:MASCULINO]\n-*Prestaciones de ley y superiores* \n-*$2,900 Semanales libres* \n-*$400 Bono de productividad mensual*\n-*$400 Vales despensa mensual*\n-*Uniforme gratis*\n-*Seguro de vida*\n-*Descanso fijo Domingos* \n-*Caja de ahorro (opcional)*\n\n-*Horario*\n- Lunes a viernes \n7:55 am a 6:00pm  (1:30 de comida)\nSábados de 7:55  am a 1:30pm",
+        "id": "vac_2_1_1782748220287",
+        "activa": true
       },
       {
-        "nave": "1",
-        "nombre": "OPERADOR DE MANTENIMIENTO"
+        "naves": [
+          "1"
+        ],
+        "nombre": "EMPACADOR",
+        "detalles": "-*Prestaciones de ley y superiores* \n-*$2,200 Semanales libres*\n-*Propinas*\n-*Uniforme gratis*\n-*Seguro de vida*\n-*Descanso fijo Domingos* \n-*Caja de ahorro (opcional)*\n\n-*Horario*\n- Lunes a viernes \n7:55 am a 6:00pm  (1:30 de comida)\n-Sábados:7:55 am a 1:30pm",
+        "id": "vac_5_0_1782748220287",
+        "activa": true
       },
       {
-        "nave": "1",
-        "nombre": "CAJA GENERAL"
-      },
-      {
-        "nave": "1",
-        "nombre": "AUXILIAR DE COMPRAS"
-      },
-      {
-        "nave": "1",
-        "nombre": "AUXILIAR CONTABLE"
-      },
-      {
-        "nave": "1",
-        "nombre": "OPERADOR DE ALMACEN"
+        "naves": [
+          "1"
+        ],
+        "nombre": "CHECADOR DE CONTROL INTERNO",
+        "detalles": "-*Prestaciones de ley y superiores* \n-*$2,700 Semanales libres* \n-*$500 Bono de productividad mensual*\n-*$500 Vales despensa mensual*\n-*Uniforme gratis*\n-*Seguro de vida*\n-*Descanso fijo Domingos* \n-*Caja de ahorro (opcional)*\n\n-*Horario*\n- Lunes a viernes \n7:55 am a 6:00pm  (1:30 de comida)\n-Sábados de 7:55  am a 1:30pm",
+        "id": "vac_2_2_1782748220287",
+        "activa": true
       }
-    ]
+    ],
+    "reclutador_id": "rec_2_1782748220287",
+    "activo": true
   },
   {
     "nombre": "Elibeth",
@@ -112,44 +149,8 @@
       "2",
       "3"
     ],
-    "vacantes": [
-      {
-        "nave": "1",
-        "nombre": "AUXILIAR DE COMPRAS"
-      },
-      {
-        "nave": "1",
-        "nombre": "AUXILIAR CONTABLE"
-      },
-      {
-        "nave": "1",
-        "nombre": "JEFE DE COMPRAS"
-      },
-      {
-        "nave": "1",
-        "nombre": "GENERALISTA RH"
-      },
-      {
-        "nave": "1",
-        "nombre": "MEDICO"
-      }
-    ]
-  },
-  {
-    "nombre": "Gerente de Reclutamiento",
-    "emoji": "🚨",
-    "telefono": "5213323379399",
-    "calendar_id": "talreclutamiento01@gmail.com",
-    "naves": [
-      "1",
-      "2",
-      "3"
-    ],
-    "vacantes": []
-  },
-  {
-    "nombre": "DESHABILITADAS",
-    "emoji": "🚫",
-    "vacantes": []
+    "vacantes": [],
+    "reclutador_id": "rec_3_1782748220287",
+    "activo": true
   }
 ]

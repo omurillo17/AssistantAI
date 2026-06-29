@@ -1,5 +1,5 @@
-1.** CHECADOR DE ALMACÉN**
-[REQUISITO EXCLUSIVO: MASCULINO]
+*1. CHECADOR DE ALMACÉN*
+[REQUISITO EXCLUSIVO:MASCULINO]
 -*Prestaciones de ley y superiores* 
 -*$2,500 Semanales libres* 
 -*$400 Bono de productividad mensual*
@@ -14,12 +14,14 @@
 7:55 am a 6:00pm  (1:30 de comida)
 -Sábados de 7:55  am a 1:30pm
 
-2.**CHECADOR DE CONTROL INTERNO**
-[REQUISITO EXCLUSIVO: MASCULINO Y FEMENINO]
+---
+
+*2. OPERADOR DE MANTENIMIENTO*
+[REQUISITO EXCLUSIVO:MASCULINO]
 -*Prestaciones de ley y superiores* 
--*$2,700 Semanales libres* 
--*$500 Bono de productividad mensual*
--*$500 Vales despensa mensual*
+-*$2,900 Semanales libres* 
+-*$400 Bono de productividad mensual*
+-*$400 Vales despensa mensual*
 -*Uniforme gratis*
 -*Seguro de vida*
 -*Descanso fijo Domingos* 
@@ -28,13 +30,26 @@
 -*Horario*
 - Lunes a viernes 
 7:55 am a 6:00pm  (1:30 de comida)
+Sábados de 7:55  am a 1:30pm
+
+---
+
+*3. OPERADOR DE MOTO*
+[REQUISITO EXCLUSIVO:MASCULINO]
+-*Prestaciones superiores a ley y superiores*
+-*$2,500 Semanales libres* 
+-*$180 Comisiones diarias (aprox. como m�nimo )*
+-*Descanso fijo Domingos* 
+-*Horario*
+- Lunes a viernes 
+-7:55 am a 6:00pm  (1:30 de comida)
 -Sábados de 7:55  am a 1:30pm
 
-3. **EMPACADOR**
-[REQUISITO EXCLUSIVO: MASCULINO Y FEMENINO]
+---
+
+*4. OPERADOR DE ESTACIONAMIENTO*
 -*Prestaciones de ley y superiores* 
 -*$2,200 Semanales libres*
--*Propinas*
 -*Uniforme gratis*
 -*Seguro de vida*
 -*Descanso fijo Domingos* 
@@ -45,8 +60,10 @@
 7:55 am a 6:00pm  (1:30 de comida)
 -Sábados:7:55 am a 1:30pm
 
-4.**OPERADOR GENERAL ALMACENISTA**
-[REQUISITO EXCLUSIVO: MASCULINO Y FEMENINO]
+---
+
+*5. OPERADOR DE ALMACEN*
+[REQUISITO EXCLUSIVO:MASCULINO]
 -*Prestaciones de ley y superiores* 
 -*$2,500 Semanales libres* 
 -*$400 Bono de productividad mensual*
@@ -62,25 +79,12 @@
 7:55 am a 6:00pm  (1:30 de comida)
 -Sábados de 7:55  am a 1:30pm
 
-5.**OPERADOR DE MANTENIMIENTO**
-[REQUISITO EXCLUSIVO: MASCULINO]
--*Prestaciones de ley y superiores* 
--*$2,900 Semanales libres* 
--*$400 Bono de productividad mensual*
--*$400 Vales despensa mensual*
--*Uniforme gratis*
--*Seguro de vida*
--*Descanso fijo Domingos* 
--*Caja de ahorro (opcional)*
+---
 
--*Horario*
-- Lunes a viernes 
-7:55 am a 6:00pm  (1:30 de comida)
-Sábados de 7:55  am a 1:30pm
-
-6.**OPERADOR DE ESTACIONAMIENTO**
+*6. EMPACADOR*
 -*Prestaciones de ley y superiores* 
 -*$2,200 Semanales libres*
+-*Propinas*
 -*Uniforme gratis*
 -*Seguro de vida*
 -*Descanso fijo Domingos* 
@@ -91,12 +95,21 @@ Sábados de 7:55  am a 1:30pm
 7:55 am a 6:00pm  (1:30 de comida)
 -Sábados:7:55 am a 1:30pm
 
-7.**OPERADOR DE MOTO**
--*Prestaciones superiores a ley y superiores*
--*$2,500 Semanales libres* 
--*$180 Comisiones diarias (aprox. como m�nimo )*
+---
+
+*7. CHECADOR DE CONTROL INTERNO*
+-*Prestaciones de ley y superiores* 
+-*$2,700 Semanales libres* 
+-*$500 Bono de productividad mensual*
+-*$500 Vales despensa mensual*
+-*Uniforme gratis*
+-*Seguro de vida*
 -*Descanso fijo Domingos* 
+-*Caja de ahorro (opcional)*
+
 -*Horario*
 - Lunes a viernes 
--7:55 am a 6:00pm  (1:30 de comida)
--S�bados de 7:55  am a 1:30pm
+7:55 am a 6:00pm  (1:30 de comida)
+-Sábados de 7:55  am a 1:30pm
+
+---

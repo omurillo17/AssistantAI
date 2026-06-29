@@ -1,22 +1,5 @@
-1.**OPERADOR GENERAL**
-[REQUISITO EXCLUSIVO: MASCULINO Y FEMENINO]
--*Prestaciones de ley y superiores* 
--*$2,500 Semanales libres* 
--*$400 Bono de productividad mensual*
--*$400 Vales de despensa mensual*
--*Uniforme gratis*
--*Seguro de vida*
--*Descanso fijo Domingos* 
--*Caja de ahorro (opcional)*
-
--*Horario*
-- Lunes a viernes 
-7:55 am a 6:00pm  (1:30 de comida)
--Sábados de 7:55  am a 1:30pm
-
-
-2.**OPERADOR GENERAL ALMACENISTA**
-[REQUISITO EXCLUSIVO: MASCULINO Y FEMENINO]
+*1. OPERADOR ALMACEN*
+[REQUISITO EXCLUSIVO:MASCULINO]
 -*Prestaciones de ley y superiores* 
 -*$2,500 Semanales libres* 
 -*$400 Bono de productividad mensual*
@@ -32,36 +15,10 @@
 7:55 am a 6:00pm  (1:30 de comida)
 -Sábados de 7:55  am a 1:30pm
 
-3.**OPERADOR DE RECIBO**
--*Prestaciones de ley y superiores* 
--*$2,700 Semanales libres*
--*$500 Bono de productividad mensual*
--*$500 Vales despensa mensual*
--*Uniforme gratis*
--*Seguro de vida*
--*Descanso fijo Domingos* 
--*Caja de ahorro (opcional)*
+---
 
--*Horario*
-- Lunes a viernes 
-7:55 am a 6:00pm  (1:30 de comida)
--Sábados de 7:55  am a 1:30pm
-
-4.**OPERADOR DE REPARTO**
--*Prestaciones de ley y superiores* 
--*$2,500 Semanales libres* 
--*$400 Bono de productividad mensual*
--*$800 Vales de despensa mensual*
--*Uniforme gratis*
--*Seguro de vida*
--*Descanso fijo Domingos* 
--*Caja de ahorro (opcional*
--*Horario*
-- Lunes a viernes 
-7:55 am a 6:00pm  (1:30 de comida)
--Sábados de 7:55  am a 1:30pm
-
-5.**OPERADOR DE VEHICULO**
+*2. OPERADOR DE VEHICULO*
+[REQUISITO EXCLUSIVO:MASCULINO]
 -*Prestaciones de ley y superiores*
 -*$2,800 Semanales libres* 
 -*$400 Bono de productividad mensual*
@@ -78,3 +35,23 @@ Nota: una semana llegan $2,800.00 libres y otra $3,200.00 libres.
 - Lunes a viernes 
 7:55 am a 6:00pm  (1:30 de comida)
 -Sábados de 7:55  am a 1:30pm
+
+
+---
+
+*3. OPERADOR DE REPARTO*
+[REQUISITO EXCLUSIVO:MASCULINO]
+-*Prestaciones de ley y superiores* 
+-*$2,500 Semanales libres* 
+-*$400 Bono de productividad mensual*
+-*$800 Vales de despensa mensual*
+-*Uniforme gratis*
+-*Seguro de vida*
+-*Descanso fijo Domingos* 
+-*Caja de ahorro (opcional*
+-*Horario*
+- Lunes a viernes 
+7:55 am a 6:00pm  (1:30 de comida)
+-Sábados de 7:55  am a 1:30pm
+
+---
