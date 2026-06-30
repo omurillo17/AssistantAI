@@ -7,13 +7,33 @@ export default function LoginPage() {
   const [passwordInput, setPasswordInput] = useState("");
   const router = useRouter();
 
-  const checkLogin = (e: React.FormEvent) => {
+  const [loading, setLoading] = useState(false);
+
+  const checkLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (passwordInput === "virgo") {
-      localStorage.setItem("tci_authenticated", "true");
-      router.push("/");
-    } else {
-      alert("Contraseña incorrecta");
+    setLoading(true);
+    
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: passwordInput }),
+      });
+      
+      const data = await res.json();
+      
+      if (data.success) {
+        // En lugar de localStorage, el token ya se guardó como Cookie HttpOnly
+        // Aún así, podemos dejar una bandera inofensiva para que el UI sepa que está logueado rápidamente
+        localStorage.setItem("tci_authenticated", "true");
+        router.push("/");
+      } else {
+        alert(data.error || "Contraseña incorrecta");
+      }
+    } catch (err) {
+      alert("Error al conectar con el servidor");
+    } finally {
+      setLoading(false);
     }
   };
 

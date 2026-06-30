@@ -9,12 +9,13 @@ type Recruiter = {
   emoji: string;
   telefono: string;
   calendar_id: string;
+  color: string;
   naves: string[];
   activo: boolean;
   vacantes: any[];
 };
 
-const N8N_BASE_URL = "http://localhost:5678";
+const N8N_BASE_URL = "/api/n8n";
 const API_URL = `${N8N_BASE_URL}/webhook/api-vacantes`;
 
 export default function ReclutadoresPage() {
@@ -32,6 +33,7 @@ export default function ReclutadoresPage() {
   const [rEmoji, setREmoji] = useState("");
   const [rTelefono, setRTelefono] = useState("");
   const [rCalendar, setRCalendar] = useState("");
+  const [rColor, setRColor] = useState("#6366f1");
   const [rNaves, setRNaves] = useState<string[]>([]);
 
   useEffect(() => {
@@ -61,6 +63,7 @@ export default function ReclutadoresPage() {
         ...rec,
         reclutador_id: rec.reclutador_id || `rec_${i}_${Date.now()}`,
         activo: rec.activo !== false,
+        color: rec.color || "#6366f1",
         vacantes: rec.vacantes || []
       }));
 
@@ -109,6 +112,7 @@ export default function ReclutadoresPage() {
         setREmoji(rec.emoji || "👤");
         setRTelefono(rec.telefono || "");
         setRCalendar(rec.calendar_id || "");
+        setRColor(rec.color || "#6366f1");
         setRNaves(rec.naves || []);
       }
     } else {
@@ -117,6 +121,7 @@ export default function ReclutadoresPage() {
       setREmoji("👤");
       setRTelefono("521");
       setRCalendar("");
+      setRColor("#6366f1");
       setRNaves([]);
     }
     setIsModalOpen(true);
@@ -137,9 +142,10 @@ export default function ReclutadoresPage() {
         updated[index] = {
           ...updated[index],
           nombre: rNombre,
-          emoji: rEmoji,
+          emoji: "👤",
           telefono: rTelefono,
           calendar_id: rCalendar,
+          color: rColor,
           naves: rNaves
         };
       }
@@ -148,9 +154,10 @@ export default function ReclutadoresPage() {
       updated.push({
         reclutador_id: `rec_new_${Date.now()}`,
         nombre: rNombre,
-        emoji: rEmoji,
+        emoji: "👤",
         telefono: rTelefono,
         calendar_id: rCalendar,
+        color: rColor,
         naves: rNaves,
         activo: true,
         vacantes: []
@@ -212,7 +219,14 @@ export default function ReclutadoresPage() {
               <div>
                 <div className="flex justify-between items-start mb-4">
                   <div className="flex items-center gap-3">
-                    <div className="text-4xl bg-slate-50 p-2 rounded-xl border border-black/5">{rec.emoji || "👤"}</div>
+                    <div className="text-4xl bg-slate-50 p-2 rounded-xl border border-black/5 relative">
+                      {rec.emoji || "👤"}
+                      <div 
+                        className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full border-2 border-white shadow-sm" 
+                        style={{ backgroundColor: rec.color || "#6366f1" }}
+                        title="Color en el calendario"
+                      ></div>
+                    </div>
                     <div>
                       <h2 className="text-lg font-bold text-slate-800">{rec.nombre}</h2>
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${rec.activo ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
@@ -270,17 +284,18 @@ export default function ReclutadoresPage() {
             </h3>
 
             <div className="space-y-4">
-              <div className="flex gap-4">
-                <div className="w-24">
-                  <label className="block text-sm text-slate-500 font-medium mb-1">Emoji</label>
-                  <input
-                    type="text"
-                    className="w-full p-3 rounded-lg border border-black/10 bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none text-center text-xl transition-all shadow-sm"
-                    value={rEmoji}
-                    onChange={(e) => setREmoji(e.target.value)}
-                  />
-                </div>
-                <div className="flex-1">
+                <div className="flex gap-4">
+                  <div className="w-24">
+                    <label className="block text-sm text-slate-500 font-medium mb-1">Emoji</label>
+                    <input
+                      type="text"
+                      className="w-full p-3 rounded-lg border border-black/10 bg-slate-100 text-slate-400 outline-none text-center text-xl shadow-sm cursor-not-allowed"
+                      value="👤"
+                      readOnly
+                      title="El emoji está fijo por defecto"
+                    />
+                  </div>
+                  <div className="flex-1">
                   <label className="block text-sm text-slate-500 font-medium mb-1">Nombre</label>
                   <input
                     type="text"
@@ -312,6 +327,19 @@ export default function ReclutadoresPage() {
                   value={rCalendar}
                   onChange={(e) => setRCalendar(e.target.value)}
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm text-slate-500 font-medium mb-1">Color del Reclutador (Para el Calendario)</label>
+                <div className="flex gap-4 items-center">
+                  <input
+                    type="color"
+                    className="w-14 h-14 p-1 rounded-lg border border-black/10 bg-slate-50 cursor-pointer"
+                    value={rColor}
+                    onChange={(e) => setRColor(e.target.value)}
+                  />
+                  <span className="text-sm text-slate-500">Selecciona el color que identificará a este reclutador en el calendario.</span>
+                </div>
               </div>
 
               <div>

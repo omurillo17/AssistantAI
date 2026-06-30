@@ -1,7 +1,7 @@
 [
   {
     "nombre": "Patricia Tovar",
-    "emoji": "💻",
+    "emoji": "👤",
     "telefono": "5213329567145",
     "calendar_id": "reclutamientotcinnovacion@gmail.com",
     "naves": [
@@ -47,11 +47,12 @@
       }
     ],
     "reclutador_id": "rec_0_1782748220287",
-    "activo": true
+    "activo": true,
+    "color": "#a020f0"
   },
   {
     "nombre": "Sra. Paty",
-    "emoji": "📦",
+    "emoji": "👤",
     "telefono": "5213320707333",
     "calendar_id": "rhumanossdvirgo@gmail.com",
     "naves": [
@@ -87,11 +88,12 @@
       }
     ],
     "reclutador_id": "rec_1_1782748220287",
-    "activo": true
+    "activo": true,
+    "color": "#000000"
   },
   {
     "nombre": "Michelle",
-    "emoji": "🚗",
+    "emoji": "👤",
     "telefono": "5213314057808",
     "calendar_id": "jeferhsdvirgo@gmail.com",
     "naves": [
@@ -137,11 +139,12 @@
       }
     ],
     "reclutador_id": "rec_2_1782748220287",
-    "activo": true
+    "activo": true,
+    "color": "#615900"
   },
   {
     "nombre": "Elibeth",
-    "emoji": "🛍️",
+    "emoji": "👤",
     "telefono": "5213332012658",
     "calendar_id": "talreclutamiento01@gmail.com",
     "naves": [
@@ -151,6 +154,7 @@
     ],
     "vacantes": [],
     "reclutador_id": "rec_3_1782748220287",
-    "activo": true
+    "activo": true,
+    "color": "#ff0000"
   }
 ]
