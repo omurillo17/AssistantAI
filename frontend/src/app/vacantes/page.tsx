@@ -9,6 +9,7 @@ type Vacante = {
   naves: string[];
   detalles: string;
   activa: boolean;
+  palabras_clave?: string;
 };
 
 type Recruiter = {
@@ -18,7 +19,7 @@ type Recruiter = {
   vacantes: Vacante[];
 };
 
-const N8N_BASE_URL = "http://localhost:5678";
+const N8N_BASE_URL = "/api/n8n";
 const API_URL = `${N8N_BASE_URL}/webhook/api-vacantes`;
 
 export default function VacantesPage() {
@@ -45,6 +46,7 @@ export default function VacantesPage() {
 
   const [vNombre, setVNombre] = useState("");
   const [vDetalles, setVDetalles] = useState("");
+  const [vPalabrasClave, setVPalabrasClave] = useState("");
   const [vNaves, setVNaves] = useState<string[]>([]);
 
   // Drag and Drop state
@@ -123,11 +125,13 @@ export default function VacantesPage() {
       setModalVacancyId(vac.id);
       setVNombre(vac.nombre);
       setVDetalles(vac.detalles || "");
+      setVPalabrasClave(vac.palabras_clave || "");
       setVNaves(Array.isArray(vac.naves) ? vac.naves : typeof vac.naves === "string" ? [vac.naves] : []);
     } else {
       setModalVacancyId(null);
       setVNombre("");
       setVDetalles("");
+      setVPalabrasClave("");
       setVNaves([]);
     }
     setIsModalOpen(true);
@@ -150,6 +154,7 @@ export default function VacantesPage() {
           ...updated[recIndex].vacantes[vacIndex],
           nombre: vNombre.toUpperCase(),
           detalles: vDetalles,
+          palabras_clave: vPalabrasClave,
           naves: vNaves,
         };
       }
@@ -159,6 +164,7 @@ export default function VacantesPage() {
         id: "v_" + Date.now().toString(),
         nombre: vNombre.toUpperCase(),
         detalles: vDetalles,
+        palabras_clave: vPalabrasClave,
         naves: vNaves,
         activa: true,
       });
@@ -289,6 +295,12 @@ export default function VacantesPage() {
                             </span>
                           ))}
                       </div>
+                      {vac.palabras_clave && (
+                        <div className="text-[11px] text-slate-500 mb-3 italic">
+                          <span className="font-semibold not-italic">Keywords: </span> 
+                          {vac.palabras_clave}
+                        </div>
+                      )}
                       <div className="flex gap-2 border-t border-black/5 pt-3">
                         <button onClick={() => openModal(rec.reclutador_id, vac)} className="text-xs bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg flex-1 font-semibold transition-colors">
                           Editar
@@ -349,6 +361,18 @@ export default function VacantesPage() {
                     </label>
                   ))}
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-sm text-slate-500 font-medium mb-1">Palabras Clave (Separadas por comas)</label>
+                <input
+                  type="text"
+                  className="w-full p-3 rounded-lg border border-black/10 bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none transition-all shadow-sm"
+                  placeholder="Ej: Chofer, Repartidor, Moto"
+                  value={vPalabrasClave}
+                  onChange={(e) => setVPalabrasClave(e.target.value)}
+                />
+                <p className="text-xs text-slate-400 mt-1">Si la IA lee estos nombres en el flyer, los relacionará con esta vacante.</p>
               </div>
 
               <div>

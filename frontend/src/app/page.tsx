@@ -41,10 +41,10 @@ export default function Home() {
         <p className="text-slate-500 text-lg">Selecciona la aplicación a la que deseas ingresar</p>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-6 w-full max-w-4xl">
+      <div className="flex flex-col sm:flex-row gap-6 w-full max-w-5xl flex-wrap justify-center">
         <Link
           href="/crm"
-          className="flex-1 bg-white p-8 rounded-2xl shadow-sm border border-black/10 hover:shadow-lg hover:border-cyan-500 hover:-translate-y-1 transition-all group text-center"
+          className="flex-1 min-w-[250px] bg-white p-8 rounded-2xl shadow-sm border border-black/10 hover:shadow-lg hover:border-cyan-500 hover:-translate-y-1 transition-all group text-center"
         >
           <div className="text-5xl mb-4 group-hover:scale-110 transition-transform">📊</div>
           <h2 className="text-xl font-bold text-slate-800 mb-2">CRM Candidatos</h2>
@@ -53,7 +53,7 @@ export default function Home() {
 
         <Link
           href="/vacantes"
-          className="flex-1 bg-white p-8 rounded-2xl shadow-sm border border-black/10 hover:shadow-lg hover:border-amber-500 hover:-translate-y-1 transition-all group text-center"
+          className="flex-1 min-w-[250px] bg-white p-8 rounded-2xl shadow-sm border border-black/10 hover:shadow-lg hover:border-amber-500 hover:-translate-y-1 transition-all group text-center"
         >
           <div className="text-5xl mb-4 group-hover:scale-110 transition-transform">💼</div>
           <h2 className="text-xl font-bold text-slate-800 mb-2">Panel de Vacantes</h2>
@@ -62,11 +62,29 @@ export default function Home() {
 
         <Link
           href="/reclutadores"
-          className="flex-1 bg-white p-8 rounded-2xl shadow-sm border border-black/10 hover:shadow-lg hover:border-indigo-500 hover:-translate-y-1 transition-all group text-center"
+          className="flex-1 min-w-[250px] bg-white p-8 rounded-2xl shadow-sm border border-black/10 hover:shadow-lg hover:border-indigo-500 hover:-translate-y-1 transition-all group text-center"
         >
           <div className="text-5xl mb-4 group-hover:scale-110 transition-transform">👥</div>
           <h2 className="text-xl font-bold text-slate-800 mb-2">Reclutadores</h2>
           <p className="text-slate-500 text-sm">Altas, bajas y edición de información de los ejecutivos.</p>
+        </Link>
+
+        <Link
+          href="/calendario"
+          className="flex-1 min-w-[250px] bg-white p-8 rounded-2xl shadow-sm border border-black/10 hover:shadow-lg hover:border-emerald-500 hover:-translate-y-1 transition-all group text-center"
+        >
+          <div className="text-5xl mb-4 group-hover:scale-110 transition-transform">📅</div>
+          <h2 className="text-xl font-bold text-slate-800 mb-2">Calendario Entrevistas</h2>
+          <p className="text-slate-500 text-sm">Vista completa de citas agendadas por la Inteligencia Artificial.</p>
+        </Link>
+
+        <Link
+          href="/configuracion"
+          className="flex-1 min-w-[250px] bg-white p-8 rounded-2xl shadow-sm border border-black/10 hover:shadow-lg hover:border-purple-500 hover:-translate-y-1 transition-all group text-center"
+        >
+          <div className="text-5xl mb-4 group-hover:scale-110 transition-transform">⚙️</div>
+          <h2 className="text-xl font-bold text-slate-800 mb-2">Configuración IA</h2>
+          <p className="text-slate-500 text-sm">Gestión de Prompts y personalidad del bot (Archivos de texto).</p>
         </Link>
       </div>
     </div>
