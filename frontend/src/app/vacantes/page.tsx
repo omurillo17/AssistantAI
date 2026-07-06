@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Check, Trash2, Filter } from "lucide-react";
 
 type Vacante = {
   id: string;
@@ -210,28 +211,28 @@ export default function VacantesPage() {
   if (loading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-500">Cargando...</div>;
 
   return (
-    <div className="flex flex-col min-h-screen bg-slate-50 text-slate-800">
-      <header className="px-10 py-5 bg-white/90 backdrop-blur-md border-b border-black/10 flex justify-between items-center sticky top-0 z-50">
+    <div className="flex flex-col h-full bg-slate-50 text-slate-800">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 px-10 pt-6">
         <div className="flex items-center gap-4">
           <button
             onClick={() => router.back()}
-            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg transition-colors text-sm border border-black/10"
+            className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded shadow-sm transition-colors text-sm border border-slate-200"
           >
             ⬅ Atrás
           </button>
-          <div className="text-2xl font-extrabold bg-gradient-to-br from-indigo-500 to-purple-500 bg-clip-text text-transparent">
+          <h1 className="text-2xl font-bold text-slate-800">
             Gestión de Vacantes TCi
-          </div>
+          </h1>
         </div>
         <div className="flex gap-4">
-          <button onClick={loadData} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg transition-all border border-slate-200">
+          <button onClick={loadData} className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded shadow-sm transition-all border border-slate-200">
             Descartar Cambios
           </button>
-          <button onClick={saveData} className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white font-semibold rounded-lg shadow-md transition-all">
+          <button onClick={saveData} className="px-4 py-2 bg-primary hover:bg-primary/90 text-white font-semibold rounded shadow-sm transition-all">
             Guardar
           </button>
         </div>
-      </header>
+      </div>
 
       <main className="flex-1 p-10 max-w-7xl mx-auto w-full">
         {loading ? (
@@ -254,8 +255,10 @@ export default function VacantesPage() {
                   <label className="flex items-center cursor-pointer">
                     <div className="relative">
                       <input type="checkbox" className="sr-only" checked={rec.activo} onChange={() => toggleRecruiter(recIndex)} />
-                      <div className={`block w-10 h-6 rounded-full transition-colors ${rec.activo ? "bg-indigo-500" : "bg-slate-300"}`}></div>
-                      <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${rec.activo ? "transform translate-x-4" : ""}`}></div>
+                      <div className={`block w-10 h-6 rounded-full transition-colors ${rec.activo ? "bg-primary" : "bg-slate-300"}`}></div>
+                      <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform flex items-center justify-center ${rec.activo ? "transform translate-x-4 text-primary" : "text-transparent"}`}>
+                        <Check size={10} strokeWidth={4} className={rec.activo ? "opacity-100" : "opacity-0"} />
+                      </div>
                     </div>
                   </label>
                 </div>
@@ -290,8 +293,8 @@ export default function VacantesPage() {
                       <div className="flex flex-wrap gap-1 mb-3">
                         {Array.isArray(vac.naves) &&
                           vac.naves.map((n) => (
-                            <span key={n} className="bg-indigo-500/10 text-indigo-600 px-2 py-0.5 rounded-full text-[11px] font-bold">
-                              Nave {n}
+                            <span key={n} className="bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[11px] font-bold">
+                              {n}
                             </span>
                           ))}
                       </div>
@@ -302,11 +305,17 @@ export default function VacantesPage() {
                         </div>
                       )}
                       <div className="flex gap-2 border-t border-black/5 pt-3">
-                        <button onClick={() => openModal(rec.reclutador_id, vac)} className="text-xs bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg flex-1 font-semibold transition-colors">
+                        <button onClick={() => openModal(rec.reclutador_id, vac)} className="text-xs bg-success hover:bg-success/90 text-white px-3 py-1.5 rounded font-semibold transition-colors">
                           Editar
                         </button>
-                        <button onClick={() => removeVacancy(recIndex, vacIndex)} className="text-xs bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg font-semibold transition-colors">
-                          Eliminar
+                        <button
+                          onClick={() => router.push(`/vacantes/${vac.id}`)}
+                          className="text-xs bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-3 py-1.5 rounded font-semibold transition-colors flex items-center gap-1 flex-1"
+                        >
+                          <Filter size={12} /> Filtros{(vac as any).filtros?.filter((f: any) => f.activo).length > 0 ? ` (${(vac as any).filtros?.filter((f: any) => f.activo).length})` : ''}
+                        </button>
+                        <button onClick={() => removeVacancy(recIndex, vacIndex)} className="text-xs bg-danger hover:bg-danger/90 text-white px-3 py-1.5 rounded font-semibold transition-colors">
+                          <Trash2 size={14} />
                         </button>
                       </div>
                     </div>
@@ -328,8 +337,8 @@ export default function VacantesPage() {
 
       {/* Modal Añadir/Editar Vacante */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000]">
-          <div className="bg-white w-[90%] max-w-lg rounded-2xl p-8 shadow-2xl relative">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000]" onClick={() => setIsModalOpen(false)}>
+          <div className="bg-white w-[90%] max-w-lg rounded-2xl p-8 shadow-2xl relative" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-xl font-bold text-slate-800 mb-6 pb-4 border-b border-black/10">
               {modalVacancyId ? "Editar Vacante" : "Agregar Vacante"}
             </h3>
@@ -390,19 +399,18 @@ export default function VacantesPage() {
               <button onClick={() => setIsModalOpen(false)} className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-colors">
                 Cancelar
               </button>
-              <button onClick={saveVacancy} className="flex-1 py-3 bg-indigo-500 hover:bg-indigo-600 text-white font-semibold rounded-xl shadow-md transition-all">
-                Guardar
+              <button onClick={saveVacancy} className="flex-1 py-3 bg-primary hover:bg-primary/90 text-white font-semibold rounded shadow-sm transition-all">
+                Guardar Vacante
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Toast */}
-      <div
-        className={`fixed bottom-6 right-6 px-6 py-3 rounded-xl font-semibold text-white shadow-lg transition-all duration-300 transform ${toast ? "translate-y-0 opacity-100" : "translate-y-20 opacity-0"
-          } ${toast?.isError ? "bg-red-500" : "bg-emerald-500"}`}
-      >
+      {/* TOAST NOTIFICATION */}
+      <div className={`fixed bottom-6 right-6 px-5 py-3 rounded font-bold text-white shadow-xl transition-all duration-300 z-[2000] ${
+          toast ? "translate-y-0 opacity-100" : "translate-y-16 opacity-0"
+          } ${toast?.isError ? "bg-danger" : "bg-success"}`}>
         {toast?.msg}
       </div>
     </div>

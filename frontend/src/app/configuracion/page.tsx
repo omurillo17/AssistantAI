@@ -128,7 +128,7 @@ export default function ConfiguracionPage() {
               </button>
               <button
                 type="submit"
-                className="flex-1 py-3 bg-indigo-500 hover:bg-indigo-600 text-white font-semibold rounded-xl shadow-md transition-all"
+                className="flex-1 py-3 bg-primary hover:bg-primary/90 text-white font-semibold rounded shadow-sm transition-all"
               >
                 Entrar
               </button>
@@ -137,9 +137,9 @@ export default function ConfiguracionPage() {
         </div>
         {/* Toast */}
         <div
-          className={`fixed bottom-6 right-6 px-6 py-3 rounded-xl font-semibold text-white shadow-lg transition-all duration-300 transform ${
-            toast ? "translate-y-0 opacity-100" : "translate-y-20 opacity-0"
-          } ${toast?.isError ? "bg-red-500" : "bg-emerald-500"}`}
+          className={`fixed bottom-6 right-6 px-5 py-3 rounded font-semibold text-white shadow-xl transition-all duration-300 transform ${
+            toast ? "translate-y-0 opacity-100" : "translate-y-16 opacity-0"
+          } ${toast?.isError ? "bg-danger" : "bg-success"}`}
         >
           {toast?.msg}
         </div>
@@ -148,20 +148,20 @@ export default function ConfiguracionPage() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-slate-50 text-slate-800">
-      <header className="px-10 py-5 bg-white/90 backdrop-blur-md border-b border-black/10 flex justify-between items-center z-50">
+    <div className="flex flex-col h-full bg-slate-50 text-slate-800">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 px-10 pt-6">
         <div className="flex items-center gap-4">
           <button
             onClick={() => router.back()}
-            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg transition-colors text-sm border border-black/10"
+            className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded shadow-sm transition-colors text-sm border border-slate-200"
           >
             ⬅ Atrás
           </button>
-          <div className="text-2xl font-extrabold bg-gradient-to-br from-indigo-500 to-purple-500 bg-clip-text text-transparent">
+          <h1 className="text-2xl font-bold text-slate-800">
             Configuración del Sistema
-          </div>
+          </h1>
         </div>
-      </header>
+      </div>
 
       <main className="flex-1 flex overflow-hidden max-w-7xl w-full mx-auto p-6 gap-6">
         {/* Sidebar: Lista de Archivos */}
@@ -175,9 +175,9 @@ export default function ConfiguracionPage() {
               <button
                 key={file.filename}
                 onClick={() => selectFile(file)}
-                className={`w-full text-left px-4 py-3 rounded-xl transition-all text-sm font-medium ${
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold transition-all ${
                   selectedFilename === file.filename
-                    ? "bg-indigo-500 text-white shadow-md"
+                    ? "bg-primary text-white shadow-sm"
                     : "text-slate-600 hover:bg-slate-100"
                 }`}
               >
@@ -198,7 +198,7 @@ export default function ConfiguracionPage() {
                 <button
                   onClick={handleSave}
                   disabled={saving}
-                  className="px-6 py-2 bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 text-white font-semibold rounded-lg shadow-md transition-all flex items-center gap-2"
+                  className="px-6 py-2 bg-primary hover:bg-primary/90 disabled:opacity-50 text-white font-semibold rounded shadow-sm transition-all flex items-center gap-2"
                 >
                   {saving ? "Guardando..." : "💾 Guardar Cambios"}
                 </button>
@@ -223,9 +223,9 @@ export default function ConfiguracionPage() {
 
       {/* Toast */}
       <div
-        className={`fixed bottom-6 right-6 px-6 py-3 rounded-xl font-semibold text-white shadow-lg transition-all duration-300 transform ${
-          toast ? "translate-y-0 opacity-100" : "translate-y-20 opacity-0"
-        } ${toast?.isError ? "bg-red-500" : "bg-emerald-500"}`}
+        className={`fixed bottom-6 right-6 px-5 py-3 rounded font-semibold text-white shadow-xl transition-all duration-300 transform ${
+          toast ? "translate-y-0 opacity-100" : "translate-y-16 opacity-0"
+        } ${toast?.isError ? "bg-danger" : "bg-success"}`}
       >
         {toast?.msg}
       </div>

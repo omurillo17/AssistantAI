@@ -179,28 +179,28 @@ export default function ReclutadoresPage() {
   if (loading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-500">Cargando...</div>;
 
   return (
-    <div className="flex flex-col min-h-screen bg-slate-50 text-slate-800">
-      <header className="px-10 py-5 bg-white/90 backdrop-blur-md border-b border-black/10 flex justify-between items-center sticky top-0 z-50">
+    <div className="flex flex-col h-full bg-slate-50 text-slate-800">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 px-10 pt-6">
         <div className="flex items-center gap-4">
           <button
-            onClick={() => router.push("/")}
-            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg transition-colors text-sm border border-black/10"
+            onClick={() => router.back()}
+            className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded shadow-sm transition-colors text-sm border border-slate-200"
           >
             ⬅ Atrás
           </button>
-          <div className="text-2xl font-extrabold bg-gradient-to-br from-indigo-500 to-purple-500 bg-clip-text text-transparent">
+          <h1 className="text-2xl font-bold text-slate-800">
             Gestión de Reclutadores
-          </div>
+          </h1>
         </div>
         <div className="flex gap-4">
-          <button onClick={loadData} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg transition-all border border-slate-200">
+          <button onClick={loadData} className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded shadow-sm transition-all border border-slate-200">
             Descartar Cambios
           </button>
-          <button onClick={saveData} className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white font-semibold rounded-lg shadow-md transition-all">
+          <button onClick={saveData} className="px-4 py-2 bg-primary hover:bg-primary/90 text-white font-semibold rounded shadow-sm transition-all">
             Guardar
           </button>
         </div>
-      </header>
+      </div>
 
       <main className="flex-1 p-10 max-w-5xl mx-auto w-full">
         <div className="flex justify-between items-center mb-8">
@@ -229,7 +229,7 @@ export default function ReclutadoresPage() {
                     </div>
                     <div>
                       <h2 className="text-lg font-bold text-slate-800">{rec.nombre}</h2>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${rec.activo ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${rec.activo ? "bg-success/20 text-success" : "bg-danger/20 text-danger"}`}>
                         {rec.activo ? "ACTIVO" : "INACTIVO"}
                       </span>
                     </div>
@@ -265,7 +265,7 @@ export default function ReclutadoresPage() {
                 </button>
                 <button
                   onClick={() => removeRecruiter(rec.reclutador_id)}
-                  className="flex-1 py-2 bg-red-50 hover:bg-red-100 text-red-600 font-semibold rounded-lg text-sm transition-colors"
+                  className="flex-1 py-2 bg-danger/10 hover:bg-danger/20 text-danger font-semibold rounded text-sm transition-colors"
                 >
                   🗑️ Eliminar
                 </button>
@@ -277,8 +277,8 @@ export default function ReclutadoresPage() {
 
       {/* Modal Añadir/Editar Reclutador */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000]">
-          <div className="bg-white w-[90%] max-w-lg rounded-2xl p-8 shadow-2xl relative">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000]" onClick={() => setIsModalOpen(false)}>
+          <div className="bg-white w-[90%] max-w-lg rounded-2xl p-8 shadow-2xl relative" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-xl font-bold text-slate-800 mb-6 pb-4 border-b border-black/10">
               {editingId ? "Editar Reclutador" : "Agregar Reclutador"}
             </h3>
@@ -361,22 +361,21 @@ export default function ReclutadoresPage() {
             </div>
 
             <div className="flex gap-3 mt-8">
-              <button onClick={() => setIsModalOpen(false)} className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-colors">
+              <button onClick={() => setIsModalOpen(false)} className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded transition-colors">
                 Cancelar
               </button>
-              <button onClick={saveRecruiter} className="flex-1 py-3 bg-indigo-500 hover:bg-indigo-600 text-white font-semibold rounded-xl shadow-md transition-all">
-                Guardar Cambios
+              <button onClick={saveRecruiter} className="flex-1 py-3 bg-primary hover:bg-primary/90 text-white font-semibold rounded shadow-sm transition-all">
+                Guardar Reclutador
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Toast */}
-      <div
-        className={`fixed bottom-6 right-6 px-6 py-3 rounded-xl font-semibold text-white shadow-lg transition-all duration-300 transform ${toast ? "translate-y-0 opacity-100" : "translate-y-20 opacity-0"
-          } ${toast?.isError ? "bg-red-500" : "bg-emerald-500"}`}
-      >
+      {/* TOAST */}
+      <div className={`fixed bottom-6 right-6 px-5 py-3 rounded font-bold text-white shadow-xl transition-all duration-300 z-[2000] ${
+          toast ? "translate-y-0 opacity-100" : "translate-y-16 opacity-0"
+          } ${toast?.isError ? "bg-danger" : "bg-success"}`}>
         {toast?.msg}
       </div>
     </div>

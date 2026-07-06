@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 export default function Home() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const [noLeidos, setNoLeidos] = useState(0);
 
   useEffect(() => {
     document.title = "Plataforma TCi";
@@ -15,6 +16,16 @@ export default function Home() {
       router.push("/login");
     } else {
       setLoading(false);
+      // Cargar badge de mensajes no leídos
+      fetch("/api/db/mensajes")
+        .then(r => r.json())
+        .then(data => {
+          if (Array.isArray(data)) {
+            const total = data.reduce((acc: number, c: any) => acc + (c.mensajes_no_leidos || 0), 0);
+            setNoLeidos(total);
+          }
+        })
+        .catch(() => {});
     }
   }, [router]);
 
@@ -26,67 +37,112 @@ export default function Home() {
   if (loading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-500">Cargando...</div>;
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 p-6 relative">
-      <button
-        onClick={handleLogout}
-        className="absolute top-6 right-6 px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-lg shadow-sm transition-colors text-sm"
-      >
-        Cerrar Sesión
-      </button>
-
-      <div className="text-center mb-10">
-        <h1 className="text-4xl font-extrabold bg-gradient-to-br from-cyan-500 to-amber-500 bg-clip-text text-transparent mb-4">
-          Plataforma TCi
-        </h1>
-        <p className="text-slate-500 text-lg">Selecciona la aplicación a la que deseas ingresar</p>
+    <div className="p-2 animate-fade-in">
+      <div className="mb-6 flex justify-between items-end">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-800 mb-1">Panel de Control</h1>
+          <p className="text-slate-500">Selecciona la aplicación a la que deseas ingresar</p>
+        </div>
+        <button
+          onClick={handleLogout}
+          className="px-4 py-2 bg-white text-danger font-bold rounded shadow-sm border border-slate-200 hover:bg-slate-50 transition-colors text-sm"
+        >
+          Cerrar Sesión
+        </button>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-6 w-full max-w-5xl flex-wrap justify-center">
-        <Link
-          href="/crm"
-          className="flex-1 min-w-[250px] bg-white p-8 rounded-2xl shadow-sm border border-black/10 hover:shadow-lg hover:border-cyan-500 hover:-translate-y-1 transition-all group text-center"
-        >
-          <div className="text-5xl mb-4 group-hover:scale-110 transition-transform">📊</div>
-          <h2 className="text-xl font-bold text-slate-800 mb-2">CRM Candidatos</h2>
-          <p className="text-slate-500 text-sm">Gestiona el flujo de reclutamiento (Kanban) y chatea con candidatos.</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        {/* CRM */}
+        <Link href="/crm" className="bg-primary rounded-lg relative overflow-hidden text-white shadow-sm hover:shadow-md transition-shadow block">
+          <div className="p-5 relative z-10">
+            <h3 className="text-3xl font-bold mb-1">CRM</h3>
+            <p className="text-white/80 text-sm">Flujo de reclutamiento</p>
+          </div>
+          <div className="absolute top-4 right-4 text-black/10 text-6xl font-black">
+            📊
+          </div>
+          <div className="bg-black/10 py-1.5 text-center text-sm font-semibold hover:bg-black/20 transition-colors">
+            Ir al módulo <span className="ml-1">→</span>
+          </div>
         </Link>
 
-        <Link
-          href="/vacantes"
-          className="flex-1 min-w-[250px] bg-white p-8 rounded-2xl shadow-sm border border-black/10 hover:shadow-lg hover:border-amber-500 hover:-translate-y-1 transition-all group text-center"
-        >
-          <div className="text-5xl mb-4 group-hover:scale-110 transition-transform">💼</div>
-          <h2 className="text-xl font-bold text-slate-800 mb-2">Panel de Vacantes</h2>
-          <p className="text-slate-500 text-sm">Administra las vacantes activas de los reclutadores y naves.</p>
+        {/* Mensajes */}
+        <Link href="/mensajes" className="bg-success rounded-lg relative overflow-hidden text-white shadow-sm hover:shadow-md transition-shadow block">
+          <div className="p-5 relative z-10">
+            <h3 className="text-3xl font-bold mb-1 flex items-center gap-2">
+              Mensajes
+              {noLeidos > 0 && (
+                <span className="bg-danger text-white text-[10px] px-2 py-0.5 rounded-full shadow-sm animate-pulse">
+                  {noLeidos} nuevos
+                </span>
+              )}
+            </h3>
+            <p className="text-white/80 text-sm">Bandeja compartida IA</p>
+          </div>
+          <div className="absolute top-4 right-4 text-black/10 text-6xl font-black">
+            💬
+          </div>
+          <div className="bg-black/10 py-1.5 text-center text-sm font-semibold hover:bg-black/20 transition-colors">
+            Ir al módulo <span className="ml-1">→</span>
+          </div>
         </Link>
 
-        <Link
-          href="/reclutadores"
-          className="flex-1 min-w-[250px] bg-white p-8 rounded-2xl shadow-sm border border-black/10 hover:shadow-lg hover:border-indigo-500 hover:-translate-y-1 transition-all group text-center"
-        >
-          <div className="text-5xl mb-4 group-hover:scale-110 transition-transform">👥</div>
-          <h2 className="text-xl font-bold text-slate-800 mb-2">Reclutadores</h2>
-          <p className="text-slate-500 text-sm">Altas, bajas y edición de información de los ejecutivos.</p>
+        {/* Expedientes */}
+        <Link href="/candidatos" className="bg-info rounded-lg relative overflow-hidden text-white shadow-sm hover:shadow-md transition-shadow block">
+          <div className="p-5 relative z-10">
+            <h3 className="text-3xl font-bold mb-1">Expedientes</h3>
+            <p className="text-white/80 text-sm">Base de candidatos</p>
+          </div>
+          <div className="absolute top-4 right-4 text-black/10 text-6xl font-black">
+            🗂️
+          </div>
+          <div className="bg-black/10 py-1.5 text-center text-sm font-semibold hover:bg-black/20 transition-colors">
+            Ir al módulo <span className="ml-1">→</span>
+          </div>
         </Link>
 
-        <Link
-          href="/calendario"
-          className="flex-1 min-w-[250px] bg-white p-8 rounded-2xl shadow-sm border border-black/10 hover:shadow-lg hover:border-emerald-500 hover:-translate-y-1 transition-all group text-center"
-        >
-          <div className="text-5xl mb-4 group-hover:scale-110 transition-transform">📅</div>
-          <h2 className="text-xl font-bold text-slate-800 mb-2">Calendario Entrevistas</h2>
-          <p className="text-slate-500 text-sm">Vista completa de citas agendadas por la Inteligencia Artificial.</p>
+        {/* Vacantes */}
+        <Link href="/vacantes" className="bg-secondary rounded-lg relative overflow-hidden text-white shadow-sm hover:shadow-md transition-shadow block">
+          <div className="p-5 relative z-10">
+            <h3 className="text-3xl font-bold mb-1">Vacantes</h3>
+            <p className="text-white/80 text-sm">Control de plazas</p>
+          </div>
+          <div className="absolute top-4 right-4 text-black/10 text-6xl font-black">
+            💼
+          </div>
+          <div className="bg-black/10 py-1.5 text-center text-sm font-semibold hover:bg-black/20 transition-colors">
+            Ir al módulo <span className="ml-1">→</span>
+          </div>
+        </Link>
+      </div>
+
+      <h2 className="text-lg font-bold text-slate-700 mb-4 mt-8">Configuración y Reportes</h2>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Link href="/reclutadores" className="bg-white p-5 rounded-lg border-t-4 border-primary shadow-sm hover:shadow text-slate-700 transition-all">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="text-2xl">👥</div>
+            <h3 className="font-bold text-lg">Reclutadores</h3>
+          </div>
+          <p className="text-sm text-slate-500">Altas, bajas y edición de información de ejecutivos.</p>
         </Link>
 
-        <Link
-          href="/configuracion"
-          className="flex-1 min-w-[250px] bg-white p-8 rounded-2xl shadow-sm border border-black/10 hover:shadow-lg hover:border-purple-500 hover:-translate-y-1 transition-all group text-center"
-        >
-          <div className="text-5xl mb-4 group-hover:scale-110 transition-transform">⚙️</div>
-          <h2 className="text-xl font-bold text-slate-800 mb-2">Configuración IA</h2>
-          <p className="text-slate-500 text-sm">Gestión de Prompts y personalidad del bot (Archivos de texto).</p>
+        <Link href="/calendario" className="bg-white p-5 rounded-lg border-t-4 border-info shadow-sm hover:shadow text-slate-700 transition-all">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="text-2xl">📅</div>
+            <h3 className="font-bold text-lg">Calendario</h3>
+          </div>
+          <p className="text-sm text-slate-500">Vista completa de citas agendadas por la IA.</p>
+        </Link>
+
+        <Link href="/configuracion" className="bg-white p-5 rounded-lg border-t-4 border-secondary shadow-sm hover:shadow text-slate-700 transition-all">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="text-2xl">⚙️</div>
+            <h3 className="font-bold text-lg">Configuración IA</h3>
+          </div>
+          <p className="text-sm text-slate-500">Gestión de Prompts y personalidad del bot.</p>
         </Link>
       </div>
     </div>
   );
 }
+
