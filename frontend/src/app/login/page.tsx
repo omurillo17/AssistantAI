@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
+  const [usuarioInput, setUsuarioInput] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
   const router = useRouter();
 
@@ -17,18 +18,20 @@ export default function LoginPage() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password: passwordInput }),
+        body: JSON.stringify({ usuario: usuarioInput, password: passwordInput }),
       });
 
       const data = await res.json();
 
       if (data.success) {
         // En lugar de localStorage, el token ya se guardó como Cookie HttpOnly
-        // Aún así, podemos dejar una bandera inofensiva para que el UI sepa que está logueado rápidamente
+        // Guardamos información inofensiva para renderizado de UI
         localStorage.setItem("tci_authenticated", "true");
+        localStorage.setItem("tci_username", data.usuario || usuarioInput);
+        localStorage.setItem("tci_role", data.rol || "USER");
         router.push("/");
       } else {
-        alert(data.error || "Contraseña incorrecta");
+        alert(data.error || "Credenciales incorrectas");
       }
     } catch (err) {
       alert("Error al conectar con el servidor");
@@ -48,11 +51,20 @@ export default function LoginPage() {
         </div>
         <form onSubmit={checkLogin}>
           <input
+            type="text"
+            className="w-full p-2.5 rounded border border-slate-300 bg-white text-slate-800 outline-none mb-4 focus:border-[#0C66AC] transition-colors"
+            placeholder="Usuario"
+            value={usuarioInput}
+            onChange={(e) => setUsuarioInput(e.target.value)}
+            required
+          />
+          <input
             type="password"
             className="w-full p-2.5 rounded border border-slate-300 bg-white text-slate-800 outline-none mb-4 focus:border-[#0C66AC] transition-colors"
             placeholder="Contraseña de acceso"
             value={passwordInput}
             onChange={(e) => setPasswordInput(e.target.value)}
+            required
           />
           <button type="submit" disabled={loading} className="w-full bg-[#0C66AC] hover:bg-[#0a5793] text-white font-semibold py-2.5 rounded shadow-sm transition-colors disabled:opacity-50">
             {loading ? "Ingresando..." : "Ingresar"}

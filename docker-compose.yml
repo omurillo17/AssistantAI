@@ -29,6 +29,7 @@ services:
     ports:
       - "5678:5678"
     environment:
+      - N8N_ENCRYPTION_KEY=RXGf1tJ/woBJ0wxwzrV5w/Mt2vBACQlq
       - DB_TYPE=postgresdb
       - DB_POSTGRESDB_HOST=postgres
       - DB_POSTGRESDB_PORT=5432

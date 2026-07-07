@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { Pool } from 'pg';
+import { z } from "zod";
+import { rateLimit } from "@/lib/rate-limit";
 
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
@@ -9,10 +11,24 @@ const pool = new Pool({
   port: parseInt(process.env.DB_PORT || '5432'),
 });
 
+const postSchema = z.object({
+  telefono: z.string().min(1, "Falta el campo telefono").max(20),
+  ultimo_mensaje: z.string().optional(),
+  ultimo_mensaje_rol: z.string().max(50).optional().default('user'),
+  asignado_a: z.string().max(100).optional().nullable(),
+  mensajes_no_leidos: z.number().int().min(0).optional().default(0),
+  activo: z.boolean().optional().default(true),
+});
+
 // ─── GET /api/db/mensajes ──────────────────────────────────
 // Devuelve conversaciones activas para la bandeja
 // Prioriza escalados, luego por último mensaje
-export async function GET() {
+export async function GET(request: Request) {
+  const rl = rateLimit(request);
+  if (!rl.success) {
+    return NextResponse.json({ error: "Too Many Requests" }, { status: 429 });
+  }
+
   try {
     const res = await pool.query(`
       SELECT
@@ -55,30 +71,37 @@ export async function GET() {
 // Crea o actualiza un registro en mensajes_bandeja
 // Body: { telefono, ultimo_mensaje?, ultimo_mensaje_rol?, asignado_a?, mensajes_no_leidos?, activo? }
 export async function POST(request: Request) {
+  const rl = rateLimit(request);
+  if (!rl.success) {
+    return NextResponse.json({ error: "Too Many Requests" }, { status: 429 });
+  }
+
   try {
     const body = await request.json();
+    const parsed = postSchema.safeParse(body);
+
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
+    }
+
     const {
       telefono,
       ultimo_mensaje,
-      ultimo_mensaje_rol = 'user',
+      ultimo_mensaje_rol,
       asignado_a,
       mensajes_no_leidos,
       activo,
-    } = body;
-
-    if (!telefono) {
-      return NextResponse.json({ error: 'Falta el campo telefono' }, { status: 400 });
-    }
+    } = parsed.data;
 
     // Upsert en mensajes_bandeja
     const setClauses: string[] = ['updated_at = NOW()'];
     const values: any[] = [
       telefono,
       ultimo_mensaje ?? '',
-      ultimo_mensaje_rol ?? 'user',
+      ultimo_mensaje_rol,
       asignado_a ?? null,
-      mensajes_no_leidos ?? 0,
-      activo ?? true
+      mensajes_no_leidos,
+      activo
     ];
     let idx = 7;
 

@@ -32,6 +32,7 @@ type Candidato = {
   creator_email?: string;
   es_google_calendar?: boolean;
   reclutador_nombre?: string;
+  event_id?: string;
 };
 
 type ChatMessage = {
@@ -344,7 +345,7 @@ export default function CalendarioPage() {
     try {
       const payload = {
         telefono: cancelTarget.resource.telefono,
-        event_id: cancelTarget.id,
+        event_id: cancelTarget.resource.event_id || (cancelTarget.resource.es_google_calendar ? cancelTarget.id : null),
         calendar_id: cancelTarget.resource.creator_email,
       };
       const res = await fetch(`${N8N_BASE_URL}/webhook/crm-cancelar-cita`, {
@@ -387,7 +388,7 @@ export default function CalendarioPage() {
   const totalProximas = Object.values(eventsByRecruiter).reduce((s, arr) => s + arr.length, 0);
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 text-slate-800">
+    <div className="flex flex-col h-[calc(100vh-4rem)] bg-slate-50 text-slate-800">
       {/* HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 px-8 pt-6 pb-4 bg-white border-b border-slate-100 shadow-sm">
         <div className="flex items-center gap-3">

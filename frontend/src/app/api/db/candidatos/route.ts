@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 import { Pool } from 'pg';
+import { ENV } from "@/lib/env";
+import { z } from "zod";
+import { rateLimit } from "@/lib/rate-limit";
 
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
@@ -9,14 +12,36 @@ const pool = new Pool({
   port: parseInt(process.env.DB_PORT || '5432'),
 });
 
+const querySchema = z.object({
+  estado: z.string().optional().nullable(),
+  vacante: z.string().max(100).optional().nullable(),
+  q: z.string().max(100).optional().nullable(),
+  limit: z.coerce.number().int().positive().default(500),
+});
+
 // ─── GET /api/db/candidatos ────────────────────────────────
 // Parámetros opcionales: ?estado=NUEVO&vacante=...&q=nombre
 export async function GET(request: Request) {
+  const rl = rateLimit(request);
+  if (!rl.success) {
+    return NextResponse.json({ error: "Too Many Requests" }, { status: 429 });
+  }
+
   const { searchParams } = new URL(request.url);
-  const estado  = searchParams.get('estado');
-  const vacante = searchParams.get('vacante');
-  const q       = searchParams.get('q');
-  const limit   = parseInt(searchParams.get('limit') || '500');
+  const parsedQuery = querySchema.safeParse({
+    estado: searchParams.get('estado'),
+    vacante: searchParams.get('vacante'),
+    q: searchParams.get('q'),
+    limit: searchParams.get('limit'),
+  });
+
+  if (!parsedQuery.success) {
+    return NextResponse.json({ error: "Parámetros inválidos" }, { status: 400 });
+  }
+
+  const { estado, vacante, q } = parsedQuery.data;
+  let { limit } = parsedQuery.data;
+  limit = Math.min(limit, 100); // Limit pagination
 
   try {
     const conditions: string[] = [];
@@ -61,3 +86,4 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Error al conectar con la base de datos' }, { status: 500 });
   }
 }
+

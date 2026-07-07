@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { Pool } from 'pg';
+import { z } from "zod";
+import { rateLimit } from "@/lib/rate-limit";
 
 const pool = new Pool({
   host: process.env.DB_HOST || 'localhost',
@@ -9,14 +11,37 @@ const pool = new Pool({
   port: parseInt(process.env.DB_PORT || '5432'),
 });
 
+const getQuerySchema = z.object({
+  telefono: z.string().min(1, "Falta el parámetro telefono").max(20),
+});
+
+const patchBodySchema = z.object({
+  telefono: z.string().min(1, "Falta el campo telefono").max(20),
+  estado: z.string().max(50).optional(),
+  notas: z.string().optional(),
+  vacante_interes: z.string().max(100).optional(),
+  escalado: z.boolean().optional(),
+  escalation_reason: z.string().optional(),
+  event_id: z.string().optional(),
+});
+
 // ─── GET /api/db/candidato?telefono=xxx ───────────────────
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const telefono = searchParams.get('telefono');
-
-  if (!telefono) {
-    return NextResponse.json({ error: 'Falta el parámetro telefono' }, { status: 400 });
+  const rl = rateLimit(request);
+  if (!rl.success) {
+    return NextResponse.json({ error: "Too Many Requests" }, { status: 429 });
   }
+
+  const { searchParams } = new URL(request.url);
+  const parsed = getQuerySchema.safeParse({
+    telefono: searchParams.get('telefono'),
+  });
+
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
+  }
+
+  const { telefono } = parsed.data;
 
   try {
     const res = await pool.query(
@@ -38,13 +63,20 @@ export async function GET(request: Request) {
 // ─── PATCH /api/db/candidato ─────────────────────────────
 // Body: { telefono, estado?, notas?, vacante_interes?, escalado?, escalation_reason? }
 export async function PATCH(request: Request) {
+  const rl = rateLimit(request);
+  if (!rl.success) {
+    return NextResponse.json({ error: "Too Many Requests" }, { status: 429 });
+  }
+
   try {
     const body = await request.json();
-    const { telefono, estado, notas, vacante_interes, escalado, escalation_reason } = body;
+    const parsed = patchBodySchema.safeParse(body);
 
-    if (!telefono) {
-      return NextResponse.json({ error: 'Falta el campo telefono' }, { status: 400 });
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
     }
+
+    const { telefono, estado, notas, vacante_interes, escalado, escalation_reason, event_id } = parsed.data;
 
     const campos: string[] = ['updated_at = NOW()'];
     const valores: (string | boolean | null)[] = [];
@@ -65,6 +97,10 @@ export async function PATCH(request: Request) {
     if (vacante_interes !== undefined) {
       campos.push(`vacante_interes = $${idx++}`);
       valores.push(vacante_interes);
+    }
+    if (event_id !== undefined) {
+      campos.push(`event_id = $${idx++}`);
+      valores.push(event_id);
     }
     if (escalado !== undefined) {
       campos.push(`escalado = $${idx++}`);

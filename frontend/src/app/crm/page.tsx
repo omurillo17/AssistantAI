@@ -341,7 +341,7 @@ export default function CRMDashboard() {
             ⬅ Atrás
           </button>
           <h1 className="text-2xl font-bold text-slate-800">
-            CRM Candidatos
+            Dashboard Candidatos
           </h1>
         </div>
         <div className="flex gap-3 items-center">
