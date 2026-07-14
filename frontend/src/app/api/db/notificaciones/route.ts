@@ -9,16 +9,20 @@ export async function GET(request: Request) {
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get("tci_session")?.value;
+    if (!token) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+    
     let reclutador_id = null;
     let rol = "USER";
 
-    if (token) {
-      try {
-        const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
-        const { payload } = await jwtVerify(token, secretKey);
-        reclutador_id = payload.reclutador_id as string | null;
-        rol = payload.rol as string;
-      } catch (err) {}
+    try {
+      const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
+      const { payload } = await jwtVerify(token, secretKey);
+      reclutador_id = payload.reclutador_id as string | null;
+      rol = payload.rol as string;
+    } catch (err) {
+      return NextResponse.json({ error: "Token inválido" }, { status: 401 });
     }
 
     if (!reclutador_id && rol !== "ADMIN") {
@@ -60,13 +64,19 @@ export async function PATCH(request: Request) {
       // Mark all as read for user
       const cookieStore = await cookies();
       const token = cookieStore.get("tci_session")?.value;
-      if (token) {
+      if (!token) {
+        return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+      }
+      
+      try {
         const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
         const { payload } = await jwtVerify(token, secretKey);
         const reclutador_id = payload.reclutador_id as string | null;
         if (reclutador_id) {
           await pool.query('UPDATE notificaciones SET leida = true WHERE reclutador_id = $1', [reclutador_id]);
         }
+      } catch (err) {
+        return NextResponse.json({ error: "Token inválido" }, { status: 401 });
       }
     }
     

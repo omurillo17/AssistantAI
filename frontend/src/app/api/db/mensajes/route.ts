@@ -24,20 +24,22 @@ export async function GET(request: Request) {
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get("tci_session")?.value;
+    if (!token) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+    
     let rol = "USER";
     let reclutador_id = null;
     let usuario = null;
 
-    if (token) {
-      try {
-        const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
-        const { payload } = await jwtVerify(token, secretKey);
-        rol = payload.rol as string;
-        reclutador_id = payload.reclutador_id as string | null;
-        usuario = payload.usuario as string;
-      } catch (err) {
-        console.error("JWT verify error:", err);
-      }
+    try {
+      const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
+      const { payload } = await jwtVerify(token, secretKey);
+      rol = payload.rol as string;
+      reclutador_id = payload.reclutador_id as string | null;
+      usuario = payload.usuario as string;
+    } catch (err) {
+      return NextResponse.json({ error: "Token inválido" }, { status: 401 });
     }
 
     let filterClause = `
@@ -89,6 +91,17 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
 
   try {
+    const cookieStore = await cookies();
+    const token = cookieStore.get("tci_session")?.value;
+    if (!token) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+    try {
+      const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
+      await jwtVerify(token, secretKey);
+    } catch (err) {
+      return NextResponse.json({ error: "Token inválido" }, { status: 401 });
+    }
     const body = await request.json();
     const parsed = postSchema.safeParse(body);
 
@@ -151,5 +164,40 @@ export async function POST(request: Request) {
   } catch (err) {
     console.error('Error upserting mensajes_bandeja:', err);
     return NextResponse.json({ error: 'Error al actualizar bandeja' }, { status: 500 });
+  }
+}
+
+// ─── PATCH /api/db/mensajes ───────────────────────────────
+// Asigna un chat a un reclutador
+// Body: { telefono, asignado_a }
+export async function PATCH(request: Request) {
+  try {
+    const cookieStore = await cookies();
+    const token = cookieStore.get("tci_session")?.value;
+    if (!token) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+    try {
+      const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
+      await jwtVerify(token, secretKey);
+    } catch (err) {
+      return NextResponse.json({ error: "Token inválido" }, { status: 401 });
+    }
+    const body = await request.json();
+    const { telefono, asignado_a } = body;
+
+    if (!telefono) {
+      return NextResponse.json({ error: "Falta teléfono" }, { status: 400 });
+    }
+
+    const res = await pool.query(
+      `UPDATE mensajes_bandeja SET asignado_a = $1, updated_at = NOW() WHERE telefono = $2 RETURNING *`,
+      [asignado_a, telefono]
+    );
+
+    return NextResponse.json({ success: true, updated: res.rows[0] });
+  } catch (err) {
+    console.error('Error assigning chat:', err);
+    return NextResponse.json({ error: 'Error al asignar chat' }, { status: 500 });
   }
 }

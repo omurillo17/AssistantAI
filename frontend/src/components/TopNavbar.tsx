@@ -24,10 +24,7 @@ export function TopNavbar() {
   }, [pathname]);
 
   useEffect(() => {
-    const auth = localStorage.getItem("tci_authenticated");
-    if (!auth && pathname !== "/login") {
-      router.push("/login");
-    }
+
 
     function handleClickOutside(event: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -75,7 +72,6 @@ export function TopNavbar() {
   if (pathname === "/login") return null;
 
   const handleLogout = () => {
-    localStorage.removeItem("tci_authenticated");
     localStorage.removeItem("tci_username");
     localStorage.removeItem("tci_role");
 
@@ -88,18 +84,37 @@ export function TopNavbar() {
     router.push("/login");
   };
 
+  // Mapear rutas a títulos
+  const getTitle = () => {
+    if (pathname.startsWith("/mensajes")) return "Bandeja de Mensajes";
+    if (pathname.startsWith("/crm")) return "CRM Reclutamiento";
+    if (pathname.startsWith("/vacantes")) return "Gestión de Vacantes";
+    if (pathname.startsWith("/calendario")) return "Calendario de Entrevistas";
+    if (pathname.startsWith("/candidatos")) return "Expediente de Candidato";
+    if (pathname.startsWith("/configuracion")) return "Configuración";
+    if (pathname.startsWith("/usuarios")) return "Gestión de Usuarios";
+    if (pathname.startsWith("/empresa")) return "Perfil de Empresa";
+    if (pathname.startsWith("/reclutadores")) return "Reclutadores";
+    return "Panel Principal";
+  };
+
+  const showBackButton = pathname !== "/";
+
   return (
     <nav className="h-16 bg-primary flex items-center justify-between px-6 shadow-sm z-40 sticky top-0 flex-shrink-0">
-      {/* Search / Breadcrumbs */}
-      <div className="flex items-center gap-4 text-white/90">
-        <div className="relative hidden md:block text-white/80">
-          <Search size={16} className="absolute left-3 top-2.5 opacity-70" />
-          <input
-            type="text"
-            placeholder="Buscar..."
-            className="pl-10 pr-4 py-2 bg-white/10 border border-white/20 rounded-full text-sm focus:outline-none focus:bg-white/20 transition-colors text-white placeholder-white/50 w-64"
-          />
-        </div>
+      {/* Title / Back Button */}
+      <div className="flex items-center gap-4 text-white">
+        {showBackButton && (
+          <button
+            onClick={() => router.back()}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 font-semibold rounded-lg transition-colors text-sm"
+          >
+            ⬅ Atrás
+          </button>
+        )}
+        <h1 className="text-xl font-bold tracking-wide">
+          {getTitle()}
+        </h1>
       </div>
 
       {/* Right side items */}

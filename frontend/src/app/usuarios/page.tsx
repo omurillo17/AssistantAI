@@ -30,15 +30,8 @@ export default function UsuariosPage() {
 
   useEffect(() => {
     document.title = "Gestión de Usuarios | TCi";
-    // Check if authenticated
-    const auth = localStorage.getItem("tci_authenticated");
     const role = localStorage.getItem("tci_role");
-    
-    if (!auth) {
-      router.push("/login");
-    } else {
-      cargarUsuarios();
-    }
+    cargarUsuarios();
   }, [router]);
 
   const cargarUsuarios = async () => {
@@ -146,15 +139,6 @@ export default function UsuariosPage() {
 
   return (
     <div className="p-8 max-w-5xl mx-auto animate-fade-in text-slate-800">
-      <div className="flex items-center gap-4 mb-8">
-        <button
-          onClick={() => router.push("/")}
-          className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded shadow-sm transition-colors text-sm border border-slate-200"
-        >
-          ⬅ Atrás
-        </button>
-        <h1 className="text-3xl font-bold text-slate-800">Gestión de Usuarios</h1>
-      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         {typeof window !== 'undefined' && localStorage.getItem('tci_role') === 'ADMIN' && (

@@ -15,6 +15,7 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/_next") || // Archivos estáticos de Next.js
     pathname.startsWith("/login") || // Página de Login
     pathname.startsWith("/api/auth/login") || // Endpoint de Login
+    pathname.startsWith("/api/webhook") || // Webhooks de n8n no requieren JWT
     pathname === "/favicon.ico"
   ) {
     return NextResponse.next();
@@ -35,7 +36,7 @@ export async function proxy(request: NextRequest) {
     // Verificar el token
     const secretKey = new TextEncoder().encode(JWT_SECRET || "fallback_secret_do_not_use_in_prod");
     const { payload } = await jwtVerify(token, secretKey);
-    
+
     // Check roles
     const userRole = payload.rol as string;
 
@@ -48,15 +49,30 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(new URL("/", request.url));
     }
 
-    return NextResponse.next();
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set('x-user-rol', userRole);
+    if (payload.reclutador_id) {
+      requestHeaders.set('x-reclutador-id', payload.reclutador_id as string);
+    }
+
+    return NextResponse.next({
+      request: {
+        headers: requestHeaders,
+      },
+    });
   } catch (err) {
     // Si el token es inválido o expiró
     console.error("Token JWT inválido");
     
+    const response = NextResponse.redirect(new URL('/login', request.url));
+    response.cookies.delete('tci_session');
+
     if (pathname.startsWith("/api/")) {
-      return NextResponse.json({ error: "Sesión expirada" }, { status: 401 });
+      const apiRes = NextResponse.json({ error: "Sesión expirada" }, { status: 401 });
+      apiRes.cookies.delete('tci_session');
+      return apiRes;
     }
-    return NextResponse.redirect(new URL("/login", request.url));
+    return response;
   }
 }
 

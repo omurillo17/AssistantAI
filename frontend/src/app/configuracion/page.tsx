@@ -22,11 +22,8 @@ export default function ConfiguracionPage() {
 
   useEffect(() => {
     document.title = "Configuración | TCi";
-    const auth = localStorage.getItem("tci_authenticated");
     const role = localStorage.getItem("tci_role");
-    if (!auth) {
-      router.push("/login");
-    } else if (role !== "ADMIN") {
+    if (role !== "ADMIN") {
       setIsAuthValid(false);
     } else {
       setIsAuthValid(true);
@@ -121,19 +118,6 @@ export default function ConfiguracionPage() {
 
   return (
     <div className="flex flex-col h-full bg-slate-50 text-slate-800">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4 px-10 pt-6">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => router.back()}
-            className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded shadow-sm transition-colors text-sm border border-slate-200"
-          >
-            ⬅ Atrás
-          </button>
-          <h1 className="text-2xl font-bold text-slate-800">
-            Configuración del Sistema
-          </h1>
-        </div>
-      </div>
 
       <main className="flex-1 flex overflow-hidden max-w-7xl w-full mx-auto p-6 gap-6">
         {/* Sidebar: Lista de Archivos */}

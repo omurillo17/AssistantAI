@@ -1,11 +1,12 @@
-import { NextRequest, NextResponse } from "next";
+import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { path: string[] } }
+  { params }: { params: Promise<{ path: string[] }> }
 ) {
   try {
-    const path = params.path.join("/");
+    const p = await params;
+    const path = p.path.join("/");
     // Reconstruimos la URL hacia WAHA
     // Asumimos que WAHA está en localhost:3000 o si hay variable de entorno
     const wahaBase = process.env.WAHA_URL || "http://localhost:3000";

@@ -44,13 +44,16 @@ export async function GET(request: Request) {
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get("tci_session")?.value;
-    if (token) {
-      const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'secret-key-default');
-      const { payload } = await jwtVerify(token, secret);
-      rol = payload.rol as string;
-      reclutador_id = payload.reclutador_id as string;
+    if (!token) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
-  } catch (err) {}
+    const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'secret-key-default');
+    const { payload } = await jwtVerify(token, secret);
+    rol = payload.rol as string;
+    reclutador_id = payload.reclutador_id as string;
+  } catch (err) {
+    return NextResponse.json({ error: "Token inválido" }, { status: 401 });
+  }
 
   try {
     let filterClause = "telefono LIKE $1";
@@ -87,6 +90,17 @@ export async function GET(request: Request) {
 export async function PATCH(request: Request) {
 
   try {
+    const cookieStore = await cookies();
+    const token = cookieStore.get("tci_session")?.value;
+    if (!token) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
+    try {
+      const secretKey = new TextEncoder().encode(process.env.JWT_SECRET || 'secret-key-default');
+      await jwtVerify(token, secretKey);
+    } catch (err) {
+      return NextResponse.json({ error: "Token inválido" }, { status: 401 });
+    }
     const body = await request.json();
     const parsed = patchBodySchema.safeParse(body);
 

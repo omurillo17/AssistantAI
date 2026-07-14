@@ -10,44 +10,7 @@ import { getEstado, ESTADOS_CRM, ESTADOS } from "@/lib/estados";
 
 const N8N_BASE_URL = "/api/n8n";
 
-type Candidato = {
-  id: string;
-  telefono: string;
-  estado: string;
-  nombre: string | null;
-  nombre_chat: string | null;
-  nombre_solicitud: string | null;
-  nombre_ine: string | null;
-  nombre_constancia: string | null;
-  vacante_interes: string | null;
-  nave_interes: string | null;
-  resumen_ia: string | null;
-  motivo_analisis: string | null;
-  veredicto: string | null;
-  escalado: boolean;
-  tiene_cv: boolean;
-  datos_ine: Record<string, string> | null;
-  datos_rfc: string | null;
-  cv_manual: Record<string, string> | null;
-  ultima_interaccion: string;
-  updated_at: string;
-  created_at: string;
-  fecha_entrevista: string | null;
-  edad: string | null;
-  correo: string | null;
-  privacidad_aceptada: boolean;
-  nombre_confirmado: boolean;
-  link_cv: string | null;
-  escalation_reason: string | null;
-  filtros_tecnicos: string | null;
-  experiencia: string | null;
-};
-
-type ChatMessage = {
-  role: string;
-  content: string;
-  timestamp: string;
-};
+import type { Candidato, ChatMessage } from "@/types";
 
 function getNombre(c: Candidato) {
   return c.nombre_chat || c.nombre_solicitud || c.nombre_ine || c.nombre || "Candidato Desconocido";
@@ -108,9 +71,7 @@ export default function CandidatosPage() {
 
   useEffect(() => {
     document.title = "Expediente de Candidatos | Grupo Virgo";
-    const auth = localStorage.getItem("tci_authenticated");
-    if (!auth) router.push("/login");
-  }, [router]);
+  }, []);
 
   const showToast = (msg: string, isError: boolean) => {
     setToast({ msg, isError });
@@ -175,20 +136,7 @@ export default function CandidatosPage() {
 
   return (
     <div className="flex flex-col h-full text-slate-800">
-      {/* PAGE HEADER */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => router.back()}
-            className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded shadow-sm transition-colors text-sm border border-slate-200"
-          >
-            ⬅ Atrás
-          </button>
-          <h1 className="text-2xl font-bold text-slate-800">
-            Expediente de Candidatos
-          </h1>
-        </div>
-      </div>
+
 
       <main className="flex-1 p-8 max-w-6xl mx-auto w-full">
         {/* Buscador */}
@@ -347,7 +295,7 @@ export default function CandidatosPage() {
                     </button>
                     {candidato.link_cv && (
                       <button
-                        onClick={() => window.open(proxyMediaUrl(candidato.link_cv) || "", "_blank")}
+                        onClick={() => window.open(proxyMediaUrl(candidato.link_cv ?? null) || "", "_blank")}
                         className="w-full text-center bg-info hover:bg-info/90 text-white font-bold py-3 rounded shadow-sm transition-all flex items-center justify-center gap-2 text-sm"
                       >
                         📄 Ver CV Cargado

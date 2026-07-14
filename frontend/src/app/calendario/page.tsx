@@ -20,26 +20,7 @@ const localizer = dateFnsLocalizer({
 const N8N_BASE_URL = "/api/n8n";
 const CANCEL_PASSWORD = "virgo2024"; // contraseña para confirmar cancelación
 
-type Candidato = {
-  telefono: string;
-  estado: string;
-  nombre_chat: string;
-  nombre_solicitud: string;
-  vacante_interes: string;
-  nave_interes: string;
-  fecha_entrevista: string;
-  resumen_ia: string;
-  creator_email?: string;
-  es_google_calendar?: boolean;
-  reclutador_nombre?: string;
-  event_id?: string;
-};
-
-type ChatMessage = {
-  role: string;
-  content: string;
-  timestamp: string;
-};
+import type { Candidato, ChatMessage } from "@/types";
 
 interface CalendarEvent {
   id: string;
@@ -163,8 +144,6 @@ export default function CalendarioPage() {
 
   useEffect(() => {
     document.title = "Calendario Entrevistas | TCi";
-    const auth = localStorage.getItem("tci_authenticated");
-    if (!auth) { router.push("/login"); return; }
     loadData();
   }, [router]);
 
@@ -231,10 +210,11 @@ export default function CalendarioPage() {
     const dbEvents = candidatos
       .filter((c) => c.fecha_entrevista?.trim())
       .map((c) => {
-        let startDate = new Date(c.fecha_entrevista);
-        if (isNaN(startDate.getTime())) startDate = parse(c.fecha_entrevista, "dd/MM/yyyy HH:mm", new Date());
+        const fechaStr = c.fecha_entrevista!;
+        let startDate = new Date(fechaStr);
+        if (isNaN(startDate.getTime())) startDate = parse(fechaStr, "dd/MM/yyyy HH:mm", new Date());
         if (isNaN(startDate.getTime())) {
-          startDate = parse(c.fecha_entrevista, "dd/MM/yyyy", new Date());
+          startDate = parse(fechaStr, "dd/MM/yyyy", new Date());
           if (!isNaN(startDate.getTime())) startDate.setHours(10, 0, 0, 0);
         }
         if (isNaN(startDate.getTime())) return null;
@@ -415,18 +395,8 @@ export default function CalendarioPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-slate-50 text-slate-800">
       {/* HEADER */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 px-8 pt-6 pb-4 bg-white border-b border-slate-100 shadow-sm">
+      <div className="flex flex-col md:flex-row justify-end items-start md:items-center gap-4 px-8 pt-6 pb-4 bg-white border-b border-slate-100 shadow-sm">
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => router.back()}
-            className="p-2 rounded-lg hover:bg-slate-100 border border-slate-200 transition-colors"
-          >
-            <ChevronLeft size={18} className="text-slate-600" />
-          </button>
-          <div className="flex items-center gap-2">
-            <CalendarIcon size={22} className="text-indigo-600" />
-            <h1 className="text-xl font-bold text-slate-800">Calendario de Entrevistas</h1>
-          </div>
           <span className="bg-indigo-100 text-indigo-700 text-xs font-bold px-2.5 py-1 rounded-full">
             {totalProximas} próximas
           </span>

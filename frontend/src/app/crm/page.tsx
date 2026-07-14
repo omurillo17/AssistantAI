@@ -9,7 +9,7 @@ import {
 import {
   Users, UserCheck, CalendarDays, AlertTriangle, TrendingUp,
   Search, LayoutGrid, List, RefreshCw, ChevronDown, Trophy,
-  MessageSquare, FileText,
+  MessageSquare, FileText, Filter,
 } from "lucide-react";
 import {
   ESTADOS, ESTADOS_ORDENADOS, ESTADOS_CRM, GRUPOS, KANBAN_COLUMNAS,
@@ -17,39 +17,7 @@ import {
 } from "@/lib/estados";
 
 // ─── TIPOS ──────────────────────────────────────────────────
-type Candidato = {
-  id: string;
-  telefono: string;
-  estado: string;
-  nombre: string | null;
-  nombre_chat: string | null;
-  nombre_solicitud: string | null;
-  nombre_ine: string | null;
-  vacante_interes: string | null;
-  nave_interes: string | null;
-  fecha_entrevista: string | null;
-  resumen_ia: string | null;
-  motivo_analisis: string | null;
-  veredicto: string | null;
-  escalado: boolean;
-  tiene_cv: boolean;
-  datos_ine: object | null;
-  datos_rfc: string | null;
-  cv_manual: object | null;
-  ultima_interaccion: string;
-  updated_at: string;
-  edad: string | null;
-  correo: string | null;
-  privacidad_aceptada: boolean;
-  nombre_confirmado: boolean;
-  link_cv: string | null;
-};
-
-type ChatMessage = {
-  role: string;
-  content: string;
-  timestamp: string;
-};
+import type { Candidato, ChatMessage } from "@/types";
 
 const N8N_BASE_URL = "/api/n8n";
 const CHART_COLORS = [
@@ -170,12 +138,7 @@ export default function CRMDashboard() {
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [loadingChat, setLoadingChat] = useState(false);
 
-  useEffect(() => {
-    document.title = "CRM Reclutamiento | Grupo Virgo";
-    const auth = localStorage.getItem("tci_authenticated");
-    if (!auth) router.push("/login");
-    else loadData();
-  }, [router]);
+
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -191,6 +154,11 @@ export default function CRMDashboard() {
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    document.title = "CRM Reclutamiento | Grupo Virgo";
+    loadData();
+  }, [loadData]);
 
   const showToast = (msg: string, isError: boolean) => {
     setToast({ msg, isError });
@@ -313,7 +281,7 @@ export default function CRMDashboard() {
       const matchSearch = nombre.includes(searchTerm.toLowerCase()) || c.telefono.includes(searchTerm);
       const matchStatus = statusFilter === "TODOS" || c.estado === statusFilter;
       return matchSearch && matchStatus;
-    }).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+    }).sort((a, b) => new Date(b.updated_at!).getTime() - new Date(a.updated_at!).getTime());
   }, [candidatos, searchTerm, statusFilter]);
 
   // ─── KANBAN ───────────────────────────────────────────────
@@ -331,19 +299,8 @@ export default function CRMDashboard() {
   // ─── RENDER ───────────────────────────────────────────────
   return (
     <div className="flex flex-col h-full text-slate-800">
-      {/* PAGE HEADER */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => router.back()}
-            className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded shadow-sm transition-colors text-sm border border-slate-200"
-          >
-            ⬅ Atrás
-          </button>
-          <h1 className="text-2xl font-bold text-slate-800">
-            Dashboard Candidatos
-          </h1>
-        </div>
+      {/* PAGE CONTROLS */}
+      <div className="flex flex-col md:flex-row justify-end items-start md:items-center mb-6 gap-4">
         <div className="flex gap-3 items-center">
           {/* Toggle vista */}
           <div className="flex bg-white shadow-sm border border-slate-200 p-1 rounded gap-1">
@@ -618,6 +575,32 @@ export default function CRMDashboard() {
                 <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-xl mb-4 text-sm text-indigo-800 leading-relaxed">
                   <div className="font-bold text-indigo-600 text-xs uppercase tracking-wider mb-1">🤖 Resumen IA</div>
                   <div className="whitespace-pre-wrap">{selectedCandidate.resumen_ia}</div>
+                </div>
+              )}
+
+              {/* Filtros Técnicos / Respuestas */}
+              {selectedCandidate.filtros_tecnicos && (
+                <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 mb-4 text-sm">
+                  <div className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-1"><Filter size={12} /> Respuestas Filtros / Perfil</div>
+                  <div className="space-y-2">
+                    {(() => {
+                      try {
+                        const parsed = JSON.parse(selectedCandidate.filtros_tecnicos);
+                        const respuestas = parsed.respuestas || parsed;
+                        return Object.entries(respuestas).map(([key, value]) => {
+                          if (key === 'viable' || key === 'motivo') return null;
+                          return (
+                            <div key={key} className="bg-white p-2.5 rounded-lg border border-slate-100 shadow-sm flex flex-col gap-1">
+                              <span className="text-xs font-bold text-indigo-900">{key}</span>
+                              <span className="text-sm text-slate-700">{String(value)}</span>
+                            </div>
+                          );
+                        });
+                      } catch (e) {
+                        return <div className="text-sm text-slate-700 whitespace-pre-wrap">{selectedCandidate.filtros_tecnicos}</div>;
+                      }
+                    })()}
+                  </div>
                 </div>
               )}
 

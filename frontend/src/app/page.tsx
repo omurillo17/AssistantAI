@@ -12,12 +12,8 @@ export default function Home() {
 
   useEffect(() => {
     document.title = "Plataforma TCi";
-    const auth = localStorage.getItem("tci_authenticated");
-    if (!auth) {
-      router.push("/login");
-    } else {
-      setRole(localStorage.getItem("tci_role") || "USER");
-      setLoading(false);
+    setRole(localStorage.getItem("tci_role") || "USER");
+    setLoading(false);
       // Cargar badge de mensajes no leídos
       fetch("/api/db/mensajes")
         .then(r => r.json())
@@ -28,7 +24,6 @@ export default function Home() {
           }
         })
         .catch(() => { });
-    }
   }, [router]);
 
   if (loading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-500">Cargando...</div>;

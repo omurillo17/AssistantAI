@@ -11,13 +11,16 @@ export async function GET(request: Request) {
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get("tci_session")?.value;
-    if (token) {
-      const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'secret-key-default');
-      const { payload } = await jwtVerify(token, secret);
-      rol = payload.rol as string;
-      reclutador_id = payload.reclutador_id as string;
+    if (!token) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
-  } catch (err) {}
+    const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'secret-key-default');
+    const { payload } = await jwtVerify(token, secret);
+    rol = payload.rol as string;
+    reclutador_id = payload.reclutador_id as string;
+  } catch (err) {
+    return NextResponse.json({ error: "Token inválido o expirado" }, { status: 401 });
+  }
 
   try {
     let whereClause = "";
@@ -94,18 +97,31 @@ export async function POST(request: Request) {
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get("tci_session")?.value;
-    if (token) {
-      const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'secret-key-default');
-      const { payload } = await jwtVerify(token, secret);
-      rol = payload.rol as string;
-      jwt_reclutador_id = payload.reclutador_id as string;
+    if (!token) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
-  } catch (err) {}
+    const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'secret-key-default');
+    const { payload } = await jwtVerify(token, secret);
+    rol = payload.rol as string;
+    jwt_reclutador_id = payload.reclutador_id as string;
+  } catch (err) {
+    return NextResponse.json({ error: "Token inválido o expirado" }, { status: 401 });
+  }
   const client = await pool.connect();
   try {
-    let data = await request.json();
-    if (!Array.isArray(data)) {
-      return NextResponse.json({ error: 'El body debe ser un array' }, { status: 400 });
+    let body = await request.json();
+    let data = [];
+    let transfer_map: {from: string, to: string}[] = [];
+
+    if (Array.isArray(body)) {
+      data = body;
+    } else if (body && Array.isArray(body.recruiters)) {
+      data = body.recruiters;
+      if (Array.isArray(body.transfer_map)) {
+        transfer_map = body.transfer_map;
+      }
+    } else {
+      return NextResponse.json({ error: 'Formato de datos inválido' }, { status: 400 });
     }
 
     if (rol === "RECLUTADOR") {
@@ -116,6 +132,16 @@ export async function POST(request: Request) {
     }
 
     await client.query('BEGIN');
+
+    // Transfer chats and candidates if requested
+    if (rol === "ADMIN" && transfer_map.length > 0) {
+      for (const t of transfer_map) {
+        if (t.from && t.to) {
+          await client.query(`UPDATE mensajes_bandeja SET asignado_a = $1 WHERE asignado_a = $2`, [t.to, t.from]);
+          await client.query(`UPDATE candidatos SET asignado_a = $1 WHERE asignado_a = $2`, [t.to, t.from]);
+        }
+      }
+    }
 
     const incomingRecruiters = data.map((r: any) => r.reclutador_id);
     const incomingVacancies = data.flatMap((r: any) => r.vacantes.map((v: any) => v.id));
@@ -271,10 +297,13 @@ export async function POST(request: Request) {
 
                     if (vac.filtros && vac.filtros.length > 0) {
                         const filtrosActivos = vac.filtros.filter((f: any) => f.activo);
-                        if (filtrosActivos.length > 0) {
+                        const filtrosBase = filtrosActivos.filter((f: any) => f.es_pregunta_base);
+                        const filtrosEvaluacion = filtrosActivos.filter((f: any) => !f.es_pregunta_base);
+
+                        if (filtrosEvaluacion.length > 0) {
                             detallesTexto += `\n[REGLAS DE EVALUACIÓN OBLIGATORIAS PARA ESTA VACANTE]\n`;
-                            detallesTexto += `Debes hacer las siguientes preguntas al candidato de forma conversacional. Si la respuesta del candidato NO cumple con la condición, márcalo como NO VIABLE, infórmale amablemente que no cumple el perfil y termina la conversación sin agendar cita:\n`;
-                            filtrosActivos.forEach((f: any) => {
+                            detallesTexto += `Debes hacer las siguientes preguntas al candidato de forma conversacional.\n`;
+                            filtrosEvaluacion.forEach((f: any) => {
                                 detallesTexto += `- Pregunta a hacer: "${f.pregunta}"\n`;
                                 if (f.tipo === "booleano") {
                                     detallesTexto += `  Condición para ser VIABLE: El candidato DEBE cumplir con esto.\n`;
@@ -283,6 +312,14 @@ export async function POST(request: Request) {
                                 } else if (f.tipo === "rango_edad") {
                                     detallesTexto += `  Condición para ser VIABLE: Su edad DEBE estar entre ${f.edad_min} y ${f.edad_max} años.\n`;
                                 }
+                            });
+                        }
+
+                        if (filtrosBase.length > 0) {
+                            detallesTexto += `\n[PREGUNTAS BASE PARA ARMAR PERFIL (SI NO TIENE CV)]\n`;
+                            detallesTexto += `Estas preguntas conforman el perfil manual del candidato. Hazlas obligatoriamente si el candidato NO tiene CV:\n`;
+                            filtrosBase.forEach((f: any) => {
+                                detallesTexto += `- Pregunta a hacer: "${f.pregunta}" (Etiqueta JSON sugerida: ${f.clave})\n`;
                             });
                         }
                     }

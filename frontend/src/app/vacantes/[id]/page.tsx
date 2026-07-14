@@ -14,47 +14,11 @@ import {
   ToggleLeft,
   ToggleRight,
   HelpCircle,
+  X,
 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
-type TipoFiltro = "booleano" | "opcion" | "rango_edad" | "texto";
-
-type Filtro = {
-  id: string;
-  clave: string;
-  etiqueta: string;
-  tipo: TipoFiltro;
-  pregunta: string;
-  // For "opcion"
-  opciones?: string[];
-  valor_requerido?: string;
-  // For "rango_edad"
-  edad_min?: number;
-  edad_max?: number;
-  // For "booleano"
-  requiere_si?: boolean;
-  activo: boolean;
-};
-
-type Vacante = {
-  id: string;
-  nombre: string;
-  naves: string[];
-  detalles: string;
-  activa: boolean;
-  palabras_clave?: string;
-  filtros?: Filtro[];
-};
-
-type Recruiter = {
-  reclutador_id: string;
-  nombre: string;
-  activo: boolean;
-  telefono: string;
-  calendar_id: string;
-  color: string;
-  vacantes: Vacante[];
-};
+import type { TipoFiltro, Filtro, Vacante, Recruiter } from "@/types";
 
 // ─── Template Filters ────────────────────────────────────────────────────────
 const FILTROS_TEMPLATE: Omit<Filtro, "id" | "activo">[] = [
@@ -105,6 +69,16 @@ const FILTROS_TEMPLATE: Omit<Filtro, "id" | "activo">[] = [
   },
 ];
 
+const PREGUNTAS_BASE_PREDEFINIDAS: Omit<Filtro, "id" | "activo">[] = [
+  { clave: "edad", etiqueta: "Edad", tipo: "texto", pregunta: "¿Cuántos años tienes?", es_pregunta_base: true },
+  { clave: "municipio", etiqueta: "Municipio/Colonia", tipo: "texto", pregunta: "¿En qué municipio o colonia vives?", es_pregunta_base: true },
+  { clave: "experiencia", etiqueta: "Último trabajo y duración", tipo: "texto", pregunta: "¿Cuál fue tu último trabajo y cuánto tiempo duraste?", es_pregunta_base: true },
+  { clave: "habilidades", etiqueta: "Habilidades principales", tipo: "texto", pregunta: "¿Cuáles son tus habilidades principales?", es_pregunta_base: true },
+  { clave: "correo", etiqueta: "Correo electrónico", tipo: "texto", pregunta: "¿Cuál es tu correo electrónico?", es_pregunta_base: true },
+  { clave: "laborando", etiqueta: "¿Laborando actualmente?", tipo: "booleano", pregunta: "¿Te encuentras laborando actualmente?", requiere_si: true, es_pregunta_base: true },
+  { clave: "computadora", etiqueta: "¿Computadora en casa?", tipo: "booleano", pregunta: "¿Cuentas con computadora en casa?", requiere_si: true, es_pregunta_base: true },
+];
+
 const API_URL = `/api/db/vacantes`;
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -120,6 +94,7 @@ export default function VacanteFiltrosPage() {
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ msg: string; isError: boolean } | null>(null);
   const [showTemplatePanel, setShowTemplatePanel] = useState(false);
+  const [showPreguntasBaseModal, setShowPreguntasBaseModal] = useState(false);
 
   // New filter form state
   const [newFiltro, setNewFiltro] = useState<Omit<Filtro, "id" | "activo">>({
@@ -188,8 +163,6 @@ export default function VacanteFiltrosPage() {
   }, [vacId, router]);
 
   useEffect(() => {
-    const auth = localStorage.getItem("tci_authenticated");
-    if (!auth) { router.push("/login"); return; }
     loadData();
   }, [loadData, router]);
 
@@ -250,6 +223,19 @@ export default function VacanteFiltrosPage() {
     saveFiltros(updated);
   };
 
+  const togglePreguntaBase = (template: Omit<Filtro, "id" | "activo">) => {
+    if (!vacante) return;
+    const existing = (vacante.filtros || []).find((f) => f.clave === template.clave);
+    let updated;
+    if (existing) {
+      updated = (vacante.filtros || []).filter((f) => f.clave !== template.clave);
+    } else {
+      const newF: Filtro = { ...template, id: `fb_${Date.now()}_${Math.floor(Math.random() * 1000)}`, activo: true, es_pregunta_base: true };
+      updated = [...(vacante.filtros || []), newF];
+    }
+    saveFiltros(updated);
+  };
+
   const removeFiltro = (filtroId: string) => {
     if (!confirm("¿Eliminar este filtro?")) return;
     if (!vacante) return;
@@ -263,6 +249,8 @@ export default function VacanteFiltrosPage() {
       opcion: "Opción múltiple",
       rango_edad: "Rango de Edad",
       texto: "Texto libre",
+      numero: "Número",
+      si_no: "Sí / No",
     };
     return map[tipo];
   };
@@ -273,6 +261,8 @@ export default function VacanteFiltrosPage() {
       opcion: "bg-blue-100 text-blue-700",
       rango_edad: "bg-amber-100 text-amber-700",
       texto: "bg-slate-100 text-slate-600",
+      numero: "bg-purple-100 text-purple-700",
+      si_no: "bg-emerald-100 text-emerald-700",
     };
     return map[tipo];
   };
@@ -370,6 +360,11 @@ export default function VacanteFiltrosPage() {
                             INACTIVO
                           </span>
                         )}
+                        {f.es_pregunta_base && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 flex items-center gap-1" title="Pregunta Base">
+                            <Users size={10} /> Base
+                          </span>
+                        )}
                       </div>
                       <p className="text-sm text-slate-600 mb-1">
                         <span className="font-medium text-slate-400">Pregunta: </span>
@@ -420,6 +415,21 @@ export default function VacanteFiltrosPage() {
 
         {/* RIGHT: Add Filter Panel */}
         <div className="space-y-4">
+          {/* Base Questions Button */}
+          <button
+            onClick={() => setShowPreguntasBaseModal(true)}
+            className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold p-4 rounded-2xl flex items-center justify-between transition-colors shadow-sm"
+          >
+            <div className="flex items-center gap-3">
+              <Users size={20} className="text-slate-300" />
+              <div className="text-left">
+                <div className="text-sm">Preguntas Base</div>
+                <div className="text-xs text-slate-400 font-normal">Para candidatos sin CV</div>
+              </div>
+            </div>
+            <ChevronLeft size={20} className="rotate-180" />
+          </button>
+
           {/* Template Panel */}
           {showTemplatePanel && (
             <div className="bg-white rounded-2xl border border-black/10 shadow-sm overflow-hidden">
@@ -600,6 +610,60 @@ export default function VacanteFiltrosPage() {
       } ${toast?.isError ? "bg-red-500" : "bg-emerald-500"}`}>
         {toast?.msg}
       </div>
+      {/* Modal Preguntas Base */}
+      {showPreguntasBaseModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4" onClick={() => setShowPreguntasBaseModal(false)}>
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl relative flex flex-col max-h-[85vh]" onClick={(e) => e.stopPropagation()}>
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50 rounded-t-2xl">
+              <div>
+                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <Users size={20} className="text-indigo-500" />
+                  Preguntas Base
+                </h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  Marca las preguntas que se le harán a los candidatos que no envíen CV para armar su perfil manual.
+                </p>
+              </div>
+              <button onClick={() => setShowPreguntasBaseModal(false)} className="text-slate-400 hover:text-slate-700 bg-white p-1 rounded-full shadow-sm">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-2 overflow-y-auto">
+              <div className="space-y-1">
+                {PREGUNTAS_BASE_PREDEFINIDAS.map((pb) => {
+                  const isSelected = (vacante?.filtros || []).some((f) => f.clave === pb.clave);
+                  return (
+                    <label key={pb.clave} className={`flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-colors ${isSelected ? "bg-indigo-50/50" : "hover:bg-slate-50"}`}>
+                      <div className="mt-0.5">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => togglePreguntaBase(pb)}
+                          className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <div className="text-sm font-bold text-slate-700">{pb.etiqueta}</div>
+                        <div className="text-xs text-slate-500 mt-0.5">{pb.pregunta}</div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+            
+            <div className="p-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl flex justify-end">
+              <button
+                onClick={() => setShowPreguntasBaseModal(false)}
+                className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold rounded-xl transition-colors shadow-sm"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

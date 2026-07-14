@@ -21,14 +21,15 @@ export async function GET(request: Request) {
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get("tci_session")?.value;
-    if (token) {
-      const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'secret-key-default');
-      const { payload } = await jwtVerify(token, secret);
-      rol = payload.rol as string;
-      reclutador_id = payload.reclutador_id as string;
+    if (!token) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
+    const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'secret-key-default');
+    const { payload } = await jwtVerify(token, secret);
+    rol = payload.rol as string;
+    reclutador_id = payload.reclutador_id as string;
   } catch (err) {
-    // Si falla el JWT, seguimos como USER normal (sin acceso especial o acceso restringido)
+    return NextResponse.json({ error: "Token inválido o expirado" }, { status: 401 });
   }
 
   const { searchParams } = new URL(request.url);
