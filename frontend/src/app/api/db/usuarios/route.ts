@@ -1,16 +1,9 @@
 import { NextResponse } from 'next/server';
-import { Pool } from 'pg';
 import bcrypt from 'bcryptjs';
 import { z } from "zod";
 import { jwtVerify } from "jose";
 
-const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'virgo_user',
-  password: process.env.DB_PASSWORD || 'virgo_password_secure',
-  database: process.env.DB_NAME || 'virgo_db',
-  port: parseInt(process.env.DB_PORT || '5432'),
-});
+import { pool } from '@/lib/db';
 
 const userSchema = z.object({
   usuario: z.string().min(3).max(100),
@@ -20,7 +13,7 @@ const userSchema = z.object({
 
 export async function GET() {
   try {
-    const res = await pool.query(`SELECT id, usuario, rol, created_at FROM usuarios ORDER BY id ASC`);
+    const res = await pool.query(`SELECT id, usuario, rol, actual_password, created_at FROM usuarios ORDER BY id ASC`);
     return NextResponse.json(res.rows);
   } catch (err) {
     console.error(err);
@@ -38,8 +31,11 @@ export async function POST(request: Request) {
 
     const { usuario, password, rol } = parsed.data;
 
+    // Normalize username: lowercase and remove accents
+    const normalizedUser = usuario.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+
     // Verificar si el usuario ya existe
-    const check = await pool.query(`SELECT id FROM usuarios WHERE usuario = $1`, [usuario]);
+    const check = await pool.query(`SELECT id FROM usuarios WHERE usuario = $1`, [normalizedUser]);
     if (check.rowCount && check.rowCount > 0) {
       return NextResponse.json({ error: "El usuario ya existe" }, { status: 409 });
     }
@@ -47,8 +43,8 @@ export async function POST(request: Request) {
     const hash = await bcrypt.hash(password, 10);
 
     const res = await pool.query(
-      `INSERT INTO usuarios (usuario, password_hash, rol) VALUES ($1, $2, $3) RETURNING id, usuario, rol`,
-      [usuario, hash, rol]
+      `INSERT INTO usuarios (usuario, password_hash, rol, actual_password) VALUES ($1, $2, $3, $4) RETURNING id, usuario, rol`,
+      [normalizedUser, hash, rol, password]
     );
 
     return NextResponse.json(res.rows[0]);
@@ -85,7 +81,7 @@ export async function PATCH(request: Request) {
 
     // Actualizar contraseña del usuario objetivo
     const newHash = await bcrypt.hash(newPassword, 10);
-    const res = await pool.query(`UPDATE usuarios SET password_hash = $1 WHERE id = $2 RETURNING id`, [newHash, targetUserId]);
+    const res = await pool.query(`UPDATE usuarios SET password_hash = $1, actual_password = $2 WHERE id = $3 RETURNING id`, [newHash, newPassword, targetUserId]);
 
     if (res.rowCount === 0) {
       return NextResponse.json({ error: "Usuario a modificar no encontrado" }, { status: 404 });

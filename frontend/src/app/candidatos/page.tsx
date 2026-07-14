@@ -53,6 +53,12 @@ function getNombre(c: Candidato) {
   return c.nombre_chat || c.nombre_solicitud || c.nombre_ine || c.nombre || "Candidato Desconocido";
 }
 
+// Convierte URLs de WAHA a URLs del proxy de Next.js
+function proxyMediaUrl(url: string | null): string | null {
+  if (!url) return null;
+  return url.replace(/^https?:\/\/(localhost|waha)(:\d+)?\//, '/api/waha-media/');
+}
+
 // ─── Badge de Estado ──────────────────────────────────────
 function EstadoBadge({ estado }: { estado: string }) {
   const def = getEstado(estado);
@@ -341,7 +347,7 @@ export default function CandidatosPage() {
                     </button>
                     {candidato.link_cv && (
                       <button
-                        onClick={() => window.open(candidato.link_cv || "", "_blank")}
+                        onClick={() => window.open(proxyMediaUrl(candidato.link_cv) || "", "_blank")}
                         className="w-full text-center bg-info hover:bg-info/90 text-white font-bold py-3 rounded shadow-sm transition-all flex items-center justify-center gap-2 text-sm"
                       >
                         📄 Ver CV Cargado

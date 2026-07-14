@@ -1,15 +1,7 @@
 import { NextResponse } from 'next/server';
-import { Pool } from 'pg';
 import { z } from "zod";
-import { rateLimit } from "@/lib/rate-limit";
 
-const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'virgo_user',
-  password: process.env.DB_PASSWORD || 'virgo_password_secure',
-  database: process.env.DB_NAME || 'virgo_db',
-  port: parseInt(process.env.DB_PORT || '5432'),
-});
+import { pool } from '@/lib/db';
 
 const getQuerySchema = z.object({
   telefono: z.string().min(1, "Falta el parámetro telefono").max(20),
@@ -20,17 +12,20 @@ const patchBodySchema = z.object({
   estado: z.string().max(50).optional(),
   notas: z.string().optional(),
   vacante_interes: z.string().max(100).optional(),
-  escalado: z.boolean().optional(),
-  escalation_reason: z.string().optional(),
-  event_id: z.string().optional(),
+  escalado: z.boolean().nullable().optional(),
+  escalation_reason: z.string().nullable().optional(),
+  event_id: z.string().nullable().optional(),
+  asignado_a: z.string().nullable().optional(),
 });
+
+const WAHA_BASE = process.env.WAHA_BASE_URL || "http://localhost:3000";
+const WAHA_API_KEY = process.env.WAHA_API_KEY || "virgo_secret_key";
+const WAHA_SESSION = process.env.WAHA_SESSION || "default";
+import { jwtVerify } from "jose";
+import { cookies } from "next/headers";
 
 // ─── GET /api/db/candidato?telefono=xxx ───────────────────
 export async function GET(request: Request) {
-  const rl = rateLimit(request);
-  if (!rl.success) {
-    return NextResponse.json({ error: "Too Many Requests" }, { status: 429 });
-  }
 
   const { searchParams } = new URL(request.url);
   const parsed = getQuerySchema.safeParse({
@@ -43,10 +38,37 @@ export async function GET(request: Request) {
 
   const { telefono } = parsed.data;
 
+  let rol = "USER";
+  let reclutador_id: string | null = null;
+  
   try {
+    const cookieStore = await cookies();
+    const token = cookieStore.get("tci_session")?.value;
+    if (token) {
+      const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'secret-key-default');
+      const { payload } = await jwtVerify(token, secret);
+      rol = payload.rol as string;
+      reclutador_id = payload.reclutador_id as string;
+    }
+  } catch (err) {}
+
+  try {
+    let filterClause = "telefono LIKE $1";
+    const queryParams: any[] = [`%${telefono}%`];
+    let idx = 2;
+
+    if (rol === "RECLUTADOR" && reclutador_id) {
+      filterClause += `
+        AND vacante_interes IN (
+          SELECT nombre FROM vacantes_def WHERE reclutador_id = $${idx}
+        )
+      `;
+      queryParams.push(reclutador_id);
+    }
+
     const res = await pool.query(
-      `SELECT * FROM candidatos WHERE telefono LIKE $1 ORDER BY ultima_interaccion DESC LIMIT 1`,
-      [`%${telefono}%`]
+      `SELECT * FROM candidatos WHERE ${filterClause} ORDER BY ultima_interaccion DESC LIMIT 1`,
+      queryParams
     );
 
     if (res.rows.length === 0) {
@@ -63,20 +85,17 @@ export async function GET(request: Request) {
 // ─── PATCH /api/db/candidato ─────────────────────────────
 // Body: { telefono, estado?, notas?, vacante_interes?, escalado?, escalation_reason? }
 export async function PATCH(request: Request) {
-  const rl = rateLimit(request);
-  if (!rl.success) {
-    return NextResponse.json({ error: "Too Many Requests" }, { status: 429 });
-  }
 
   try {
     const body = await request.json();
     const parsed = patchBodySchema.safeParse(body);
 
     if (!parsed.success) {
-      return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
+      console.error("Zod validation error:", parsed.error.issues);
+      return NextResponse.json({ error: "Datos inválidos", details: parsed.error.issues }, { status: 400 });
     }
 
-    const { telefono, estado, notas, vacante_interes, escalado, escalation_reason, event_id } = parsed.data;
+    const { telefono, estado, notas, vacante_interes, escalado, escalation_reason, event_id, asignado_a } = parsed.data;
 
     const campos: string[] = ['updated_at = NOW()'];
     const valores: (string | boolean | null)[] = [];
@@ -102,6 +121,10 @@ export async function PATCH(request: Request) {
       campos.push(`event_id = $${idx++}`);
       valores.push(event_id);
     }
+    if (asignado_a !== undefined) {
+      campos.push(`asignado_a = $${idx++}`);
+      valores.push(asignado_a);
+    }
     if (escalado !== undefined) {
       campos.push(`escalado = $${idx++}`);
       valores.push(escalado);
@@ -125,6 +148,41 @@ export async function PATCH(request: Request) {
 
     if (res.rowCount === 0) {
       return NextResponse.json({ error: 'Candidato no encontrado' }, { status: 404 });
+    }
+
+    // Si se asignó a un reclutador y se está escalando, intentar notificarle vía WhatsApp
+    if (asignado_a && escalado === true) {
+      try {
+        const recRes = await pool.query('SELECT telefono FROM reclutadores WHERE nombre = $1 AND activo = true LIMIT 1', [asignado_a]);
+        if (recRes.rows.length > 0) {
+          const recTelefono = recRes.rows[0].telefono;
+          const msg = `🔔 *Atención*: Se te ha transferido un nuevo candidato.\n\n👤 *Teléfono:* ${telefono}\nPor favor revisa la plataforma para atenderlo.`;
+          
+          await fetch(`${WAHA_BASE}/api/sendText`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'X-Api-Key': WAHA_API_KEY
+            },
+            body: JSON.stringify({
+              chatId: `${recTelefono}@c.us`,
+              text: msg,
+              session: WAHA_SESSION
+            })
+          });
+          console.log(`Notificación enviada al reclutador ${asignado_a} (${recTelefono})`);
+          
+          // Guardar notificación en base de datos
+          await pool.query(
+            'INSERT INTO notificaciones (reclutador_id, mensaje) VALUES ((SELECT id FROM reclutadores WHERE nombre = $1 LIMIT 1), $2)',
+            [asignado_a, `Se te ha transferido un nuevo candidato: ${telefono}`]
+          );
+        }
+      } catch (notifyErr) {
+        console.error('Error al notificar al reclutador:', notifyErr);
+        // No bloqueamos la respuesta principal si falla la notificación
+      }
     }
 
     return NextResponse.json(res.rows[0]);

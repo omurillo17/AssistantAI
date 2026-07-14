@@ -138,6 +138,7 @@ export default function CalendarioPage() {
   const [recruiterNames, setRecruiterNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{ msg: string; isError: boolean } | null>(null);
+  const [myCalId, setMyCalId] = useState("");
 
   // Panel lateral
   const [expandedRecruiters, setExpandedRecruiters] = useState<Record<string, boolean>>({});
@@ -191,22 +192,29 @@ export default function CalendarioPage() {
       } catch {}
 
       try {
-        const resRec = await fetch(`${N8N_BASE_URL}/webhook/api-vacantes`);
+        const resRec = await fetch(`/api/db/vacantes`);
         if (resRec.ok) {
           const recData = await resRec.json();
           const recs: any[] = Array.isArray(recData) ? recData : recData.data || [];
           const colorMap: Record<string, string> = {};
           const nameMap: Record<string, string> = {};
           const palette = ["#6366f1","#ef4444","#10b981","#f59e0b","#8b5cf6","#ec4899","#14b8a6","#f97316"];
+          let myCalIdLocal = "";
+          const myRecruiterId = localStorage.getItem("tci_reclutador_id");
+
           recs.forEach((r: any, i: number) => {
             const calId = (r.calendar_id || "").toLowerCase();
             if (calId) {
               colorMap[calId] = r.color || palette[i % palette.length];
               nameMap[calId] = r.nombre || r.name || calId;
+              if (r.reclutador_id == myRecruiterId) {
+                myCalIdLocal = calId;
+              }
             }
           });
           setRecruiterColors(colorMap);
           setRecruiterNames(nameMap);
+          if (myCalIdLocal) setMyCalId(myCalIdLocal);
         }
       } catch {}
 
@@ -296,8 +304,25 @@ export default function CalendarioPage() {
       }
     });
 
-    return [...dbEvents, ...Array.from(uniqueGcalEventsMap.values())];
-  }, [candidatos, googleEvents]);
+    let allEvents = [...dbEvents, ...Array.from(uniqueGcalEventsMap.values())];
+    
+    // Filter by role if not ADMIN
+    const role = typeof window !== 'undefined' ? localStorage.getItem("tci_role") : "USER";
+    if (role !== "ADMIN") {
+      if (myCalId) {
+        allEvents = allEvents.filter(ev => {
+          const evEmail = (ev.resource.creator_email || "").toLowerCase();
+          // Keep if the creator email matches the recruiter's calendar ID
+          return evEmail === myCalId || evEmail === "sin_asignar"; // We keep sin_asignar for dbEvents as backend filters them
+        });
+      } else {
+        // If they are a recruiter but we haven't loaded their calendar ID yet, we hide Google events
+        allEvents = allEvents.filter(ev => !ev.resource.es_google_calendar);
+      }
+    }
+
+    return allEvents;
+  }, [candidatos, googleEvents, myCalId]);
 
   const formatVisualDate = (d: Date) => format(d, "dd/MM/yyyy HH:mm");
 

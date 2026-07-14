@@ -1,18 +1,11 @@
 import { NextResponse } from "next/server";
 import { SignJWT } from "jose";
 import bcrypt from "bcryptjs";
-import { Pool } from "pg";
 import { ENV } from "@/lib/env";
 import { z } from "zod";
 import { rateLimit } from "@/lib/rate-limit";
 
-const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'virgo_user',
-  password: process.env.DB_PASSWORD || 'virgo_password_secure',
-  database: process.env.DB_NAME || 'virgo_db',
-  port: parseInt(process.env.DB_PORT || '5432'),
-});
+import { pool } from '@/lib/db';
 
 const loginSchema = z.object({
   usuario: z.string().min(1, "El usuario es obligatorio").max(100),
@@ -35,8 +28,16 @@ export async function POST(request: Request) {
     }
 
     const { usuario, password } = parsed.data;
+    
+    // Normalize username: lowercase and remove accents
+    const normalizedUser = usuario.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
 
-    const res = await pool.query('SELECT * FROM usuarios WHERE usuario = $1', [usuario]);
+    // Query using normalized username
+    const res = await pool.query(
+      `SELECT id, usuario, password_hash, rol, reclutador_id FROM usuarios WHERE usuario = $1`,
+      [normalizedUser]
+    );
+
     if (res.rowCount === 0) {
       return NextResponse.json({ success: false, error: "Credenciales incorrectas" }, { status: 401 });
     }
@@ -47,14 +48,14 @@ export async function POST(request: Request) {
     if (passwordMatch) {
       // Create a JWT token
       const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
-      const token = await new SignJWT({ authenticated: true, usuario: user.usuario, rol: user.rol })
+      const token = await new SignJWT({ authenticated: true, usuario: user.usuario, rol: user.rol, reclutador_id: user.reclutador_id })
         .setProtectedHeader({ alg: "HS256" })
         .setIssuedAt()
         .setExpirationTime("24h")
         .sign(secretKey);
 
       // Create response and set HttpOnly Cookie
-      const response = NextResponse.json({ success: true, usuario: user.usuario, rol: user.rol });
+      const response = NextResponse.json({ success: true, usuario: user.usuario, rol: user.rol, reclutador_id: user.reclutador_id });
       response.cookies.set("tci_session", token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",

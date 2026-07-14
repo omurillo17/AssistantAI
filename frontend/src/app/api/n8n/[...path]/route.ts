@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { ENV } from "@/lib/env";
+import { pool } from "@/lib/db";
 
 const N8N_BASE_URL = "http://localhost:5678";
 const ALLOWED_PATHS = [
@@ -68,6 +69,36 @@ async function handleProxy(request: Request, pathArray: string[]) {
     if (request.method !== "GET" && request.method !== "HEAD") {
       const body = await request.text();
       if (body) {
+        // --- INTERCEPTOR DE WAHA ---
+        // Si es un webhook de WAHA y el candidato está escalado, ignoramos el mensaje
+        if (pathname.startsWith("/webhook")) {
+          try {
+            const bodyJson = JSON.parse(body);
+            if (bodyJson?.event === "message" || bodyJson?.event === "message.any") {
+              const from = bodyJson?.payload?.from;
+              if (from && typeof from === "string") {
+                const telefono = from.split("@")[0];
+                const cand = await pool.query(
+                  "SELECT escalado FROM candidatos WHERE telefono = $1 LIMIT 1",
+                  [telefono]
+                );
+                
+                // Si existe y está escalado, retornamos 200 OK inmediatamente sin llamar a n8n
+                if (cand.rows.length > 0 && cand.rows[0].escalado) {
+                  console.log(`[n8n proxy] Ignorando mensaje de ${telefono} porque está ESCALADO.`);
+                  return NextResponse.json(
+                    { success: true, message: "Ignorado (Candidato Escalado)" },
+                    { status: 200 }
+                  );
+                }
+              }
+            }
+          } catch (parseErr) {
+            // Ignorar errores de parseo si el body no es JSON válido
+          }
+        }
+        // --- FIN INTERCEPTOR ---
+
         options.body = body;
       }
     }

@@ -7,7 +7,7 @@ const JWT_SECRET = process.env.JWT_SECRET;
 // Rutas exclusivas para ADMIN
 const adminOnlyRoutes = ["/configuracion", "/reclutadores", "/usuarios", "/api/db/usuarios"];
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Rutas públicas que no requieren autenticación

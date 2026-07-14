@@ -50,6 +50,9 @@ type Recruiter = {
   reclutador_id: string;
   nombre: string;
   activo: boolean;
+  telefono: string;
+  calendar_id: string;
+  color: string;
   vacantes: Vacante[];
 };
 
@@ -102,8 +105,7 @@ const FILTROS_TEMPLATE: Omit<Filtro, "id" | "activo">[] = [
   },
 ];
 
-const N8N_BASE_URL = "/api/n8n";
-const API_URL = `${N8N_BASE_URL}/webhook/api-vacantes`;
+const API_URL = `/api/db/vacantes`;
 
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function VacanteFiltrosPage() {
@@ -145,6 +147,9 @@ export default function VacanteFiltrosPage() {
         ...rec,
         reclutador_id: rec.reclutador_id || `rec_${i}`,
         activo: rec.activo !== false,
+        telefono: rec.telefono || '',
+        calendar_id: rec.calendar_id || '',
+        color: rec.color || '#6366f1',
         vacantes: (rec.vacantes || []).map((vac: any, j: number) => ({
           ...vac,
           id: vac.id || `vac_${i}_${j}`,

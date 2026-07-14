@@ -21,6 +21,13 @@ export default function UsuariosPage() {
   const [adminPassword, setAdminPassword] = useState("");
   const [updating, setUpdating] = useState(false);
 
+  const [toast, setToast] = useState<{ msg: string; isError: boolean } | null>(null);
+
+  const showToast = (msg: string, isError: boolean = false) => {
+    setToast({ msg, isError });
+    setTimeout(() => setToast(null), 3000);
+  };
+
   useEffect(() => {
     document.title = "Gestión de Usuarios | TCi";
     // Check if authenticated
@@ -29,8 +36,6 @@ export default function UsuariosPage() {
     
     if (!auth) {
       router.push("/login");
-    } else if (role !== "ADMIN") {
-      router.push("/");
     } else {
       cargarUsuarios();
     }
@@ -67,16 +72,16 @@ export default function UsuariosPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || "Error al crear usuario");
+        showToast(data.error || "Error al crear usuario", true);
       } else {
-        alert("Usuario creado exitosamente");
+        showToast("Usuario creado exitosamente");
         setUsuarioInput("");
         setPasswordInput("");
         setRolInput("USER");
         cargarUsuarios();
       }
     } catch (err) {
-      alert("Error de red");
+      showToast("Error de red", true);
     } finally {
       setCreating(false);
     }
@@ -94,10 +99,10 @@ export default function UsuariosPage() {
         cargarUsuarios();
       } else {
         const data = await res.json();
-        alert(data.error || "Error al eliminar");
+        showToast(data.error || "Error al eliminar", true);
       }
     } catch (err) {
-      alert("Error de red al eliminar");
+      showToast("Error de red al eliminar", true);
     }
   };
 
@@ -125,13 +130,13 @@ export default function UsuariosPage() {
 
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || "Error al actualizar la contraseña");
+        showToast(data.error || "Error al actualizar la contraseña", true);
       } else {
-        alert("Contraseña actualizada exitosamente");
+        showToast("Contraseña actualizada exitosamente");
         setEditingUserId(null);
       }
     } catch (err) {
-      alert("Error de red al actualizar contraseña");
+      showToast("Error de red al actualizar contraseña", true);
     } finally {
       setUpdating(false);
     }
@@ -152,60 +157,63 @@ export default function UsuariosPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        {/* Formulario de Alta */}
-        <div className="col-span-1 bg-white p-6 rounded-lg shadow-sm border border-slate-100 h-fit">
-          <h2 className="text-lg font-bold mb-4 border-b pb-2">Nuevo Usuario</h2>
-          <form onSubmit={crearUsuario} className="space-y-4">
-            <div>
-              <label className="block text-sm font-semibold mb-1 text-slate-600">Nombre de Usuario</label>
-              <input 
-                type="text" 
-                required
-                className="w-full p-2 border rounded focus:outline-none focus:border-indigo-500 bg-slate-50 focus:bg-white transition-colors"
-                value={usuarioInput}
-                onChange={(e) => setUsuarioInput(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold mb-1 text-slate-600">Contraseña</label>
-              <input 
-                type="password" 
-                required
-                minLength={5}
-                className="w-full p-2 border rounded focus:outline-none focus:border-indigo-500 bg-slate-50 focus:bg-white transition-colors"
-                value={passwordInput}
-                onChange={(e) => setPasswordInput(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold mb-1 text-slate-600">Rol del Sistema</label>
-              <select 
-                className="w-full p-2 border rounded focus:outline-none focus:border-indigo-500 bg-slate-50 focus:bg-white transition-colors"
-                value={rolInput}
-                onChange={(e) => setRolInput(e.target.value)}
+        {typeof window !== 'undefined' && localStorage.getItem('tci_role') === 'ADMIN' && (
+          <div className="col-span-1 bg-white p-6 rounded-lg shadow-sm border border-slate-100 h-fit">
+            <h2 className="text-lg font-bold mb-4 border-b pb-2">Nuevo Usuario</h2>
+            <form onSubmit={crearUsuario} className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold mb-1 text-slate-600">Nombre de Usuario</label>
+                <input 
+                  type="text" 
+                  required
+                  className="w-full p-2 border rounded focus:outline-none focus:border-indigo-500 bg-slate-50 focus:bg-white transition-colors"
+                  value={usuarioInput}
+                  onChange={(e) => setUsuarioInput(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-1 text-slate-600">Contraseña</label>
+                <input 
+                  type="password" 
+                  required
+                  minLength={5}
+                  className="w-full p-2 border rounded focus:outline-none focus:border-indigo-500 bg-slate-50 focus:bg-white transition-colors"
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-1 text-slate-600">Rol del Sistema</label>
+                <select 
+                  className="w-full p-2 border rounded focus:outline-none focus:border-indigo-500 bg-slate-50 focus:bg-white transition-colors"
+                  value={rolInput}
+                  onChange={(e) => setRolInput(e.target.value)}
+                >
+                  <option value="USER">USER (Solo herramientas)</option>
+                  <option value="RECLUTADOR">RECLUTADOR (Bandeja filtrada)</option>
+                  <option value="ADMIN">ADMIN (Acceso Total)</option>
+                </select>
+              </div>
+              <button 
+                type="submit" 
+                disabled={creating}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded shadow-sm disabled:opacity-50 transition-colors"
               >
-                <option value="USER">USER (Solo herramientas)</option>
-                <option value="ADMIN">ADMIN (Acceso Total)</option>
-              </select>
-            </div>
-            <button 
-              type="submit" 
-              disabled={creating}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded shadow-sm disabled:opacity-50 transition-colors"
-            >
-              {creating ? "Creando..." : "Crear Usuario"}
-            </button>
-          </form>
-        </div>
+                {creating ? "Creando..." : "Crear Usuario"}
+              </button>
+            </form>
+          </div>
+        )}
 
         {/* Lista de Usuarios */}
-        <div className="col-span-2">
+        <div className={typeof window !== 'undefined' && localStorage.getItem('tci_role') === 'ADMIN' ? "col-span-2" : "col-span-3"}>
           <div className="bg-white rounded-lg shadow-sm border border-slate-100 overflow-hidden">
             <table className="w-full text-left">
               <thead className="bg-slate-50 border-b">
                 <tr>
                   <th className="px-6 py-3 text-sm font-bold text-slate-600">ID</th>
                   <th className="px-6 py-3 text-sm font-bold text-slate-600">Usuario</th>
+                  <th className="px-6 py-3 text-sm font-bold text-slate-600">Contraseña</th>
                   <th className="px-6 py-3 text-sm font-bold text-slate-600">Rol</th>
                   <th className="px-6 py-3 text-sm font-bold text-slate-600">Acciones</th>
                 </tr>
@@ -215,6 +223,7 @@ export default function UsuariosPage() {
                   <tr key={u.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-6 py-4 text-sm text-slate-500">#{u.id}</td>
                     <td className="px-6 py-4 font-semibold">{u.usuario}</td>
+                    <td className="px-6 py-4 font-mono text-sm bg-slate-100 rounded px-2">{u.actual_password || '********'}</td>
                     <td className="px-6 py-4">
                       <span className={`px-2 py-1 text-xs font-bold rounded-full ${u.rol === 'ADMIN' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-700'}`}>
                         {u.rol}
@@ -228,14 +237,16 @@ export default function UsuariosPage() {
                       >
                         Cambiar Contraseña
                       </button>
-                      <button 
-                        onClick={() => eliminarUsuario(u.id, u.usuario)}
-                        disabled={u.usuario === "admin"} // Proteger al admin principal
-                        className="text-red-500 hover:text-red-700 text-sm font-bold disabled:opacity-30 disabled:cursor-not-allowed"
-                        title={u.usuario === "admin" ? "No se puede borrar al super admin" : "Eliminar"}
-                      >
-                        Eliminar
-                      </button>
+                      {typeof window !== 'undefined' && localStorage.getItem('tci_role') === 'ADMIN' && (
+                        <button 
+                          onClick={() => eliminarUsuario(u.id, u.usuario)}
+                          disabled={u.usuario === "admin"} // Proteger al admin principal
+                          className="text-red-500 hover:text-red-700 text-sm font-bold disabled:opacity-30 disabled:cursor-not-allowed"
+                          title={u.usuario === "admin" ? "No se puede borrar al super admin" : "Eliminar"}
+                        >
+                          Eliminar
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -273,12 +284,12 @@ export default function UsuariosPage() {
               </div>
               <div className="pt-4 border-t border-slate-100">
                 <label className="block text-sm font-semibold mb-1 text-red-500">Autorización Requerida</label>
-                <p className="text-xs text-slate-500 mb-2">Para cambiar esta contraseña, ingresa tu propia contraseña de Administrador.</p>
+                <p className="text-xs text-slate-500 mb-2">Para cambiar esta contraseña, ingresa la contraseña de Administrador o tu contraseña actual si estás cambiando la tuya propia.</p>
                 <input 
                   type="password" 
                   required
                   className="w-full p-2 border border-red-200 rounded focus:outline-none focus:border-red-500 bg-red-50 focus:bg-white transition-colors"
-                  placeholder="Tu contraseña de administrador"
+                  placeholder="Contraseña actual o de administrador"
                   value={adminPassword}
                   onChange={(e) => setAdminPassword(e.target.value)}
                 />
@@ -303,6 +314,11 @@ export default function UsuariosPage() {
           </div>
         </div>
       )}
+
+      {/* TOAST NOTIFICATION */}
+      <div className={`fixed bottom-6 right-6 px-5 py-3 rounded font-bold text-white shadow-xl transition-all duration-300 z-[2000] ${toast ? "translate-y-0 opacity-100" : "translate-y-16 opacity-0"} ${toast?.isError ? "bg-danger" : "bg-success"}`}>
+        {toast?.msg}
+      </div>
     </div>
   );
 }

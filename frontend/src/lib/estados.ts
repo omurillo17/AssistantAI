@@ -8,6 +8,7 @@ export type EstadoKey =
   | 'INTERESADO'
   | 'CV_RECIBIDO'
   | 'CV_MANUAL'
+  | 'FILTROS_COMPLETADOS'
   | 'INE_VALIDADA'
   | 'CITA_AGENDADA'
   | 'RECORDATORIO_ENVIADO'
@@ -83,6 +84,18 @@ export const ESTADOS: Record<EstadoKey, EstadoDef> = {
     asignadoPor: 'bot',
     activo: false, // Feature desactivada — solo histórico
     descripcion: '[Legacy] El bot armó el CV del candidato vía conversación',
+  },
+  FILTROS_COMPLETADOS: {
+    label: 'Filtros Completados',
+    labelCorto: 'Filtros ✓',
+    color: 'text-teal-600',
+    bg: 'bg-teal-100',
+    border: 'border-teal-200',
+    emoji: '✅',
+    grupo: 'pipeline',
+    asignadoPor: 'bot',
+    activo: true,
+    descripcion: 'El candidato respondió a los filtros obligatorios',
   },
   INE_VALIDADA: {
     label: 'INE Validada',
@@ -224,7 +237,7 @@ export const ESTADOS: Record<EstadoKey, EstadoDef> = {
 
 /** Todos los estados en orden de proceso */
 export const ESTADOS_ORDENADOS: EstadoKey[] = [
-  'NUEVO', 'INTERESADO', 'CV_RECIBIDO', 'CV_MANUAL', 'INE_VALIDADA',
+  'NUEVO', 'INTERESADO', 'CV_RECIBIDO', 'CV_MANUAL', 'FILTROS_COMPLETADOS', 'INE_VALIDADA',
   'CITA_AGENDADA', 'CITA_CANCELADA', 'RECORDATORIO_ENVIADO', 'ESCALADO',
   'DOCUMENTOS_NO_COINCIDEN', 'ENTREVISTADO', 'CONTRATADO',
   'RECHAZADO', 'CARTERA_GENERAL', 'INACTIVO',
@@ -241,7 +254,7 @@ export const GRUPOS: Record<GrupoEstado, { label: string; color: string; estados
   pipeline: {
     label: 'En Proceso',
     color: 'text-blue-600',
-    estados: ['NUEVO', 'INTERESADO', 'CV_RECIBIDO', 'CV_MANUAL', 'INE_VALIDADA', 'CITA_AGENDADA', 'RECORDATORIO_ENVIADO'],
+    estados: ['NUEVO', 'INTERESADO', 'CV_RECIBIDO', 'CV_MANUAL', 'FILTROS_COMPLETADOS', 'INE_VALIDADA', 'CITA_AGENDADA', 'RECORDATORIO_ENVIADO'],
   },
   alerta: {
     label: 'Requieren Atención',
@@ -268,7 +281,7 @@ export const GRUPOS: Record<GrupoEstado, { label: string; color: string; estados
 /** Columnas del Kanban */
 export const KANBAN_COLUMNAS = [
   { key: 'pipeline', estados: ['NUEVO', 'INTERESADO'] as EstadoKey[], label: 'Nuevos / Interesados', color: 'border-blue-300' },
-  { key: 'cv', estados: ['CV_RECIBIDO', 'CV_MANUAL'] as EstadoKey[], label: 'CV / Perfil', color: 'border-cyan-300' },
+  { key: 'cv', estados: ['CV_RECIBIDO', 'CV_MANUAL', 'FILTROS_COMPLETADOS'] as EstadoKey[], label: 'CV / Filtros', color: 'border-cyan-300' },
   { key: 'docs', estados: ['INE_VALIDADA', 'DOCUMENTOS_NO_COINCIDEN'] as EstadoKey[], label: 'Documentos', color: 'border-violet-300' },
   { key: 'cita', estados: ['CITA_AGENDADA', 'RECORDATORIO_ENVIADO'] as EstadoKey[], label: 'Cita Agendada', color: 'border-amber-300' },
   { key: 'alerta', estados: ['ESCALADO', 'CITA_CANCELADA'] as EstadoKey[], label: 'Escalados / Alertas', color: 'border-purple-300' },

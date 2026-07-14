@@ -1,15 +1,11 @@
 import { NextResponse } from 'next/server';
-import { Pool } from 'pg';
+export const dynamic = 'force-dynamic';
 import { z } from "zod";
-import { rateLimit } from "@/lib/rate-limit";
 
-const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'virgo_user',
-  password: process.env.DB_PASSWORD || 'virgo_password_secure',
-  database: process.env.DB_NAME || 'virgo_db',
-  port: parseInt(process.env.DB_PORT || '5432'),
-});
+import { pool } from '@/lib/db';
+import { jwtVerify } from "jose";
+import { ENV } from "@/lib/env";
+import { cookies } from "next/headers";
 
 const postSchema = z.object({
   telefono: z.string().min(1, "Falta el campo telefono").max(20),
@@ -24,41 +20,61 @@ const postSchema = z.object({
 // Devuelve conversaciones activas para la bandeja
 // Prioriza escalados, luego por último mensaje
 export async function GET(request: Request) {
-  const rl = rateLimit(request);
-  if (!rl.success) {
-    return NextResponse.json({ error: "Too Many Requests" }, { status: 429 });
-  }
 
   try {
+    const cookieStore = await cookies();
+    const token = cookieStore.get("tci_session")?.value;
+    let rol = "USER";
+    let reclutador_id = null;
+    let usuario = null;
+
+    if (token) {
+      try {
+        const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
+        const { payload } = await jwtVerify(token, secretKey);
+        rol = payload.rol as string;
+        reclutador_id = payload.reclutador_id as string | null;
+        usuario = payload.usuario as string;
+      } catch (err) {
+        console.error("JWT verify error:", err);
+      }
+    }
+
+    let filterClause = `
+      WHERE (c.escalado = TRUE
+         OR mb.mensajes_no_leidos > 0
+         OR (
+           COALESCE(mb.activo, TRUE) = TRUE
+           AND COALESCE(mb.ultimo_mensaje_at, c.ultima_interaccion) > NOW() - INTERVAL '72 hours'
+         ))
+    `;
+    let queryParams: any[] = [];
+
+    // Eliminado el filtro por asignado_a para que todos los reclutadores vean todos los mensajes
+
     const res = await pool.query(`
       SELECT
         c.telefono,
-        COALESCE(c.nombre_chat, c.nombre_solicitud, c.nombre_ine, c.nombre, 'Sin nombre') AS nombre,
+        COALESCE(NULLIF(TRIM(c.nombre_chat),''), NULLIF(TRIM(c.nombre_solicitud),''), NULLIF(TRIM(c.nombre_ine),''), NULLIF(TRIM(c.nombre),''), c.telefono) AS nombre,
         c.estado,
         c.escalado,
         c.escalation_reason,
         c.vacante_interes,
         c.nave_interes,
-        (c.ultima_interaccion AT TIME ZONE 'America/Mexico_City') AS ultima_interaccion,
+        c.ultima_interaccion,
         mb.asignado_a,
         mb.mensajes_no_leidos,
         mb.ultimo_mensaje,
         mb.ultimo_mensaje_rol,
-        (mb.ultimo_mensaje_at AT TIME ZONE 'America/Mexico_City') AS ultimo_mensaje_at,
+        mb.ultimo_mensaje_at,
         mb.activo AS bandeja_activa
       FROM candidatos c
       LEFT JOIN mensajes_bandeja mb ON mb.telefono = c.telefono
-      WHERE c.escalado = TRUE
-         OR (
-           mb.activo = TRUE
-           AND mb.ultimo_mensaje_at > NOW() - INTERVAL '24 hours'
-         )
+      ${filterClause}
       ORDER BY
-        c.escalado DESC,
-        COALESCE(mb.mensajes_no_leidos, 0) DESC,
         COALESCE(mb.ultimo_mensaje_at, c.ultima_interaccion) DESC
-      LIMIT 100
-    `);
+      LIMIT 1000
+    `, queryParams);
 
     return NextResponse.json(res.rows);
   } catch (err) {
@@ -71,10 +87,6 @@ export async function GET(request: Request) {
 // Crea o actualiza un registro en mensajes_bandeja
 // Body: { telefono, ultimo_mensaje?, ultimo_mensaje_rol?, asignado_a?, mensajes_no_leidos?, activo? }
 export async function POST(request: Request) {
-  const rl = rateLimit(request);
-  if (!rl.success) {
-    return NextResponse.json({ error: "Too Many Requests" }, { status: 429 });
-  }
 
   try {
     const body = await request.json();

@@ -19,14 +19,17 @@ export default function ConfiguracionPage() {
 
   // Autenticación simple para esta página
   const [isAuthValid, setIsAuthValid] = useState(false);
-  const [passwordInput, setPasswordInput] = useState("");
 
   useEffect(() => {
     document.title = "Configuración | TCi";
     const auth = localStorage.getItem("tci_authenticated");
+    const role = localStorage.getItem("tci_role");
     if (!auth) {
       router.push("/login");
+    } else if (role !== "ADMIN") {
+      setIsAuthValid(false);
     } else {
+      setIsAuthValid(true);
       loadFiles();
     }
   }, [router]);
@@ -89,15 +92,7 @@ export default function ConfiguracionPage() {
     }
   };
 
-  const handlePasswordSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Contraseña simple para acceso
-    if (passwordInput === "virgoadmin") {
-      setIsAuthValid(true);
-    } else {
-      showToast("Contraseña incorrecta", true);
-    }
-  };
+
 
   if (loading) {
     return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-500">Cargando archivos...</div>;
@@ -109,39 +104,16 @@ export default function ConfiguracionPage() {
         <div className="bg-white p-8 rounded-2xl shadow-sm border border-black/10 w-full max-w-md text-center">
           <div className="text-5xl mb-4">🔒</div>
           <h1 className="text-2xl font-bold text-slate-800 mb-2">Acceso Restringido</h1>
-          <p className="text-slate-500 mb-6 text-sm">Esta área requiere autorización especial para modificar la IA.</p>
-          <form onSubmit={handlePasswordSubmit} className="flex flex-col gap-4">
-            <input
-              type="password"
-              placeholder="Contraseña"
-              value={passwordInput}
-              onChange={(e) => setPasswordInput(e.target.value)}
-              className="w-full p-3 rounded-lg border border-black/10 bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none text-center tracking-widest"
-            />
-            <div className="flex gap-3 mt-2">
-              <button
-                type="button"
-                onClick={() => router.back()}
-                className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-colors"
-              >
-                Volver
-              </button>
-              <button
-                type="submit"
-                className="flex-1 py-3 bg-primary hover:bg-primary/90 text-white font-semibold rounded shadow-sm transition-all"
-              >
-                Entrar
-              </button>
-            </div>
-          </form>
-        </div>
-        {/* Toast */}
-        <div
-          className={`fixed bottom-6 right-6 px-5 py-3 rounded font-semibold text-white shadow-xl transition-all duration-300 transform ${
-            toast ? "translate-y-0 opacity-100" : "translate-y-16 opacity-0"
-          } ${toast?.isError ? "bg-danger" : "bg-success"}`}
-        >
-          {toast?.msg}
+          <p className="text-slate-500 mb-6 text-sm">No tienes permisos de Administrador para acceder a esta área.</p>
+          <div className="flex gap-3 mt-2">
+            <button
+              type="button"
+              onClick={() => router.back()}
+              className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-colors"
+            >
+              Volver
+            </button>
+          </div>
         </div>
       </div>
     );

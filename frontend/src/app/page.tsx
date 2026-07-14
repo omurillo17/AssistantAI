@@ -105,34 +105,32 @@ export default function Home() {
             Ir al módulo <span className="ml-1">→</span>
           </div>
         </Link>
+        
+        {/* Calendario */}
+        <Link href="/calendario" className="bg-indigo-500 rounded-lg relative overflow-hidden text-white shadow-sm hover:shadow-md transition-shadow block">
+          <div className="p-5 relative z-10">
+            <h3 className="text-3xl font-bold mb-1">Calendario</h3>
+            <p className="text-white/80 text-sm">Vista de citas</p>
+          </div>
+          <div className="absolute top-4 right-4 text-black/10 text-6xl font-black">
+            📅
+          </div>
+          <div className="bg-black/10 py-1.5 text-center text-sm font-semibold hover:bg-black/20 transition-colors">
+            Ir al módulo <span className="ml-1">→</span>
+          </div>
+        </Link>
       </div>
 
       {role === "ADMIN" && (
         <>
           <h2 className="text-lg font-bold text-slate-700 mb-4 mt-8">Configuración y Reportes</h2>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Link href="/reclutadores" className="bg-white p-5 rounded-lg border-t-4 border-primary shadow-sm hover:shadow text-slate-700 transition-all">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="text-2xl">👥</div>
-                <h3 className="font-bold text-lg">Reclutadores</h3>
-              </div>
-              <p className="text-sm text-slate-500">Altas, bajas y edición de información de ejecutivos.</p>
-            </Link>
-
             <Link href="/usuarios" className="bg-white p-5 rounded-lg border-t-4 border-indigo-500 shadow-sm hover:shadow text-slate-700 transition-all">
               <div className="flex items-center gap-3 mb-2">
                 <div className="text-2xl">🔐</div>
                 <h3 className="font-bold text-lg">Usuarios</h3>
               </div>
               <p className="text-sm text-slate-500">Gestión de accesos y contraseñas del portal web.</p>
-            </Link>
-
-            <Link href="/calendario" className="bg-white p-5 rounded-lg border-t-4 border-info shadow-sm hover:shadow text-slate-700 transition-all">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="text-2xl">📅</div>
-                <h3 className="font-bold text-lg">Calendario</h3>
-              </div>
-              <p className="text-sm text-slate-500">Vista completa de citas agendadas por la IA.</p>
             </Link>
 
             <Link href="/configuracion" className="bg-white p-5 rounded-lg border-t-4 border-secondary shadow-sm hover:shadow text-slate-700 transition-all">

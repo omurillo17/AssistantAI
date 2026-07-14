@@ -29,7 +29,6 @@ export function Sidebar() {
     { name: "Mensajes", path: "/mensajes", icon: <MessageSquare size={18} /> },
     { name: "Vacantes", path: "/vacantes", icon: <Briefcase size={18} /> },
     { name: "Expedientes", path: "/candidatos", icon: <FolderOpen size={18} /> },
-    { name: "Reclutadores", path: "/reclutadores", icon: <Users size={18} /> },
     { name: "Calendario", path: "/calendario", icon: <Calendar size={18} /> },
     { name: "Configuración", path: "/configuracion", icon: <Settings size={18} /> },
   ];
@@ -48,7 +47,7 @@ export function Sidebar() {
       <div className={`h-16 flex items-center ${isExpanded ? "px-6" : "px-0 justify-center"} border-b border-slate-100 overflow-hidden flex-shrink-0`}>
         {isExpanded ? (
           <div className="text-xl font-extrabold text-primary whitespace-nowrap tracking-wide">
-            TCi
+            TCi Reclutamiento
           </div>
         ) : (
           <div className="text-xl font-extrabold text-primary">

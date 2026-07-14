@@ -29,6 +29,9 @@ export default function LoginPage() {
         localStorage.setItem("tci_authenticated", "true");
         localStorage.setItem("tci_username", data.usuario || usuarioInput);
         localStorage.setItem("tci_role", data.rol || "USER");
+        if (data.reclutador_id) {
+          localStorage.setItem("tci_reclutador_id", data.reclutador_id);
+        }
         router.push("/");
       } else {
         alert(data.error || "Credenciales incorrectas");

@@ -1,16 +1,9 @@
 import { NextResponse } from 'next/server';
-import { Pool } from 'pg';
 import { ENV } from "@/lib/env";
 import { z } from "zod";
-import { rateLimit } from "@/lib/rate-limit";
-
-const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'virgo_user',
-  password: process.env.DB_PASSWORD || 'virgo_password_secure',
-  database: process.env.DB_NAME || 'virgo_db',
-  port: parseInt(process.env.DB_PORT || '5432'),
-});
+import { jwtVerify } from "jose";
+import { cookies } from "next/headers";
+import { pool } from '@/lib/db';
 
 const querySchema = z.object({
   estado: z.string().optional().nullable(),
@@ -22,9 +15,20 @@ const querySchema = z.object({
 // ─── GET /api/db/candidatos ────────────────────────────────
 // Parámetros opcionales: ?estado=NUEVO&vacante=...&q=nombre
 export async function GET(request: Request) {
-  const rl = rateLimit(request);
-  if (!rl.success) {
-    return NextResponse.json({ error: "Too Many Requests" }, { status: 429 });
+  let rol = "USER";
+  let reclutador_id: string | null = null;
+  
+  try {
+    const cookieStore = await cookies();
+    const token = cookieStore.get("tci_session")?.value;
+    if (token) {
+      const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'secret-key-default');
+      const { payload } = await jwtVerify(token, secret);
+      rol = payload.rol as string;
+      reclutador_id = payload.reclutador_id as string;
+    }
+  } catch (err) {
+    // Si falla el JWT, seguimos como USER normal (sin acceso especial o acceso restringido)
   }
 
   const { searchParams } = new URL(request.url);
@@ -59,6 +63,16 @@ export async function GET(request: Request) {
     if (q) {
       conditions.push(`(nombre_chat ILIKE $${idx} OR nombre_solicitud ILIKE $${idx} OR telefono ILIKE $${idx})`);
       values.push(`%${q}%`);
+      idx++;
+    }
+
+    if (rol === "RECLUTADOR" && reclutador_id) {
+      conditions.push(`
+        vacante_interes IN (
+          SELECT nombre FROM vacantes_def WHERE reclutador_id = $${idx}
+        )
+      `);
+      values.push(reclutador_id);
       idx++;
     }
 

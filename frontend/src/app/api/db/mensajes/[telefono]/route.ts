@@ -1,13 +1,8 @@
 import { NextResponse } from 'next/server';
-import { Pool } from 'pg';
 
-const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'virgo_user',
-  password: process.env.DB_PASSWORD || 'virgo_password_secure',
-  database: process.env.DB_NAME || 'virgo_db',
-  port: parseInt(process.env.DB_PORT || '5432'),
-});
+export const dynamic = 'force-dynamic';
+
+import { pool } from '@/lib/db';
 
 const WAHA_BASE = process.env.WAHA_BASE_URL || 'http://localhost:3000';
 const WAHA_API_KEY = process.env.WAHA_API_KEY || 'virgo_secret_key';
@@ -29,27 +24,38 @@ export async function GET(
   try {
     // Obtener historial de conversación
     const histRes = await pool.query(
-      `SELECT id, role, content, message_type, media_url, 
-              (timestamp AT TIME ZONE 'America/Mexico_City') AS timestamp
+      `SELECT id, role, content, message_type, media_url,
+              timestamp
        FROM conversation_history
        WHERE telefono = $1
          AND role IN ('user', 'assistant', 'user_temp')
-         AND (content IS NOT NULL AND content != '')
-         AND NOT (content LIKE '[SISTEMA:%')
+         AND (
+           (content IS NOT NULL AND content != '') 
+           OR 
+           (media_url IS NOT NULL AND media_url != '')
+           OR
+           message_type IN ('image', 'video', 'document', 'audio', 'ptt', 'voice', 'sticker')
+         )
+         AND NOT (COALESCE(content, '') LIKE '[SISTEMA:%')
        ORDER BY conversation_history.timestamp ASC
        LIMIT 200`,
       [telefono]
     );
 
-    // Resetear mensajes no leídos
-    await pool.query(
-      `UPDATE mensajes_bandeja SET mensajes_no_leidos = 0 WHERE telefono = $1`,
-      [telefono]
-    );
+    // Solo resetear si NO es modo preview
+    const { searchParams } = new URL(_request.url);
+    const isPreview = searchParams.get('preview') === 'true';
+
+    if (!isPreview) {
+      await pool.query(
+        `UPDATE mensajes_bandeja SET mensajes_no_leidos = 0 WHERE telefono = $1`,
+        [telefono]
+      );
+    }
 
     // Info del candidato
     const candRes = await pool.query(
-      `SELECT telefono, COALESCE(nombre_chat, nombre_solicitud, nombre_ine, nombre, 'Sin nombre') AS nombre,
+      `SELECT telefono, COALESCE(NULLIF(TRIM(nombre_chat),''), NULLIF(TRIM(nombre_solicitud),''), NULLIF(TRIM(nombre_ine),''), NULLIF(TRIM(nombre),''), telefono) AS nombre,
               estado, escalado, escalation_reason, vacante_interes, nave_interes, correo
        FROM candidatos WHERE telefono = $1 LIMIT 1`,
       [telefono]
@@ -66,7 +72,7 @@ export async function GET(
 }
 
 // ─── POST /api/db/mensajes/[telefono] ─────────────────────
-// Envía un mensaje de WhatsApp via WAHA y lo guarda en conversation_history
+// Envía un mensaje de WhatsApp via WAHA y lo guarda en conversation_history y la cola (Outbox)
 // Body: { texto, asignado_a? }
 export async function POST(
   request: Request,
@@ -82,45 +88,24 @@ export async function POST(
       return NextResponse.json({ error: 'El mensaje no puede estar vacío' }, { status: 400 });
     }
 
-    // Formatear número para WAHA (chatId = telefono@c.us)
     const chatId = telefono.includes('@') ? telefono : `${telefono}@c.us`;
 
-    // 1. Enviar via WAHA
-    const wahaRes = await fetch(`${WAHA_BASE}/api/sendText`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Api-Key': WAHA_API_KEY,
-      },
-      body: JSON.stringify({
-        session: WAHA_SESSION,
-        chatId,
-        text: texto.trim(),
-      }),
-    });
-
-    if (!wahaRes.ok) {
-      const errText = await wahaRes.text();
-      console.error('WAHA error:', errText);
-      return NextResponse.json({ error: 'Error al enviar mensaje por WhatsApp', detail: errText }, { status: 502 });
-    }
-
-    // 2. Buscar candidato_id
+    // 1. Buscar candidato_id
     const candRes = await pool.query(
       `SELECT id FROM candidatos WHERE telefono = $1 LIMIT 1`,
       [telefono]
     );
     const candidato_id = candRes.rows[0]?.id || null;
 
-    // 3. Guardar en conversation_history
+    // 2. Guardar en conversation_history (Para que UI lo vea instantáneo)
     const savedMsg = await pool.query(
       `INSERT INTO conversation_history (telefono, candidato_id, role, content, message_type, timestamp)
-       VALUES ($1, $2, 'assistant', $3, 'text', NOW() AT TIME ZONE 'America/Mexico_City')
-       RETURNING id, role, content, message_type, (timestamp AT TIME ZONE 'America/Mexico_City') AS timestamp`,
+       VALUES ($1, $2, 'assistant', $3, 'text', NOW())
+       RETURNING id, role, content, message_type, timestamp`,
       [telefono, candidato_id, texto.trim()]
     );
 
-    // 4. Actualizar mensajes_bandeja
+    // 3. Actualizar mensajes_bandeja
     await pool.query(
       `INSERT INTO mensajes_bandeja (telefono, ultimo_mensaje, ultimo_mensaje_rol, asignado_a, mensajes_no_leidos, activo)
        VALUES ($1, $2, 'assistant', $3, 0, TRUE)
@@ -133,12 +118,54 @@ export async function POST(
       [telefono, texto.trim(), asignado_a || null]
     );
 
+    // 4. Guardar en cola_mensajes (Outbox Pattern)
+    const colaRes = await pool.query(
+      `INSERT INTO cola_mensajes (telefono, texto, asignado_a, estado)
+       VALUES ($1, $2, $3, 'PENDIENTE')
+       RETURNING id`,
+      [chatId, texto.trim(), asignado_a || null]
+    );
+    const cola_id = colaRes.rows[0].id;
+
+    // 5. Intentar Enviar via WAHA Inmediatamente (Fallo seguro)
+    try {
+      const wahaRes = await fetch(`${WAHA_BASE}/api/sendText`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-Key': WAHA_API_KEY,
+        },
+        body: JSON.stringify({
+          session: WAHA_SESSION,
+          chatId,
+          text: texto.trim(),
+        }),
+      });
+
+      if (!wahaRes.ok) {
+        const errText = await wahaRes.text();
+        console.error('WAHA soft error:', errText);
+        // Dejarlo como pendiente, actualizar detalle error
+        await pool.query(`UPDATE cola_mensajes SET error_detalle = $1 WHERE id = $2`, [errText, cola_id]);
+      } else {
+        // Éxito, marcar como enviado
+        await pool.query(`UPDATE cola_mensajes SET estado = 'ENVIADO', updated_at = NOW() WHERE id = $1`, [cola_id]);
+      }
+    } catch (fetchErr: any) {
+      console.error('WAHA fetch error:', fetchErr.message);
+      // Falla de red, WAHA apagado. Se queda como pendiente
+      await pool.query(`UPDATE cola_mensajes SET error_detalle = $1 WHERE id = $2`, [fetchErr.message, cola_id]);
+    }
+
+    // SIEMPRE retornamos ok: true a la UI para mantener el Optimistic UI
     return NextResponse.json({
       ok: true,
       mensaje: savedMsg.rows[0],
+      queued: true
     });
+
   } catch (err) {
     console.error('Error sending message:', err);
-    return NextResponse.json({ error: 'Error interno al enviar mensaje' }, { status: 500 });
+    return NextResponse.json({ error: 'Error interno al procesar mensaje' }, { status: 500 });
   }
 }
