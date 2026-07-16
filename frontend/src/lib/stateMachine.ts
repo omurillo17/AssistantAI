@@ -15,6 +15,8 @@ export type CandidatoEvent =
   | { type: 'INTERES' }
   | { type: 'RECIBE_CV' }
   | { type: 'LLENA_CV_MANUAL' }
+  | { type: 'ENTREGA_DOCS' }
+  | { type: 'BLOQUEO_IDENTIDAD' }
   | { type: 'AGENDA_CITA'; fecha: string }
   | { type: 'ESCALA_HUMANO' }
   | { type: 'RECHAZA' }
@@ -49,6 +51,7 @@ export const candidatoMachine = createMachine(
             target: 'CV_MANUAL',
             actions: 'setCvManual',
           },
+          ENTREGA_DOCS: 'INE_VALIDADA',
           AGENDA_CITA: {
             target: 'CITA_AGENDADA',
             actions: 'setFechaEntrevista',
@@ -69,6 +72,7 @@ export const candidatoMachine = createMachine(
             target: 'CV_MANUAL',
             actions: 'setCvManual',
           },
+          ENTREGA_DOCS: 'INE_VALIDADA',
           AGENDA_CITA: {
             target: 'CITA_AGENDADA',
             actions: 'setFechaEntrevista',
@@ -81,6 +85,7 @@ export const candidatoMachine = createMachine(
       },
       CV_RECIBIDO: {
         on: {
+          ENTREGA_DOCS: 'INE_VALIDADA',
           AGENDA_CITA: {
             target: 'CITA_AGENDADA',
             actions: 'setFechaEntrevista',
@@ -93,6 +98,20 @@ export const candidatoMachine = createMachine(
       },
       CV_MANUAL: {
         on: {
+          ENTREGA_DOCS: 'INE_VALIDADA',
+          AGENDA_CITA: {
+            target: 'CITA_AGENDADA',
+            actions: 'setFechaEntrevista',
+          },
+          ESCALA_HUMANO: {
+            target: 'ESCALADO',
+            actions: 'setEscalado',
+          },
+        },
+      },
+      INE_VALIDADA: {
+        on: {
+          ENTREGA_DOCS: 'INE_VALIDADA',
           AGENDA_CITA: {
             target: 'CITA_AGENDADA',
             actions: 'setFechaEntrevista',
@@ -106,6 +125,19 @@ export const candidatoMachine = createMachine(
       CITA_AGENDADA: {
         on: {
           ASISTE_ENTREVISTA: 'ENTREVISTADO',
+          ESCALA_HUMANO: {
+            target: 'ESCALADO',
+            actions: 'setEscalado',
+          },
+        },
+      },
+      RECORDATORIO_ENVIADO: {
+        on: {
+          ASISTE_ENTREVISTA: 'ENTREVISTADO',
+          AGENDA_CITA: {
+            target: 'CITA_AGENDADA',
+            actions: 'setFechaEntrevista',
+          },
           ESCALA_HUMANO: {
             target: 'ESCALADO',
             actions: 'setEscalado',
@@ -128,6 +160,44 @@ export const candidatoMachine = createMachine(
           AGENDA_CITA: {
             target: 'CITA_AGENDADA',
             actions: 'setFechaEntrevista',
+          },
+        },
+      },
+      DOCUMENTOS_NO_COINCIDEN: {
+        on: {
+          ENTREGA_DOCS: 'INE_VALIDADA',
+          RECIBE_CV: {
+            target: 'CV_RECIBIDO',
+            actions: 'setTieneCV',
+          },
+          ESCALA_HUMANO: {
+            target: 'ESCALADO',
+            actions: 'setEscalado',
+          },
+        },
+      },
+      CARTERA_GENERAL: {
+        on: {
+          RECIBE_CV: {
+            target: 'CV_RECIBIDO',
+            actions: 'setTieneCV',
+          },
+          AGENDA_CITA: {
+            target: 'CITA_AGENDADA',
+            actions: 'setFechaEntrevista',
+          },
+          ESCALA_HUMANO: {
+            target: 'ESCALADO',
+            actions: 'setEscalado',
+          },
+        },
+      },
+      INACTIVO: {
+        on: {
+          INTERES: 'INTERESADO',
+          RECIBE_CV: {
+            target: 'CV_RECIBIDO',
+            actions: 'setTieneCV',
           },
         },
       },

@@ -33,8 +33,6 @@ export function useVacantes() {
   const [rTelefonoNum, setRTelefonoNum] = useState("");
   const [rCalendar, setRCalendar] = useState("");
   const [rColor, setRColor] = useState("#6366f1");
-  const [rUsuario, setRUsuario] = useState("");
-  const [rPassword, setRPassword] = useState("");
 
   // ─── Transfer Modal State ────────────────────────────────
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -120,38 +118,25 @@ export function useVacantes() {
     setRecruiters(updated);
   };
 
-  const openRecruiterModal = (rec?: Recruiter) => {
-    if (rec) {
-      setEditingRecId(rec.reclutador_id);
-      setRNombre(rec.nombre);
+  const openRecruiterModal = (rec: Recruiter) => {
+    setEditingRecId(rec.reclutador_id);
+    setRNombre(rec.nombre);
 
-      let tel = rec.telefono || "";
-      let matchedCode = "52";
-      let matchedNum = tel;
-      const sortedCodes = [...COUNTRY_CODES].sort((a, b) => b.code.length - a.code.length);
-      for (const c of sortedCodes) {
-        if (tel.startsWith(c.code)) {
-          matchedCode = c.code;
-          matchedNum = tel.slice(c.code.length);
-          break;
-        }
+    let tel = rec.telefono || "";
+    let matchedCode = "52";
+    let matchedNum = tel;
+    const sortedCodes = [...COUNTRY_CODES].sort((a, b) => b.code.length - a.code.length);
+    for (const c of sortedCodes) {
+      if (tel.startsWith(c.code)) {
+        matchedCode = c.code;
+        matchedNum = tel.slice(c.code.length);
+        break;
       }
-      setRCodigoPais(matchedCode);
-      setRTelefonoNum(matchedNum);
-      setRCalendar(rec.calendar_id);
-      setRColor(rec.color);
-      setRUsuario(rec.usuario || "");
-      setRPassword("");
-    } else {
-      setEditingRecId(null);
-      setRNombre("");
-      setRCodigoPais("52");
-      setRTelefonoNum("");
-      setRCalendar("");
-      setRColor("#6366f1");
-      setRUsuario("");
-      setRPassword("");
     }
+    setRCodigoPais(matchedCode);
+    setRTelefonoNum(matchedNum);
+    setRCalendar(rec.calendar_id);
+    setRColor(rec.color);
     setIsRecModalOpen(true);
   };
 
@@ -169,25 +154,7 @@ export function useVacantes() {
         updated[index].telefono = rTelefonoNum ? rCodigoPais + rTelefonoNum : "";
         updated[index].calendar_id = rCalendar;
         updated[index].color = rColor;
-        updated[index].usuario = rUsuario;
-        if (rPassword) updated[index].password = rPassword;
       }
-    } else {
-      if (!rUsuario.trim() || !rPassword.trim()) {
-        showToast("Debes ingresar un usuario y contraseña para el nuevo reclutador.", true);
-        return;
-      }
-      updated.push({
-        reclutador_id: "rec_" + Date.now().toString(),
-        nombre: rNombre.toUpperCase(),
-        telefono: rTelefonoNum ? rCodigoPais + rTelefonoNum : "",
-        calendar_id: rCalendar,
-        color: rColor,
-        usuario: rUsuario,
-        password: rPassword,
-        activo: true,
-        vacantes: []
-      });
     }
 
     setRecruiters(updated);
@@ -386,10 +353,6 @@ export function useVacantes() {
     setRCalendar,
     rColor,
     setRColor,
-    rUsuario,
-    setRUsuario,
-    rPassword,
-    setRPassword,
 
     // Transfer Modal state
     showTransferModal,

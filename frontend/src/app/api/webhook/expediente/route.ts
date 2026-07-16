@@ -112,9 +112,9 @@ export async function POST(request: Request) {
         CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN TRUE ELSE FALSE END,
         $7, -- estado final
         NOW(),
-        CASE WHEN $15 = 'true' THEN NULL WHEN $4 = 'INE' THEN $8::jsonb ELSE NULL END,
-        CASE WHEN $15 = 'true' THEN NULL WHEN $4 = 'CONSTANCIA' THEN $8::text ELSE NULL END,
-        CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $8::jsonb ELSE NULL END,
+        CASE WHEN $15 = 'true' THEN NULL WHEN $4 = 'INE' THEN CAST($8 AS jsonb) ELSE NULL END,
+        CASE WHEN $15 = 'true' THEN NULL WHEN $4 = 'CONSTANCIA' THEN CAST($18 AS text) ELSE NULL END,
+        CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN CAST($8 AS jsonb) ELSE NULL END,
         CASE WHEN $15 = 'true' THEN FALSE WHEN $4 IN ('INE', 'CONSTANCIA') THEN TRUE ELSE FALSE END,
         CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN COALESCE($9, 'VIABLE') ELSE NULL END,
         CASE 
@@ -126,7 +126,7 @@ export async function POST(request: Request) {
         $12,
         $13,
         $14,
-        CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $15 ELSE NULL END,
+        CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $17 ELSE NULL END,
         CASE WHEN $15 = 'true' THEN NULL WHEN $4 = 'INE' THEN $2 ELSE NULL END,
         CASE WHEN $15 = 'true' THEN NULL WHEN $4 = 'CONSTANCIA' THEN $2 ELSE NULL END,
         CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $2 ELSE NULL END
@@ -136,7 +136,7 @@ export async function POST(request: Request) {
         vacante_interes = COALESCE(NULLIF($3, ''), candidatos.vacante_interes),
         experiencia = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $5 ELSE candidatos.experiencia END,
         tiene_cv = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN TRUE ELSE candidatos.tiene_cv END,
-        cv_manual = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $8::jsonb ELSE candidatos.cv_manual END,
+        cv_manual = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN CAST($8 AS jsonb) ELSE candidatos.cv_manual END,
         veredicto = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN COALESCE($9, 'VIABLE') ELSE candidatos.veredicto END,
         motivo_analisis = CASE 
             WHEN $15 = 'true' THEN COALESCE(NULLIF($16, ''), candidatos.motivo_analisis)
@@ -144,10 +144,10 @@ export async function POST(request: Request) {
             ELSE candidatos.motivo_analisis
         END,
         link_cv = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN COALESCE($11, candidatos.link_cv) ELSE candidatos.link_cv END,
-        filtros_tecnicos = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN COALESCE($15, candidatos.filtros_tecnicos) ELSE candidatos.filtros_tecnicos END,
+        filtros_tecnicos = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN COALESCE($17, candidatos.filtros_tecnicos) ELSE candidatos.filtros_tecnicos END,
         nombre_confirmado = CASE WHEN $15 = 'true' THEN FALSE WHEN $4 IN ('INE', 'CONSTANCIA') THEN TRUE ELSE candidatos.nombre_confirmado END,
-        datos_ine = CASE WHEN $15 = 'true' THEN candidatos.datos_ine WHEN $4 = 'INE' THEN $8::jsonb ELSE candidatos.datos_ine END,
-        datos_rfc = CASE WHEN $15 = 'true' THEN candidatos.datos_rfc WHEN $4 = 'CONSTANCIA' THEN $8::text ELSE candidatos.datos_rfc END,
+        datos_ine = CASE WHEN $15 = 'true' THEN candidatos.datos_ine WHEN $4 = 'INE' THEN CAST($8 AS jsonb) ELSE candidatos.datos_ine END,
+        datos_rfc = CASE WHEN $15 = 'true' THEN candidatos.datos_rfc WHEN $4 = 'CONSTANCIA' THEN CAST($18 AS text) ELSE candidatos.datos_rfc END,
         nombre_ine = CASE WHEN $15 = 'true' THEN candidatos.nombre_ine WHEN $4 = 'INE' THEN $2 ELSE candidatos.nombre_ine END,
         nombre_constancia = CASE WHEN $15 = 'true' THEN candidatos.nombre_constancia WHEN $4 = 'CONSTANCIA' THEN $2 ELSE candidatos.nombre_constancia END,
         nombre_solicitud = CASE WHEN $4 IN ('CV', 'SOLICITUD') AND candidatos.nombre_solicitud IS NULL THEN $2 ELSE candidatos.nombre_solicitud END,
@@ -159,22 +159,24 @@ export async function POST(request: Request) {
     `;
 
     await pool.query(upsertQuery, [
-      telefono,
-      nombre || 'Candidato',
-      vacante,
-      tipo_origen,
-      experiencia,
-      resumen_ia_final,
-      estado_final,
-      datos_documento ? JSON.stringify(parsedDatos) : null,
-      veredicto,
-      motivo,
-      link_cv,
-      nombre_chat,
-      edad,
-      correo,
-      filtros_tecnicos,
-      identidad_bloqueada
+      telefono,                 // $1
+      nombre || 'Candidato',    // $2
+      vacante,                  // $3
+      tipo_origen,              // $4
+      experiencia,              // $5
+      resumen_ia_final,         // $6
+      estado_final,             // $7
+      datos_documento ? JSON.stringify(parsedDatos) : null, // $8
+      veredicto,                // $9
+      motivo,                   // $10
+      link_cv,                  // $11
+      nombre_chat,              // $12
+      edad,                     // $13
+      correo,                   // $14
+      identidad_bloqueada,      // $15
+      identidad_motivo,         // $16
+      filtros_tecnicos,         // $17
+      datos_documento ? JSON.stringify(parsedDatos) : null // $18
     ]);
 
     // Insertar el mensaje del usuario (usualmente un archivo adjunto enviado por WhatsApp)
@@ -185,8 +187,12 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ success: true, estado: estado_final });
-  } catch (err) {
+  } catch (err: any) {
     console.error('Error procesando webhook de expediente n8n:', err);
-    return NextResponse.json({ error: 'Error procesando webhook de expediente' }, { status: 500 });
+    return NextResponse.json({ 
+      error: 'Error procesando webhook de expediente',
+      detail: err?.message || String(err),
+      stack: err?.stack?.split('\n').slice(0, 5)
+    }, { status: 500 });
   }
 }

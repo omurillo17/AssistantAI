@@ -133,6 +133,17 @@ export default function CalendarioPage() {
   const [cancelPassword, setCancelPassword] = useState("");
   const [cancelError, setCancelError] = useState("");
 
+  // Modal de reagendar
+  const [rescheduleTarget, setRescheduleTarget] = useState<CalendarEvent | null>(null);
+  const [newDate, setNewDate] = useState("");
+  const [newTime, setNewTime] = useState("");
+  const [rescheduling, setRescheduling] = useState(false);
+
+  // Modal de crear bloqueo
+  const [blockTarget, setBlockTarget] = useState<{ start: Date, end: Date } | null>(null);
+  const [blockTitle, setBlockTitle] = useState("Vacaciones / Bloqueo");
+  const [blocking, setBlocking] = useState(false);
+
   // Modal de chat
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
@@ -340,14 +351,32 @@ export default function CalendarioPage() {
   };
 
   const confirmCancel = async () => {
-    if (cancelPassword !== CANCEL_PASSWORD) {
-      setCancelError("Contraseña incorrecta.");
+    if (!cancelPassword) {
+      setCancelError("Ingresa tu contraseña.");
       return;
     }
     if (!cancelTarget) return;
+    
     setCancelingId(cancelTarget.id);
-    setCancelTarget(null);
+    setCancelError("");
+
     try {
+      // 1. Verificar la contraseña con el backend usando la sesión del usuario actual
+      const authRes = await fetch("/api/auth/verify-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: cancelPassword })
+      });
+      
+      const authData = await authRes.json();
+      if (!authRes.ok || !authData.success) {
+        setCancelError(authData.error || "Contraseña incorrecta.");
+        setCancelingId(null);
+        return;
+      }
+
+      // 2. Si es correcta, procedemos a cancelar en n8n
+      setCancelTarget(null);
       const payload = {
         telefono: cancelTarget.resource.telefono,
         event_id: cancelTarget.resource.event_id || (cancelTarget.resource.es_google_calendar ? cancelTarget.id : null),
@@ -366,6 +395,73 @@ export default function CalendarioPage() {
       showToast("❌ Error al cancelar la cita", true);
     } finally {
       setCancelingId(null);
+    }
+  };
+
+  const openRescheduleModal = (e: React.MouseEvent, event: CalendarEvent) => {
+    e.stopPropagation();
+    setRescheduleTarget(event);
+    setNewDate(format(event.start, "yyyy-MM-dd"));
+    setNewTime(format(event.start, "HH:mm"));
+  };
+
+  const confirmReschedule = async () => {
+    if (!rescheduleTarget || !newDate || !newTime) return;
+    setRescheduling(true);
+    
+    const startStr = `${newDate}T${newTime}:00`;
+    const start = new Date(startStr);
+    const end = new Date(start.getTime() + 60 * 60 * 1000);
+
+    try {
+      const payload = {
+        telefono: rescheduleTarget.resource.telefono,
+        event_id: rescheduleTarget.resource.event_id || (rescheduleTarget.resource.es_google_calendar ? rescheduleTarget.id : null),
+        calendar_id: rescheduleTarget.resource.creator_email,
+        start: start.toISOString(),
+        end: end.toISOString()
+      };
+      const res = await fetch(`${N8N_BASE_URL}/webhook/crm-reagendar-cita`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error();
+      showToast("✅ Cita reagendada", false);
+      setSelectedEvent(null);
+      setRescheduleTarget(null);
+      loadData();
+    } catch {
+      showToast("❌ Error al reagendar", true);
+    } finally {
+      setRescheduling(false);
+    }
+  };
+
+  const confirmBlock = async () => {
+    if (!blockTarget || !blockTitle) return;
+    setBlocking(true);
+    try {
+      const payload = {
+        calendar_id: myCalId,
+        start: blockTarget.start.toISOString(),
+        end: blockTarget.end.toISOString(),
+        summary: blockTitle,
+        description: "Bloqueo manual creado desde CRM"
+      };
+      const res = await fetch(`${N8N_BASE_URL}/webhook/crm-crear-bloqueo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error();
+      showToast("✅ Bloqueo creado", false);
+      setBlockTarget(null);
+      loadData();
+    } catch {
+      showToast("❌ Error al crear bloqueo", true);
+    } finally {
+      setBlocking(false);
     }
   };
 
@@ -510,6 +606,18 @@ export default function CalendarioPage() {
             onView={setView}
             onNavigate={(d) => setDate(d)}
             onSelectEvent={handleSelectEvent}
+            selectable={true}
+            onSelectSlot={({ start, end }) => {
+              if (start < new Date()) {
+                showToast("❌ No puedes bloquear fechas pasadas", true);
+                return;
+              }
+              if (!myCalId) {
+                showToast("❌ No tienes un calendario asignado para bloquear", true);
+                return;
+              }
+              setBlockTarget({ start, end });
+            }}
             components={{ toolbar: CustomToolbar }}
             messages={{
               next: "›",
@@ -659,13 +767,22 @@ export default function CalendarioPage() {
               </div>
             )}
 
-            <button
-              onClick={(e) => openCancelModal(e, selectedEvent)}
-              disabled={cancelingId === selectedEvent.id}
-              className="w-full mb-3 py-2.5 bg-red-50 text-red-600 hover:bg-red-100 font-bold rounded-xl transition-colors flex items-center justify-center gap-2 text-sm border border-red-200"
-            >
-              <XCircle size={16} /> Cancelar esta cita
-            </button>
+            <div className="flex gap-3 mb-3">
+              <button
+                onClick={(e) => openCancelModal(e, selectedEvent)}
+                disabled={cancelingId === selectedEvent.id}
+                className="flex-1 py-2.5 bg-red-50 text-red-600 hover:bg-red-100 font-bold rounded-xl transition-colors flex items-center justify-center gap-2 text-sm border border-red-200"
+              >
+                <XCircle size={16} /> Cancelar
+              </button>
+              
+              <button
+                onClick={(e) => openRescheduleModal(e, selectedEvent)}
+                className="flex-1 py-2.5 bg-amber-50 text-amber-600 hover:bg-amber-100 font-bold rounded-xl transition-colors flex items-center justify-center gap-2 text-sm border border-amber-200"
+              >
+                <RefreshCw size={16} /> Reagendar
+              </button>
+            </div>
 
             <div className="flex gap-3">
               <button
@@ -682,6 +799,101 @@ export default function CalendarioPage() {
                   Ver Chat
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL REAGENDAR ─── */}
+      {rescheduleTarget && (
+        <div
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[2000]"
+          onClick={() => setRescheduleTarget(null)}
+        >
+          <div
+            className="bg-white w-[90%] max-w-sm rounded-2xl p-6 shadow-2xl relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-bold text-slate-800 mb-4">Reagendar Cita</h3>
+            
+            <div className="mb-4">
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Nueva Fecha</label>
+              <input
+                type="date"
+                value={newDate}
+                onChange={(e) => setNewDate(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-sm"
+              />
+            </div>
+            
+            <div className="mb-6">
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Nueva Hora</label>
+              <input
+                type="time"
+                value={newTime}
+                onChange={(e) => setNewTime(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-sm"
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setRescheduleTarget(null)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmReschedule}
+                disabled={rescheduling}
+                className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm transition-colors disabled:opacity-50"
+              >
+                {rescheduling ? "Guardando..." : "Guardar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL CREAR BLOQUEO ─── */}
+      {blockTarget && (
+        <div
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[2000]"
+          onClick={() => setBlockTarget(null)}
+        >
+          <div
+            className="bg-white w-[90%] max-w-sm rounded-2xl p-6 shadow-2xl relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-bold text-slate-800 mb-1">Bloquear Horario</h3>
+            <p className="text-xs text-slate-500 mb-4">
+              {formatVisualDate(blockTarget.start)} - {formatVisualDate(blockTarget.end)}
+            </p>
+
+            <div className="mb-6">
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Título del bloqueo</label>
+              <input
+                type="text"
+                value={blockTitle}
+                onChange={(e) => setBlockTitle(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-sm"
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setBlockTarget(null)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmBlock}
+                disabled={blocking}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-colors disabled:opacity-50"
+              >
+                {blocking ? "Bloqueando..." : "Bloquear"}
+              </button>
             </div>
           </div>
         </div>

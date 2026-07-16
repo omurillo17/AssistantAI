@@ -203,10 +203,11 @@ export function useMensajes() {
           escalado: true,
           estado: "ESCALADO",
           escalation_reason: `Atendido manualmente por ${nombre}`,
+          asignado_a: nombre
         }),
       });
       if (!res.ok) throw new Error();
-      setCandidatoActivo(prev => prev ? { ...prev, escalado: true, estado: "ESCALADO" } : prev);
+      setCandidatoActivo(prev => prev ? { ...prev, escalado: true, estado: "ESCALADO", asignado_a: nombre } : prev);
       setConversaciones(prev =>
         prev.map(c => c.telefono === activePhone ? { ...c, escalado: true, asignado_a: nombre } : c)
       );

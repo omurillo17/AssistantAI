@@ -3,8 +3,6 @@
 import { COUNTRY_CODES } from "@/types";
 
 type Props = {
-  isEditing: boolean;
-  isAdmin: boolean;
   rNombre: string;
   setRNombre: (v: string) => void;
   rCodigoPais: string;
@@ -15,17 +13,11 @@ type Props = {
   setRCalendar: (v: string) => void;
   rColor: string;
   setRColor: (v: string) => void;
-  rUsuario: string;
-  setRUsuario: (v: string) => void;
-  rPassword: string;
-  setRPassword: (v: string) => void;
   onSave: () => void;
   onCancel: () => void;
 };
 
 export default function RecruiterModal({
-  isEditing,
-  isAdmin,
   rNombre,
   setRNombre,
   rCodigoPais,
@@ -36,10 +28,6 @@ export default function RecruiterModal({
   setRCalendar,
   rColor,
   setRColor,
-  rUsuario,
-  setRUsuario,
-  rPassword,
-  setRPassword,
   onSave,
   onCancel,
 }: Props) {
@@ -53,7 +41,7 @@ export default function RecruiterModal({
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="text-xl font-bold text-slate-800 mb-6 pb-4 border-b border-black/10">
-          {isEditing ? "Editar Reclutador" : "Agregar Reclutador"}
+          Editar Reclutador
         </h3>
 
         <div className="space-y-4">
@@ -124,39 +112,6 @@ export default function RecruiterModal({
             </div>
           </div>
 
-          {isAdmin && (
-            <div className="pt-4 border-t border-black/10 space-y-4">
-              <h4 className="text-sm font-bold text-slate-800">
-                Acceso al Sistema
-              </h4>
-              <div>
-                <label className="block text-sm text-slate-500 font-medium mb-1">
-                  Usuario (Login)
-                </label>
-                <input
-                  type="text"
-                  className="w-full p-3 rounded-lg border border-black/10 bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none transition-all shadow-sm"
-                  placeholder="usuario"
-                  value={rUsuario}
-                  onChange={(e) => setRUsuario(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-slate-500 font-medium mb-1">
-                  {isEditing
-                    ? "Nueva Contraseña (deja en blanco para no cambiar)"
-                    : "Contraseña"}
-                </label>
-                <input
-                  type="password"
-                  className="w-full p-3 rounded-lg border border-black/10 bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none transition-all shadow-sm"
-                  placeholder="••••••••"
-                  value={rPassword}
-                  onChange={(e) => setRPassword(e.target.value)}
-                />
-              </div>
-            </div>
-          )}
         </div>
 
         <div className="flex gap-3 mt-8">

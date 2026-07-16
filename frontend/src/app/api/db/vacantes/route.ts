@@ -168,29 +168,6 @@ export async function POST(request: Request) {
           updated_at = NOW()
       `, [rec.reclutador_id, rec.nombre, rec.activo, rec.telefono || '', rec.calendar_id || '', rec.color || '#6366f1']);
 
-      if (rol === "ADMIN" && rec.usuario) {
-        const checkUser = await client.query('SELECT id FROM usuarios WHERE reclutador_id = $1', [rec.reclutador_id]);
-        
-        if (checkUser.rows.length > 0) {
-          // Update existing user
-          if (rec.password) {
-            const password_hash = await bcrypt.hash(rec.password, 10);
-            await client.query(`UPDATE usuarios SET usuario = $1, password_hash = $2, actual_password = $3 WHERE reclutador_id = $4`,
-              [rec.usuario.toLowerCase(), password_hash, rec.password, rec.reclutador_id]);
-          } else {
-            await client.query(`UPDATE usuarios SET usuario = $1 WHERE reclutador_id = $2`,
-              [rec.usuario.toLowerCase(), rec.reclutador_id]);
-          }
-        } else {
-          // Create new user (requires password)
-          if (rec.password) {
-            const password_hash = await bcrypt.hash(rec.password, 10);
-            await client.query(`INSERT INTO usuarios (usuario, password_hash, actual_password, rol, reclutador_id) VALUES ($1, $2, $3, 'RECLUTADOR', $4)`,
-              [rec.usuario.toLowerCase(), password_hash, rec.password, rec.reclutador_id]);
-          }
-        }
-      }
-
       // Insertar / Actualizar vacantes
       let orden = 0;
       for (const vac of rec.vacantes) {
@@ -249,17 +226,52 @@ export async function POST(request: Request) {
       const basePath = path.join(process.cwd(), '..', 'virgo_data', 'prompts'); 
       
       if (fs.existsSync(basePath)) {
-        // 1. Guardar JSON (para respaldo o si otra cosa lo lee)
+        // 1. Obtener la DATA COMPLETA de la base de datos para no sobreescribir con datos parciales
+        const resFull = await client.query(`
+          SELECT 
+            r.id AS reclutador_id, r.nombre AS reclutador_nombre, r.activo AS reclutador_activo,
+            r.telefono AS reclutador_telefono, r.calendar_id AS reclutador_calendar,
+            r.color AS reclutador_color, u.usuario AS reclutador_usuario,
+            v.id AS vacante_id, v.nombre AS vacante_nombre, v.naves, v.detalles,
+            v.palabras_clave, v.filtros, v.activa AS vacante_activa
+          FROM reclutadores r
+          LEFT JOIN usuarios u ON r.id = u.reclutador_id
+          LEFT JOIN vacantes_def v ON r.id = v.reclutador_id
+          ORDER BY r.created_at ASC, v.orden ASC, v.created_at ASC
+        `);
+        
+        const map = new Map<string, any>();
+        for (const row of resFull.rows) {
+          if (!map.has(row.reclutador_id)) {
+            map.set(row.reclutador_id, {
+              reclutador_id: row.reclutador_id, nombre: row.reclutador_nombre, activo: row.reclutador_activo,
+              telefono: row.reclutador_telefono || '', calendar_id: row.reclutador_calendar || '',
+              color: row.reclutador_color || '#6366f1', usuario: row.reclutador_usuario || '',
+              vacantes: []
+            });
+          }
+          if (row.vacante_id) {
+            map.get(row.reclutador_id).vacantes.push({
+              id: row.vacante_id, nombre: row.vacante_nombre,
+              naves: typeof row.naves === 'string' ? JSON.parse(row.naves) : row.naves,
+              detalles: row.detalles || '', palabras_clave: row.palabras_clave || '',
+              filtros: row.filtros || [], activa: row.vacante_activa
+            });
+          }
+        }
+        const fullData = Array.from(map.values());
+
+        // 2. Guardar JSON COMPLETO (para respaldo o si otra cosa lo lee)
         fs.writeFileSync(
             path.join(basePath, 'reclutador_vacantes.json'),
-            JSON.stringify(data, null, 2),
+            JSON.stringify(fullData, null, 2),
             'utf8'
         );
 
-        // 2. Extraer vacantes únicas por nave
+        // 3. Extraer vacantes únicas por nave de la DATA COMPLETA
         const naves: Record<string, any[]> = { 1: [], 2: [], 3: [] };
 
-        data.forEach((rec: any) => {
+        fullData.forEach((rec: any) => {
             if (rec.nombre === "DESHABILITADAS" || !rec.activo) return;
 
             if (rec.vacantes && Array.isArray(rec.vacantes)) {

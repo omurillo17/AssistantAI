@@ -20,11 +20,6 @@ export default function VacantesPage() {
       {/* Top Toolbar */}
       <div className="flex flex-col md:flex-row justify-end items-start md:items-center mb-6 gap-4 px-10 pt-6">
         <div className="flex gap-4">
-          {v.isAdmin && (
-            <button onClick={() => v.openRecruiterModal()} className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold rounded shadow-sm transition-all border border-indigo-200 flex items-center gap-2">
-              <Plus size={18} /> Agregar Reclutador
-            </button>
-          )}
           <button onClick={v.loadData} className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded shadow-sm transition-all border border-slate-200">
             Descartar Cambios
           </button>
@@ -134,14 +129,11 @@ export default function VacantesPage() {
 
       {v.isRecModalOpen && (
         <RecruiterModal
-          isEditing={!!v.editingRecId} isAdmin={v.isAdmin}
           rNombre={v.rNombre} setRNombre={v.setRNombre}
           rCodigoPais={v.rCodigoPais} setRCodigoPais={v.setRCodigoPais}
           rTelefonoNum={v.rTelefonoNum} setRTelefonoNum={v.setRTelefonoNum}
           rCalendar={v.rCalendar} setRCalendar={v.setRCalendar}
           rColor={v.rColor} setRColor={v.setRColor}
-          rUsuario={v.rUsuario} setRUsuario={v.setRUsuario}
-          rPassword={v.rPassword} setRPassword={v.setRPassword}
           onSave={v.saveRecruiter} onCancel={() => v.setIsRecModalOpen(false)}
         />
       )}

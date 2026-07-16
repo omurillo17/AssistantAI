@@ -5,10 +5,14 @@ import { jwtVerify } from "jose";
 
 import { pool } from '@/lib/db';
 
+import crypto from 'crypto';
+
 const userSchema = z.object({
   usuario: z.string().min(3).max(100),
   password: z.string().min(5).max(100),
-  rol: z.enum(["ADMIN", "USER"]),
+  rol: z.enum(["ADMIN", "USER", "RECLUTADOR"]),
+  correo: z.string().email("Correo inválido").optional().or(z.literal("")),
+  telefono: z.string().optional(),
 });
 
 export async function GET() {
@@ -29,7 +33,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Datos inválidos o contraseña muy corta" }, { status: 400 });
     }
 
-    const { usuario, password, rol } = parsed.data;
+    const { usuario, password, rol, correo, telefono } = parsed.data;
 
     // Normalize username: lowercase and remove accents
     const normalizedUser = usuario.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
@@ -42,9 +46,21 @@ export async function POST(request: Request) {
 
     const hash = await bcrypt.hash(password, 10);
 
+    let reclutador_id = null;
+
+    // Si es reclutador, creamos también su perfil
+    if (rol === "RECLUTADOR") {
+      reclutador_id = crypto.randomUUID();
+      await pool.query(
+        `INSERT INTO reclutadores (id, nombre, activo, telefono, calendar_id, color, updated_at) 
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [reclutador_id, usuario.toUpperCase(), true, telefono || '', correo || '', '#6366f1']
+      );
+    }
+
     const res = await pool.query(
-      `INSERT INTO usuarios (usuario, password_hash, rol, actual_password) VALUES ($1, $2, $3, $4) RETURNING id, usuario, rol`,
-      [normalizedUser, hash, rol, password]
+      `INSERT INTO usuarios (usuario, password_hash, rol, actual_password, reclutador_id) VALUES ($1, $2, $3, $4, $5) RETURNING id, usuario, rol`,
+      [normalizedUser, hash, rol, password, reclutador_id]
     );
 
     return NextResponse.json(res.rows[0]);
@@ -57,9 +73,9 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const body = await request.json();
-    const { targetUserId, newPassword, adminPassword } = body;
+    const { targetUserId, newPassword, adminPassword, newRol, correo, telefono, transferTo } = body;
 
-    if (!targetUserId || !newPassword || !adminPassword) {
+    if (!targetUserId || !adminPassword) {
       return NextResponse.json({ error: "Faltan datos requeridos" }, { status: 400 });
     }
 
@@ -79,18 +95,68 @@ export async function PATCH(request: Request) {
     const isValidAdmin = await bcrypt.compare(adminPassword, adminHash);
     if (!isValidAdmin) return NextResponse.json({ error: "Contraseña de administrador incorrecta" }, { status: 403 });
 
-    // Actualizar contraseña del usuario objetivo
-    const newHash = await bcrypt.hash(newPassword, 10);
-    const res = await pool.query(`UPDATE usuarios SET password_hash = $1, actual_password = $2 WHERE id = $3 RETURNING id`, [newHash, newPassword, targetUserId]);
+    // Obtener usuario objetivo actual
+    const userRes = await pool.query(`SELECT * FROM usuarios WHERE id = $1`, [targetUserId]);
+    if (userRes.rowCount === 0) return NextResponse.json({ error: "Usuario a modificar no encontrado" }, { status: 404 });
+    const currentUser = userRes.rows[0];
 
-    if (res.rowCount === 0) {
-      return NextResponse.json({ error: "Usuario a modificar no encontrado" }, { status: 404 });
+    // Actualizar Contraseña si se provee
+    if (newPassword && newPassword.trim().length > 0) {
+      const newHash = await bcrypt.hash(newPassword, 10);
+      await pool.query(`UPDATE usuarios SET password_hash = $1, actual_password = $2 WHERE id = $3`, [newHash, newPassword, targetUserId]);
+    }
+
+    // Actualizar Rol si se provee y es distinto
+    if (newRol && newRol !== currentUser.rol) {
+      
+      // Ascenso a RECLUTADOR
+      if (newRol === "RECLUTADOR") {
+        let recId = currentUser.reclutador_id;
+        
+        // Si no tenía perfil de reclutador, crearlo
+        if (!recId) {
+          recId = "rec_" + crypto.randomUUID().replace(/-/g, "").substring(0, 10);
+          await pool.query(
+            `INSERT INTO reclutadores (id, nombre, activo, telefono, calendar_id, color, updated_at) 
+             VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+            [recId, currentUser.usuario.toUpperCase(), true, telefono || '', correo || '', '#6366f1']
+          );
+        } else {
+          // Si ya tenía uno inactivo, reactivarlo
+          await pool.query(`UPDATE reclutadores SET activo = true, updated_at = NOW() WHERE id = $1`, [recId]);
+        }
+        
+        await pool.query(`UPDATE usuarios SET rol = $1, reclutador_id = $2 WHERE id = $3`, [newRol, recId, targetUserId]);
+      } 
+      
+      // Descenso desde RECLUTADOR
+      else if (currentUser.rol === "RECLUTADOR") {
+        // Transferir chats si se especifica
+        if (transferTo) {
+          await pool.query(
+            `UPDATE candidatos SET asignado_a = $1 WHERE asignado_a = $2`,
+            [transferTo, currentUser.usuario]
+          );
+        }
+        
+        // Desactivar el perfil de reclutador en lugar de borrarlo
+        if (currentUser.reclutador_id) {
+          await pool.query(`UPDATE reclutadores SET activo = false, updated_at = NOW() WHERE id = $1`, [currentUser.reclutador_id]);
+        }
+
+        await pool.query(`UPDATE usuarios SET rol = $1 WHERE id = $2`, [newRol, targetUserId]);
+      } 
+      
+      // Cambio entre ADMIN y USER
+      else {
+        await pool.query(`UPDATE usuarios SET rol = $1 WHERE id = $2`, [newRol, targetUserId]);
+      }
     }
 
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error(err);
-    return NextResponse.json({ error: 'Error al actualizar contraseña' }, { status: 500 });
+    return NextResponse.json({ error: 'Error al actualizar usuario' }, { status: 500 });
   }
 }
 
@@ -98,9 +164,19 @@ export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
+    const transferTo = searchParams.get('transferTo');
+    const username = searchParams.get('username');
 
     if (!id) {
       return NextResponse.json({ error: "Falta el ID del usuario" }, { status: 400 });
+    }
+
+    // Transferir chats si se especifica
+    if (transferTo && username) {
+      await pool.query(
+        `UPDATE candidatos SET asignado_a = $1 WHERE asignado_a = $2`,
+        [transferTo, username]
+      );
     }
 
     const res = await pool.query(`DELETE FROM usuarios WHERE id = $1 RETURNING id`, [id]);
