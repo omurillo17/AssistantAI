@@ -51,11 +51,21 @@ export default function VacancyModal({
             </label>
             <input
               type="text"
-              className="w-full p-3 rounded-lg border border-black/10 bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none uppercase transition-all shadow-sm"
+              className={`w-full p-3 rounded-lg border border-black/10 outline-none uppercase transition-all shadow-sm ${
+                isEditing 
+                  ? "bg-slate-100 text-slate-500 cursor-not-allowed" 
+                  : "bg-slate-50 focus:bg-white focus:border-indigo-500"
+              }`}
               placeholder="EJ: OPERADOR GENERAL"
               value={vNombre}
               onChange={(e) => setVNombre(e.target.value)}
+              disabled={isEditing}
             />
+            {isEditing && (
+              <p className="text-xs text-amber-600 font-medium mt-1">
+                El nombre de la vacante no se puede modificar para mantener la consistencia de los datos.
+              </p>
+            )}
           </div>
 
           <div>

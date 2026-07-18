@@ -81,8 +81,12 @@ export async function POST(request: Request) {
 
     // 4. Upsert Candidato
     const parsedCvManual = typeof cv_manual === 'string' ? JSON.parse(cv_manual) : cv_manual;
-    const finalNombre = (nombre && nombre !== 'Candidato') ? nombre : (nombre_wpp || 'Candidato');
-
+    
+    let finalNombre = (nombre && nombre !== 'Candidato') ? nombre : (nombre_wpp || 'Candidato');
+    finalNombre = finalNombre.trim();
+    if (!finalNombre || finalNombre === telefono || /^\+?\d+$/.test(finalNombre)) {
+      finalNombre = 'Candidato';
+    }
     let veredicto = null;
     let motivo_analisis = null;
     if (filtros) {
@@ -100,17 +104,18 @@ export async function POST(request: Request) {
 
     const upsertQuery = `
       INSERT INTO candidatos (
-        telefono, estado, ultima_interaccion, vacante_interes, 
+        telefono, nombre, estado, ultima_interaccion, vacante_interes, 
         resumen_ia, filtros_tecnicos, cv_manual, fecha_entrevista, privacidad_aceptada, 
         nombre_chat, nombre_solicitud, edad, correo, experiencia, nave_interes, mensajes_bot_enviados,
         veredicto, motivo_analisis
       )
       VALUES (
-        $1, $2, NOW(), $3, $4, $5, $6, $7, $8,
+        $1, $9, $2, NOW(), $3, $4, $5, $6, $7, $8,
         $9, $10, $11, $12, $13, $14, 1,
         $15, $16
       )
       ON CONFLICT (telefono) DO UPDATE SET 
+        nombre = CASE WHEN candidatos.nombre IS NULL OR candidatos.nombre = '' OR candidatos.nombre = 'Candidato' THEN EXCLUDED.nombre ELSE candidatos.nombre END,
         estado = EXCLUDED.estado,
         ultima_interaccion = NOW(),
         mensajes_bot_enviados = candidatos.mensajes_bot_enviados + 1,

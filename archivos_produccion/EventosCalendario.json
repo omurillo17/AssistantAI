@@ -1,0 +1,220 @@
+{
+  "name": "EventosCalendario",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n  \"start\": \"2026-07-08T10:00:00.000Z\",\n  \"end\": \"2026-07-08T11:00:00.000Z\",\n  \"resumen_ia\": \"Resumen corto\",\n  \"calendar_id\": \"tu_correo@gmail.com\",\n  \"telefono\": \"5213323379399\",\n  \"nombre\": \"Candidato\",\n  \"nave_interes\": \"Nave X\",\n  \"ine_nombre\": \"Nombre INE\",\n  \"ine_curp\": \"CURP123\"\n}\n"
+      },
+      "id": "b9f4a1b1-0e91-4764-a75b-edfa4172aac9",
+      "typeVersion": 1.1,
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "position": [
+        -288,
+        -16
+      ]
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "={{ $json.calendar_id }}",
+          "mode": "id"
+        },
+        "start": "={{ $json.start }}",
+        "end": "={{ $json.end }}",
+        "additionalFields": {
+          "description": "={{ `Candidato: ${$json.nombre || 'Desconocido'}\\nTel: ${$json.telefono || 'Desconocido'}\\nNave/Sucursal: ${$json.nave_interes || 'Pendiente'}\\n\\n--- DATOS VERIFICADOS (INE) ---\\nNombre: ${$json.ine_nombre || 'No validado'}\\nCURP: ${$json.ine_curp || 'No validado'}\\n\\n--- NOTAS DE IA ---\\n${$json.notas_ia}` }}",
+          "summary": "={{ `Nave ${$json.nave_interes || 'Pendiente'} - ${$json.resumen_ia}` }}"
+        }
+      },
+      "id": "ff8c20c9-d3c5-43c7-be44-06d23f3c8b87",
+      "name": "Crear en Google Calendar",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.1,
+      "position": [
+        112,
+        64
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "UdvlrdeY3pl15MOk",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE candidatos SET event_id = $1 WHERE telefono = $2",
+        "options": {
+          "queryReplacement": "={{ $json.id }}, {{ $('When Executed by Another Workflow').item.json.telefono }}"
+        }
+      },
+      "id": "9437bda6-c873-41a1-878a-a456c346402b",
+      "name": "Guardar ID en Base de Datos",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        336,
+        64
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "calendar": {
+          "__rl": true,
+          "value": "={{ $json.calendar_id }}",
+          "mode": "id"
+        },
+        "eventId": "={{ $json.event_id }}",
+        "options": {}
+      },
+      "id": "4cc6175b-dd90-47af-b2ec-4210d023f2c6",
+      "name": "Borrar en Google Calendar",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.1,
+      "position": [
+        96,
+        -112
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "UdvlrdeY3pl15MOk",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE candidatos SET estado = 'Cancelado', event_id = NULL WHERE telefono = $1",
+        "options": {
+          "queryReplacement": "={{ $('When Executed by Another Workflow').item.json.telefono }}"
+        }
+      },
+      "id": "5463e010-d58f-4bde-92e4-c03bc6b8145d",
+      "name": "Actualizar DB a Cancelado",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        320,
+        -112
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "delete",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "delete",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "10dc9e43-01ba-4a7a-ae53-9d088c3ce39f",
+      "name": "If Action",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -112,
+        -16
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "If Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Crear en Google Calendar": {
+      "main": [
+        [
+          {
+            "node": "Guardar ID en Base de Datos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Borrar en Google Calendar": {
+      "main": [
+        [
+          {
+            "node": "Actualizar DB a Cancelado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Action": {
+      "main": [
+        [
+          {
+            "node": "Borrar en Google Calendar",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Crear en Google Calendar",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "8c3f105e-a8fa-414c-85cf-ad44d6603ad1",
+  "meta": {
+    "instanceId": "e485a5a7ac8114c62636ecba6367db69dad6bc18fb5dd48f890b21271541f05c"
+  },
+  "nodeGroups": [],
+  "id": "G1Ow8lsap2BQkeJB",
+  "tags": []
+}

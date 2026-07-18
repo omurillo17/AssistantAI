@@ -25,10 +25,9 @@ export function Sidebar() {
 
   const menu = [
     { name: "Inicio", path: "/", icon: <Home size={18} /> },
-    { name: "CRM", path: "/crm", icon: <Kanban size={18} /> },
+    { name: "Dashboards", path: "/dashboards", icon: <Kanban size={18} /> },
     { name: "Mensajes", path: "/mensajes", icon: <MessageSquare size={18} /> },
     { name: "Vacantes", path: "/vacantes", icon: <Briefcase size={18} /> },
-    { name: "Expedientes", path: "/candidatos", icon: <FolderOpen size={18} /> },
     { name: "Calendario", path: "/calendario", icon: <Calendar size={18} /> },
     { name: "Configuración", path: "/configuracion", icon: <Settings size={18} /> },
   ];

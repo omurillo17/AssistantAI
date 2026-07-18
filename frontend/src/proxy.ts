@@ -16,6 +16,7 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/login") || // Página de Login
     pathname.startsWith("/api/auth/login") || // Endpoint de Login
     pathname.startsWith("/api/webhook") || // Webhooks de n8n no requieren JWT
+    pathname.startsWith("/api/upload-cv") || // Endpoints de subida de archivos de n8n no requieren JWT
     pathname === "/favicon.ico"
   ) {
     return NextResponse.next();

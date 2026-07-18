@@ -3,7 +3,7 @@ import { Outfit } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/Sidebar";
 import { TopNavbar } from "@/components/TopNavbar";
-
+import { WahaStatusBanner } from "@/components/WahaStatusBanner";
 const outfit = Outfit({
   variable: "--font-outfit",
   subsets: ["latin"],
@@ -24,6 +24,7 @@ export default function RootLayout({
       <body className="min-h-full flex font-sans bg-background text-foreground overflow-hidden">
         <Sidebar />
         <div className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto relative">
+          <WahaStatusBanner />
           <TopNavbar />
           <main className="flex-1 flex flex-col p-6">
             {children}

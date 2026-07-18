@@ -38,10 +38,10 @@ export default function Home() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        {/* CRM */}
-        <Link href="/crm" className="bg-primary rounded-lg relative overflow-hidden text-white shadow-sm hover:shadow-md transition-shadow block">
+        {/* Dashboards */}
+        <Link href="/dashboards" className="bg-primary rounded-lg relative overflow-hidden text-white shadow-sm hover:shadow-md transition-shadow block">
           <div className="p-5 relative z-10">
-            <h3 className="text-3xl font-bold mb-1">Dashboard</h3>
+            <h3 className="text-3xl font-bold mb-1">Dashboards</h3>
             <p className="text-white/80 text-sm">Graficas visuales</p>
           </div>
           <div className="absolute top-4 right-4 text-black/10 text-6xl font-black">

@@ -257,17 +257,18 @@ export function useMensajes() {
           telefono: activePhone,
           escalado: false,
           escalation_reason: null,
+          asignado_a: null
         }),
       });
       if (!res.ok) throw new Error();
       await fetch("/api/db/mensajes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ telefono: activePhone }),
+        body: JSON.stringify({ telefono: activePhone, asignado_a: null }),
       });
-      setCandidatoActivo(prev => prev ? { ...prev, escalado: false } : prev);
+      setCandidatoActivo(prev => prev ? { ...prev, escalado: false, asignado_a: null } : prev);
       setConversaciones(prev =>
-        prev.map(c => c.telefono === activePhone ? { ...c, escalado: false } : c)
+        prev.map(c => c.telefono === activePhone ? { ...c, escalado: false, asignado_a: null } : c)
       );
       showToast("🤖 Bot reactivado para este candidato");
     } catch {

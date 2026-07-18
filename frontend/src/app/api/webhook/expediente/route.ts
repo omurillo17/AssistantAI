@@ -24,6 +24,11 @@ export async function POST(request: Request) {
       identidad_bloqueada,
       identidad_motivo
     } = data;
+    
+    let safe_nombre_chat = (nombre_chat || '').trim();
+    if (safe_nombre_chat === telefono || /^\+?\d+$/.test(safe_nombre_chat)) {
+      safe_nombre_chat = '';
+    }
 
     if (!telefono) {
       return NextResponse.json({ error: 'Falta telefono' }, { status: 400 });
@@ -100,12 +105,13 @@ export async function POST(request: Request) {
     // Construcción del upsert gigante pero ahora en backend
     const upsertQuery = `
       INSERT INTO candidatos (
-        telefono, vacante_interes, experiencia, resumen_ia, tiene_cv, estado, 
+        telefono, nombre, vacante_interes, experiencia, resumen_ia, tiene_cv, estado, 
         ultima_interaccion, datos_ine, datos_rfc, cv_manual, nombre_confirmado, 
         veredicto, motivo_analisis, link_cv, nombre_chat, edad, correo, 
         filtros_tecnicos, nombre_ine, nombre_constancia, nombre_solicitud
       ) VALUES (
         $1,
+        CAST($2 AS text),
         COALESCE(NULLIF($3, ''), 'General'),
         CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $5 ELSE NULL END,
         $6, -- resumen ia final
@@ -127,12 +133,13 @@ export async function POST(request: Request) {
         $13,
         $14,
         CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $17 ELSE NULL END,
-        CASE WHEN $15 = 'true' THEN NULL WHEN $4 = 'INE' THEN $2 ELSE NULL END,
-        CASE WHEN $15 = 'true' THEN NULL WHEN $4 = 'CONSTANCIA' THEN $2 ELSE NULL END,
-        CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $2 ELSE NULL END
+        CASE WHEN $15 = 'true' THEN NULL WHEN $4 = 'INE' THEN CAST($2 AS text) ELSE NULL END,
+        CASE WHEN $15 = 'true' THEN NULL WHEN $4 = 'CONSTANCIA' THEN CAST($2 AS text) ELSE NULL END,
+        CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN CAST($2 AS text) ELSE NULL END
       )
       ON CONFLICT (telefono) DO UPDATE SET
         ultima_interaccion = NOW(),
+        nombre = CASE WHEN candidatos.nombre IS NULL OR candidatos.nombre = '' OR candidatos.nombre = 'Candidato' THEN CAST($2 AS text) ELSE candidatos.nombre END,
         vacante_interes = COALESCE(NULLIF($3, ''), candidatos.vacante_interes),
         experiencia = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $5 ELSE candidatos.experiencia END,
         tiene_cv = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN TRUE ELSE candidatos.tiene_cv END,
@@ -148,9 +155,9 @@ export async function POST(request: Request) {
         nombre_confirmado = CASE WHEN $15 = 'true' THEN FALSE WHEN $4 IN ('INE', 'CONSTANCIA') THEN TRUE ELSE candidatos.nombre_confirmado END,
         datos_ine = CASE WHEN $15 = 'true' THEN candidatos.datos_ine WHEN $4 = 'INE' THEN CAST($8 AS jsonb) ELSE candidatos.datos_ine END,
         datos_rfc = CASE WHEN $15 = 'true' THEN candidatos.datos_rfc WHEN $4 = 'CONSTANCIA' THEN CAST($18 AS text) ELSE candidatos.datos_rfc END,
-        nombre_ine = CASE WHEN $15 = 'true' THEN candidatos.nombre_ine WHEN $4 = 'INE' THEN $2 ELSE candidatos.nombre_ine END,
-        nombre_constancia = CASE WHEN $15 = 'true' THEN candidatos.nombre_constancia WHEN $4 = 'CONSTANCIA' THEN $2 ELSE candidatos.nombre_constancia END,
-        nombre_solicitud = CASE WHEN $4 IN ('CV', 'SOLICITUD') AND candidatos.nombre_solicitud IS NULL THEN $2 ELSE candidatos.nombre_solicitud END,
+        nombre_ine = CASE WHEN $15 = 'true' THEN candidatos.nombre_ine WHEN $4 = 'INE' THEN CAST($2 AS text) ELSE candidatos.nombre_ine END,
+        nombre_constancia = CASE WHEN $15 = 'true' THEN candidatos.nombre_constancia WHEN $4 = 'CONSTANCIA' THEN CAST($2 AS text) ELSE candidatos.nombre_constancia END,
+        nombre_solicitud = CASE WHEN $4 IN ('CV', 'SOLICITUD') AND candidatos.nombre_solicitud IS NULL THEN CAST($2 AS text) ELSE candidatos.nombre_solicitud END,
         nombre_chat = COALESCE(candidatos.nombre_chat, NULLIF($12, '')),
         edad = COALESCE(NULLIF($13, ''), candidatos.edad),
         correo = COALESCE(NULLIF($14, ''), candidatos.correo),
@@ -170,7 +177,7 @@ export async function POST(request: Request) {
       veredicto,                // $9
       motivo,                   // $10
       link_cv,                  // $11
-      nombre_chat,              // $12
+      safe_nombre_chat,         // $12
       edad,                     // $13
       correo,                   // $14
       identidad_bloqueada,      // $15

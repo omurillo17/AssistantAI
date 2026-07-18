@@ -231,11 +231,31 @@ export function useVacantes() {
   };
 
   const saveVacancy = () => {
-    if (!vNombre.trim() || vNaves.length === 0) {
+    const normalizedName = vNombre.trim().toUpperCase();
+    if (!normalizedName || vNaves.length === 0) {
       showToast("Debes ingresar un nombre y seleccionar al menos una nave.", true);
       return;
     }
+
     const updated = [...recruiters];
+
+    // Evitar duplicados revisando en todas las vacantes de todos los reclutadores
+    let duplicateExists = false;
+    for (const r of updated) {
+      for (const v of r.vacantes) {
+        if (v.nombre === normalizedName && v.id !== modalVacancyId) {
+          duplicateExists = true;
+          break;
+        }
+      }
+      if (duplicateExists) break;
+    }
+
+    if (duplicateExists) {
+      showToast(`La vacante "${normalizedName}" ya existe. Búscala en tu lista y actívala si está inactiva.`, true);
+      return;
+    }
+
     const recIndex = updated.findIndex((r) => r.reclutador_id === modalRecruiterId);
     if (recIndex === -1) return;
 
@@ -244,7 +264,7 @@ export function useVacantes() {
       if (vacIndex > -1) {
         updated[recIndex].vacantes[vacIndex] = {
           ...updated[recIndex].vacantes[vacIndex],
-          nombre: vNombre.toUpperCase(),
+          nombre: normalizedName,
           detalles: vDetalles,
           palabras_clave: vPalabrasClave,
           naves: vNaves,
@@ -253,7 +273,7 @@ export function useVacantes() {
     } else {
       updated[recIndex].vacantes.push({
         id: "v_" + Date.now().toString(),
-        nombre: vNombre.toUpperCase(),
+        nombre: normalizedName,
         detalles: vDetalles,
         palabras_clave: vPalabrasClave,
         naves: vNaves,
