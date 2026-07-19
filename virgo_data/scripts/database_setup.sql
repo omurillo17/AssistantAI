@@ -76,8 +76,10 @@ CREATE TABLE IF NOT EXISTS candidatos (
         'RECHAZADO',
         'INACTIVO',
         'INE_VALIDADA',
-        'RECORDATORIO_ENVIADO'
+        'RECORDATORIO_ENVIADO',
+        'DOCUMENTOS_NO_COINCIDEN'
     )),
+
     
     CONSTRAINT valid_veredicto CHECK (veredicto IN (
         'VIABLE',

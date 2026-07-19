@@ -1,0 +1,908 @@
+{
+  "name": "1_Sofia - Inicio",
+  "nodes": [
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE candidatos\nSET ultima_ejecucion_id = $1\nWHERE telefono = $2;",
+        "options": {
+          "queryReplacement": "={{ [ $execution.id, $('IgnorarEquipo').item.json.number ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        400,
+        272
+      ],
+      "id": "08d54ff2-3e2f-4b2e-b5c5-00aa47ed9c38",
+      "name": "ID_TEL",
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO conversation_history (telefono, role, content, message_type, media_url) \nVALUES ($1, 'user_temp', $2, $3, $4);\n",
+        "options": {
+          "queryReplacement": "={{ [ \n  $('IgnorarEquipo').item.json.number, \n  $('Webhook').item.json.body.payload.body || '[Mensaje multimedia]',\n  $('Webhook').item.json.body.payload.type || 'text',\n  $('Webhook').item.json.body.payload.media?.url || null\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        368,
+        80
+      ],
+      "id": "91611bcb-be7c-4c0f-a8d8-6ed49029c383",
+      "name": "MsjCorto",
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c1d1cb33-adc7-4fd3-842d-9fa9a2cc27b9",
+              "leftValue": "={{ $('IgnorarEquipo').item.json.number }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        128,
+        160
+      ],
+      "id": "8bc316fc-6516-4873-a939-4d7dae9e9435",
+      "name": "If3"
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\n\n// 1. Obtenemos el resultado de GetInfo\nconst getInfoResult = $input.first().json;\nconst remitente = getInfoResult.id || \"\";\n\n// FIX WAHA: Rescatamos el LID corrupto y extraemos el número real\nif (remitente && remitente.includes(\"@\")) {\n  getInfoResult.lid = getInfoResult.number;\n  getInfoResult.number = remitente.split(\"@\")[0];\n}\n\n// 2. Lista oficial de reclutadores\nlet equipo = [];\ntry {\n    equipo = JSON.parse(fs.readFileSync('/home/node/virgo_files/prompts/reclutador_vacantes.json', 'utf8'));\n} catch (error) {\n    console.log(\"Error leyendo JSON de reclutadores:\", error);\n}\n\n// 3. Revisamos si el número coincide\nfor (const reclutador of equipo) {\n    if (reclutador.telefono) {\n        const diezDigitos = reclutador.telefono.trim().slice(-10);\n        if (remitente.includes(diezDigitos)) {\n            return []; // Es reclutador -> Detenemos el flujo\n        }\n    }\n}\n\nreturn [{ json: getInfoResult }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        160
+      ],
+      "id": "c3844f42-95ad-42f9-843d-11c3b418a892",
+      "name": "IgnorarEquipo"
+    },
+    {
+      "parameters": {
+        "url": "http://waha:3000/api/contacts",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "wahaApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "contactId",
+              "value": "={{ $('Webhook').item.json.body.payload.from }}"
+            },
+            {
+              "name": "session",
+              "value": "default"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "virgo_secret_key"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -416,
+        144
+      ],
+      "id": "28fdce9f-1b26-4dbd-b93f-efff200c981e",
+      "name": "GetInfo",
+      "credentials": {
+        "wahaApi": {
+          "id": "OBarvY73V8DKtYv0",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE conversation_history SET telefono = $1 WHERE telefono = $2 AND $2 != '' AND $1 != $2;\n\nUPDATE candidatos SET telefono = $1 WHERE telefono = $2 AND $2 != '' AND $1 != $2\nAND NOT EXISTS (SELECT 1 FROM candidatos WHERE telefono = $1);\n\nDELETE FROM candidatos WHERE telefono = $2 AND $2 != '' AND $1 != $2;\n",
+        "options": {
+          "queryReplacement": "={{ [ $json.number, $json.lid ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -48,
+        160
+      ],
+      "id": "45567db3-2677-44da-9272-86cfbfd910a5",
+      "name": "MigrarLID",
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a596263b-a268-448e-8e15-49a5de76016a",
+              "leftValue": "={{ $('Webhook').item.json.body.event }}",
+              "rightValue": "message",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            },
+            {
+              "id": "1d1c4cfa-d6b7-4930-8779-fc34ede4839d",
+              "leftValue": "={{ Math.floor(Date.now() / 1000) - $json.body.payload.timestamp }}",
+              "rightValue": 120,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            },
+            {
+              "id": "db9e8b7b-1923-4e32-882e-7990f0012cd3",
+              "leftValue": "={{ $json.body.payload.type }}",
+              "rightValue": "protocol",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            },
+            {
+              "id": "1ed1e1bd-82ea-45c5-aa04-5e2f8dbaa897",
+              "leftValue": "={{ $json.body.payload.type }}",
+              "rightValue": "e2e_notification",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            },
+            {
+              "id": "b7b4bedc-4f1b-474d-8048-87a2715df1c5",
+              "leftValue": "={{ $json.body.payload.fromMe }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1264,
+        64
+      ],
+      "id": "d1709fee-604a-4937-9d87-e1ea46159699",
+      "name": "¿Es Mensaje?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO processed_webhooks (message_id)\nVALUES ($1)\nON CONFLICT (message_id) DO NOTHING\nRETURNING message_id;",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook').item.json.body.payload.id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -1040,
+        48
+      ],
+      "id": "46449c79-5e8c-4d62-8356-3b2d3472b454",
+      "name": "DeduplicarMensaje",
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "=default",
+        "chatId": "=5213323379399@c.us",
+        "text": "Resteo listo",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        -368,
+        -48
+      ],
+      "id": "5c0cd9c2-7ec1-4f95-a1ba-a3b5c81894e9",
+      "name": "Borrado",
+      "credentials": {
+        "wahaApi": {
+          "id": "OBarvY73V8DKtYv0",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "DELETE FROM n8n_chat_histories WHERE session_id = '5213323379399@c.us';\n\n-- 2. Borrar del historial de conversaciones\nDELETE FROM conversation_history WHERE telefono = '5213323379399';\n\n-- 3. Borrar de bloqueos y rate limits\nDELETE FROM rate_limiting WHERE telefono = '5213323379399';\n\n-- 4. Borrar de logs de sistema y notificaciones\nDELETE FROM system_logs WHERE user_phone = '5213323379399';\nDELETE FROM notifications_log WHERE candidate_phone = '5213323379399';\n\n-- 5. Borrar el perfil principal del candidato\nDELETE FROM candidatos WHERE telefono = '5213323379399';",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -592,
+        -48
+      ],
+      "id": "f4a6da40-39e4-430b-90a6-50556fa6419b",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b84f0751-1208-4006-9e82-8e2941c37234",
+              "leftValue": "={{ $('Webhook').item.json.body.payload.body }}",
+              "rightValue": "/reset_sofia",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -816,
+        48
+      ],
+      "id": "c6a7fdaa-c432-4d5f-a587-d9e67ee05d48",
+      "name": "If2"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "dedup-condition-01",
+              "leftValue": "={{ $json.message_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -592,
+        144
+      ],
+      "id": "0606ea44-0d4b-49aa-b38f-142341e53b45",
+      "name": "¿Es Duplicado?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "4e1bb43f-057a-4a3e-a0f8-40087b4bc207",
+              "leftValue": "={{ $json.Faltas || 0 }}",
+              "rightValue": 3,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1648,
+        48
+      ],
+      "id": "ed3c0e0e-4d4b-4f76-a3ed-8054c9938a9a",
+      "name": "¿Tiene3Faltas?"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1fK89aef01qpdVsmkVyWs-kaKyR3r6vKBtkMbiRmLx54",
+          "mode": "list",
+          "cachedResultName": "Candidatos",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1fK89aef01qpdVsmkVyWs-kaKyR3r6vKBtkMbiRmLx54/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 286836876,
+          "mode": "list",
+          "cachedResultName": "Faltistas",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1fK89aef01qpdVsmkVyWs-kaKyR3r6vKBtkMbiRmLx54/edit#gid=286836876"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Telefono",
+              "lookupValue": "={{ $('IgnorarEquipo').first().json.number }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1424,
+        48
+      ],
+      "id": "b0f9db11-4182-4621-98a4-3dd6a1505f62",
+      "name": "Faltas",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "iF9ddFN2XS1egKEm",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 0
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        560,
+        80
+      ],
+      "id": "5ca612b4-6f02-4bc8-90ca-47b7fb8afd79",
+      "name": "Wait2",
+      "webhookId": "856945bb-7fdd-48e0-bf79-5508cad9be31"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "e41c3d0e-302e-4f70-933a-e422431a28e2",
+              "leftValue": "={{ $json.segundos_inactivo.toNumber() }}",
+              "rightValue": 4.5,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        976,
+        48
+      ],
+      "id": "e8c6ce1a-5603-44c3-b178-f5e6062a6c15",
+      "name": "If4"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COALESCE(\n    (SELECT EXTRACT(EPOCH FROM (NOW() - last_message_at)) \n     FROM rate_limiting \n     WHERE telefono = $1), \n    9999) AS segundos_inactivo;",
+        "options": {
+          "queryReplacement": "={{ $('IgnorarEquipo').item.json.number }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        752,
+        48
+      ],
+      "id": "92f915f8-c4c0-4054-9e8a-c227d321b2fa",
+      "name": "ChecarMensajes",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "={{ $('Webhook').item.json.body.session }}",
+        "chatId": "={{ $('IgnorarEquipo').first().json.number + '@c.us' }}",
+        "text": "Hola. 🚨 Hemos notado en nuestros registros que no te has presentado a tus últimas 3 entrevistas programadas. Por políticas de Talentos Creativos e Innovación, no es posible agendar una nueva cita en este momento. Agradecemos tu interés y te deseamos mucho éxito en tu búsqueda.",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        1872,
+        -48
+      ],
+      "id": "7549fc53-baf5-437f-9fb0-ee8bab7b23d0",
+      "name": "Aviso",
+      "credentials": {
+        "wahaApi": {
+          "id": "OBarvY73V8DKtYv0",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM candidatos WHERE telefono = $1;",
+        "options": {
+          "queryReplacement": "={{ $('IgnorarEquipo').item.json.number }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        1200,
+        48
+      ],
+      "id": "6fb4266d-84c0-45c8-b025-e28d982a377e",
+      "name": "ObtenerDatosCandidato",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "FfLyXSYn5xS7Wt3y",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "messages",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1472,
+        64
+      ],
+      "id": "ad7953b7-3ab0-4f99-9b58-001f408651c4",
+      "name": "Webhook",
+      "webhookId": "6244dc40-7039-4e3a-8454-ac48d9975532"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e7e82bb2-156d-4fe1-b6c5-95b99313ccc2",
+              "name": "_webhook",
+              "value": "={{ $('Webhook').first().json }}",
+              "type": "object"
+            },
+            {
+              "id": "270f7e10-ac52-43dc-9424-9f60c754183f",
+              "name": "_contacto",
+              "value": "={{ $('IgnorarEquipo').first().json }}",
+              "type": "object"
+            },
+            {
+              "id": "5e67cd9a-d4ac-46ea-bd75-4719f73a196e",
+              "name": "_candidato",
+              "value": "={{ $('ObtenerDatosCandidato').first().json }}",
+              "type": "object"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "1a682bed-3f44-48ae-a014-0af068a8cd79",
+      "name": "PrepararDatosAnalizador",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1872,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "JpbqOo4nQSOOO0bM",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/JpbqOo4nQSOOO0bM",
+          "cachedResultName": "2_Sofia - Analizador CV-Audio"
+        },
+        "workflowInputs": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "_webhook",
+              "displayName": "_webhook",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "_contacto",
+              "displayName": "_contacto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "_candidato",
+              "displayName": "_candidato",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "id": "ccd3f878-74b9-4a53-abaf-450a94c25f23",
+      "name": "Ejecutar Subflujo: Analizador CV-Audio",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        2096,
+        208
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "If3": {
+      "main": [
+        [
+          {
+            "node": "ID_TEL",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "MsjCorto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IgnorarEquipo": {
+      "main": [
+        [
+          {
+            "node": "MigrarLID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GetInfo": {
+      "main": [
+        [
+          {
+            "node": "IgnorarEquipo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MigrarLID": {
+      "main": [
+        [
+          {
+            "node": "If3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es Mensaje?": {
+      "main": [
+        [
+          {
+            "node": "DeduplicarMensaje",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DeduplicarMensaje": {
+      "main": [
+        [
+          {
+            "node": "If2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Borrado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If2": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Es Duplicado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es Duplicado?": {
+      "main": [
+        [
+          {
+            "node": "GetInfo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MsjCorto": {
+      "main": [
+        [
+          {
+            "node": "Wait2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Tiene3Faltas?": {
+      "main": [
+        [
+          {
+            "node": "Aviso",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "PrepararDatosAnalizador",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Faltas": {
+      "main": [
+        [
+          {
+            "node": "¿Tiene3Faltas?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait2": {
+      "main": [
+        [
+          {
+            "node": "ChecarMensajes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If4": {
+      "main": [
+        [
+          {
+            "node": "ObtenerDatosCandidato",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ChecarMensajes": {
+      "main": [
+        [
+          {
+            "node": "If4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ObtenerDatosCandidato": {
+      "main": [
+        [
+          {
+            "node": "Faltas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "¿Es Mensaje?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PrepararDatosAnalizador": {
+      "main": [
+        [
+          {
+            "node": "Ejecutar Subflujo: Analizador CV-Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "d0e42764-1041-4c52-a5de-2753d845552c",
+  "meta": {
+    "instanceId": "e485a5a7ac8114c62636ecba6367db69dad6bc18fb5dd48f890b21271541f05c"
+  },
+  "nodeGroups": [],
+  "id": "sdldKPXzO06FId4g",
+  "tags": []
+}

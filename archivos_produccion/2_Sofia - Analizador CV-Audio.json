@@ -1,0 +1,900 @@
+{
+  "name": "2_Sofia - Analizador CV-Audio",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\n\n// 1. Obtener a qué nave pertenece este candidato\nconst dbData = $('Recibido desde Inicio').first().json._candidato || {};\nlet naveActual = dbData.nave_interes || \"1\";\n\nlet detalleTxt = \"Información no disponible.\";\n\n// 2. 🚀 LÓGICA DUAL: Intentar leer archivo .md primero, si no, buscar el .txt\ntry {\n    detalleTxt = fs.readFileSync(`/home/node/virgo_files/prompts/detalle_vacantes_${naveActual}.md`, 'utf8');\n} catch(e) {\n    try {\n        detalleTxt = fs.readFileSync(`/home/node/virgo_files/prompts/detalle_vacantes_${naveActual}.txt`, 'utf8');\n    } catch(error) { \n        console.log(`Error al leer detalles_vacantes_${naveActual} en la rama de CV`); \n    }\n}\n\n// 3. Se lo inyectamos al JSON para que Gemini evalúe con el catálogo correcto\nfor (const item of items) {\n    item.json.detalle_vacantes = detalleTxt;\n}\n\nreturn items;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -16,
+        48
+      ],
+      "id": "f50b02b3-4841-417d-a2ba-61677b2c17d6",
+      "name": "Vacantes"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "897fa460-f948-43b3-8595-8d0df8270672",
+              "name": "text",
+              "value": "=[NOTA INTERNA: El usuario te acaba de mandar una imagen irrelevante (un meme, un sticker, una selfie, su mascota, etc.) en lugar de su documento. ¡Reacciona como humana! Ríete un poco (ej. '¡Ay! jaja' o '¡Qué buen sticker!') y dile en tono súper casual que crees que se equivocó porque ahí no ves sus datos. OJO, el usuario también escribió este texto junto a la imagen: '\" + $('Recibido desde Inicio').first().json._webhook.body.payload.body + \"'. Responde a su texto de forma natural y luego pídele amablemente que te mande la de su INE o CV para poder avanzar.]",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1328,
+        144
+      ],
+      "id": "d8472da5-9a2d-45b5-adb7-a2f9793024bf",
+      "name": "AvisoMeme"
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Send Text",
+        "session": "={{ $('Recibido desde Inicio').first().json._webhook.body.session }}",
+        "chatId": "={{ $('Recibido desde Inicio').first().json._contacto.number + '@c.us' }}",
+        "text": "=😅Veo que me enviaste un documento de Word. Por estrictas políticas de ciberseguridad, mi sistema corporativo no me permite abrir este tipo de archivos. \n\n🛡️*¿Podrías apoyarme guardando tu documento como PDF o simplemente tomándole una Fotografía clara 📸 y volviéndolo a enviar por aquí, por favor? ¡Gracias! ✨",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        -16,
+        -160
+      ],
+      "id": "6bfbf293-76e9-4dad-b3af-1037223ee7c2",
+      "name": "PedirPDF",
+      "credentials": {
+        "wahaApi": {
+          "id": "OBarvY73V8DKtYv0",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "document",
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-flash",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-flash"
+        },
+        "text": "=Eres el Reclutador Experto de Grupo Virgo y, por encima de todo, un ANALISTA DE SEGURIDAD Y VALIDACIÓN DE DOCUMENTOS.\nTu prioridad es doble y en este orden:\n1. Rechazar con firmeza cualquier meme, personaje de ficción, animal, objeto o imagen que claramente NO sea un intento de documento oficial.\n2. Ser MUY TOLERANTE con fotos reales de documentos reales que tengan problemas de calidad. Una foto imperfecta de un documento real NO es lo mismo que un documento falso — NO las trates igual.\nREGLA DE ORO: Si puedes leer el nombre de la persona Y al menos un dato más (número de credencial, CURP, RFC, texto institucional, foto de rostro humano), clasifica como VALIDO aunque la foto no sea perfecta. La calidad imperfecta de la foto NO es motivo suficiente para REVISAR_MANUAL si los datos clave son legibles.\nCatálogo completo de vacantes disponibles:\n{{ $json.detalle_vacantes }}\n💼 LA VACANTE QUE EL CANDIDATO SOLICITÓ ES: {{ $('Recibido desde Inicio').first().json._candidato.vacante_interes || 'General' }}\n--- NORMAS DE VALIDACIÓN ---\n1. INE (Credencial de Elector Mexicana):\n   - Marcadores: (a) texto \"Instituto Nacional Electoral\"/\"INE\"/\"Elector\" aunque sea parcial, (b) fotografía de un rostro humano real, (c) estructura típica de credencial.\n   - VALIDO: cumple 2 de 3 marcadores Y se puede leer el nombre. Foto imperfecta con nombre legible = VALIDO.\n   - REVISAR_MANUAL: se intuye claramente que es una INE (hay foto de rostro + algo de estructura) pero el nombre es completamente ilegible por calidad de foto muy baja.\n   - INVALIDO: es evidentemente un personaje de ficción, animal, objeto, meme, sticker, o no hay NINGÚN marcador de credencial oficial.\n2. CONSTANCIA (Constancia de Situación Fiscal / Cédula de Identificación Fiscal del SAT):\n   - Marcadores: (a) mención de \"SAT\", \"Hacienda\", \"Situación Fiscal\" o \"Cédula de Identificación Fiscal\", (b) un RFC con formato reconocible, (c) estructura de documento oficial.\n   - VALIDO: cumple 2 de 3 marcadores. RFC parcialmente legible + membrete del SAT = VALIDO.\n   - REVISAR_MANUAL: claramente es un documento del SAT pero el RFC es completamente ilegible.\n   - INVALIDO: hoja en blanco, objeto random, personaje de ficción, o ningún marcador presente.\n3. SOLICITUD (Formato preimpreso de papelería):\n   - Marcadores: (a) estructura de formulario preimpreso con cuadrículas, (b) texto manuscrito rellenando el formato, (c) se lee o se intuye \"Solicitud de Empleo\" o similar.\n   - VALIDO/REVISAR_MANUAL/INVALIDO con la misma lógica: si los datos básicos son legibles = VALIDO.\n4. CV (Currículum Vitae digital o impreso):\n   - Marcadores: (a) estructura de CV (secciones tipo Experiencia/Educación/Habilidades), (b) texto técnico legible, (c) datos de contacto visibles.\n   - VALIDO si se pueden leer al menos nombre + una sección de contenido.\n5. ANUNCIO: cartel o captura de pantalla ofreciendo una vacante con sueldo/requisitos — clasificación directa, sin candado de calidad.\n⛔ REGLA DE ORO DE RECHAZO: memes, capturas de series/películas, personajes de caricatura, animales, objetos, paisajes, comida, o imágenes totalmente ilegibles donde NO hay ningún intento reconocible de documento oficial → INVALIDO siempre, sin excepción.\n✅ REGLA ANTI-BUCLE: Si ya clasificaste este tipo de documento como REVISAR_MANUAL anteriormente para este candidato, en esta segunda oportunidad clasifica como VALIDO si hay cualquier dato legible. No pidas la foto más de una vez por tipo de documento.\n--- FORMATO DE SALIDA (JSON ESTRICTO, sin bloques de código) ---\n{\n  \"tipo_documento\": \"INE, CV, SOLICITUD, ANUNCIO, CONSTANCIA o INVALIDO\",\n  \"estado_validacion\": \"VALIDO, REVISAR_MANUAL o INVALIDO\",\n  \"calidad_imagen\": \"buena, borrosa, oscura, reflejo, recortada, ilegible o null\",\n  \"nombre_completo\": \"Si es visible aunque sea parcialmente. Si es INVALIDO, null.\",\n  \"correo\": \"Visible en CV/Solicitud. Si no, null.\",\n  \"institucion\": \"SAT, INE, SOLICITUD o null.\",\n  \"clave_elector\": \"Visible en INE. Si no, null.\",\n  \"curp\": \"Visible en INE/Constancia. Si no, null.\",\n  \"rfc\": \"Visible en Constancia/RFC. Si no, null.\",\n  \"veredicto\": \"VIABLE, CARTERA_GENERAL, RECHAZADO o null (sobre el perfil del candidato en CV/Solicitud, NO sobre autenticidad del documento)\",\n  \"experiencia\": \"Visible en CV/Solicitud. Si no, null.\",\n  \"motivo\": \"Explica brevemente el estado_validacion, sobre todo si es REVISAR_MANUAL o INVALIDO.\",\n  \"mensaje_usuario\": \"Aquí va el mensaje según las reglas de abajo (si aplica).\"\n}\n--- REGLAS DE MENSAJES (mensaje_usuario) ---\n1. Si estado_validacion es INVALIDO (documento evidentemente falso/broma): \"¡Hola! Oye, estuve revisando la foto que me enviaste pero fíjate que no pude identificarla como un documento oficial válido (INE, RFC o Solicitud). 🧐 ¿Podrías apoyarme mandando de nuevo una foto clara de tu documento real por favor? ¡Así podré agilizar tu trámite! 😊\"\n2. Si estado_validacion es REVISAR_MANUAL (foto muy baja calidad, datos clave ilegibles): \"¡Gracias por la foto! 📸 Solo que no logro leer bien los datos porque se ve muy [usa calidad_imagen: borrosa/oscura/con reflejo/recortada]. ¿Me la puedes mandar de nuevo con buena luz y que se vea el documento completo? Es la última vez que te la pido, prometo que con eso es suficiente. 🙏\"\n3. Si estado_validacion es VALIDO y el veredicto es VIABLE/CARTERA_GENERAL/RECHAZADO: mantén tus reglas de mensajes estándar para CV y Solicitudes.\n4. Si el documento es CONSTANCIA (SAT) o INE con estado_validacion VALIDO: pon null en el mensaje, el sistema se encargará.",
+        "inputType": "binary",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        208,
+        48
+      ],
+      "id": "96f0d564-bbbe-4d03-9d4d-0f0d0050160f",
+      "name": "Analyze document",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "QZklxwEDRZxFLQzG",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "29a8d85e-e1b6-48cb-ad0a-6433d265d5a8",
+              "leftValue": "={{ $('Recibido desde Inicio').first().json._webhook.body.payload.media.mimetype }}",
+              "rightValue": "word",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -240,
+        -48
+      ],
+      "id": "7b736980-5f95-43dd-9b8a-74c2be3c87a8",
+      "name": "¿Es Word?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "4eb9c65c-5743-4432-a5a8-aa26966eba84",
+              "leftValue": "={{ $('Recibido desde Inicio').first().json._webhook.body.payload.media.mimetype }}",
+              "rightValue": "audio",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -464,
+        -112
+      ],
+      "id": "aee5a322-7c8b-4a56-82cd-16a4ffcc0e7a",
+      "name": "¿Es Audio?"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Recibido desde Inicio').first().json._webhook.body.payload.media.url.replace('localhost','waha') }} ",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "virgo_secret_key"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          },
+          "timeout": 15000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        -688,
+        -112
+      ],
+      "id": "2f05326f-0011-4df7-b0e3-536da8ef095b",
+      "name": "DescargarMedia"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3001/api/webhook/expediente",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  telefono: $('Recibido desde Inicio').first().json._contacto.number,\n  nombre: $('SepararJSON').first().json.nombre || 'Candidato',\n  vacante: ($('SepararJSON').first().json.vacante_anuncio && $('SepararJSON').first().json.vacante_anuncio !== 'General' ? $('SepararJSON').first().json.vacante_anuncio : ($('Recibido desde Inicio').first().json._candidato ? $('Recibido desde Inicio').first().json._candidato.vacante_interes : '')) || '',\n  tipo_origen: $('SepararJSON').first().json.tipo_origen || 'CV',\n  experiencia: $('SepararJSON').first().json.experiencia || $('SepararJSON').first().json.resumen_excel || '',\n  mensaje_usuario: $('SepararJSON').first().json.mensaje_usuario || '',\n  datos_documento: $('SepararJSON').first().json.cv_manual ? JSON.stringify($('SepararJSON').first().json.cv_manual) : null,\n  veredicto: $('SepararJSON').first().json.veredicto || null,\n  motivo: $('SepararJSON').first().json.motivo || null,\n  link_cv: ($('SubirCV').first() ? $('SubirCV').first().json.url : null) || null,\n  nombre_chat: ($('Recibido desde Inicio').first().json._webhook.body.payload._data ? $('Recibido desde Inicio').first().json._webhook.body.payload._data.notifyName : '') || '',\n  edad: $('SepararJSON').first().json.edad_calculada || null,\n  correo: $('SepararJSON').first().json.correo || null,\n  filtros_tecnicos: null,\n  identidad_bloqueada: $('SepararJSON').first().json.identidad_bloqueada ? 'true' : 'false',\n  identidad_motivo: $('SepararJSON').first().json.identidad_motivo || ''\n}) }}",
+        "options": {}
+      },
+      "id": "0c9e736c-a89f-4053-82cb-941c5454fc38",
+      "name": "Actualizar_Expediente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1296,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "3d2604a8-55eb-472a-b4d6-5a701a30defc",
+              "leftValue": "={{ $('DatosListos').item.json.tipo_origen }}",
+              "rightValue": "INVALIDO",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        880,
+        48
+      ],
+      "id": "c3c6e044-6365-483b-8198-76aa16868000",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\n\n// 1. DATOS DEL CANDIDATO\nconst dbData = $('Recibido desde Inicio').first().json._candidato || {};\nconst naveActual = String(dbData.nave_interes || '').trim() || '1';\nconst vacante = (dbData.vacante_interes || 'General').toUpperCase().trim();\n\n// 2. CARGAR RECLUTADOR_VACANTES\nconst ruta = '/home/node/virgo_files/prompts/reclutador_vacantes.json';\nlet equipo = [];\ntry {\n    equipo = JSON.parse(fs.readFileSync(ruta, 'utf8'));\n} catch (e) {\n    equipo = [{\n        nombre: 'Gerente de Reclutamiento',\n        emoji: '🚨',\n        telefono: '5213323379399',\n        calendar_id: 'talreclutamiento01@gmail.com',\n        naves: ['1','2','3'],\n        vacantes: []\n    }];\n}\n\nconst gerente = equipo.find(r => r.nombre === 'Gerente de Reclutamiento') || equipo[equipo.length - 1];\n\n// 3. BUSCAR MATCHES: ignorando acentos y mayusculas, soporta vacantes en multiples naves\nconst cleanStr = (s) => s ? s.normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toUpperCase().trim() : '';\nconst vacanteClean = cleanStr(vacante);\nconst vacanteDesconocida = !vacanteClean || vacanteClean === 'GENERAL' || vacanteClean === '';\n\nif (vacanteDesconocida) {\n    // Evita que la IA se apropie de un nombre falso.\n    return {\n        json: {\n            nombre_reclutador: \"Equipo de Reclutamiento\",\n            telefono_reclutador: gerente.telefono,\n            calendar_id: gerente.calendar_id,\n            vacante_detectada: vacante,\n            nave_candidato: naveActual,\n            grupo_turno: null,\n            turno_total: 1,\n            candidatos_turno: null\n        }\n    };\n}\n\nconst matches = equipo.filter(r =>\n    r.nombre !== gerente.nombre &&\n    Array.isArray(r.vacantes) &&\n    r.vacantes.length > 0 &&\n    r.vacantes.some(v => {\n        const navesVacante = v.naves || (v.nave ? [v.nave] : []);\n        return navesVacante.includes(naveActual) && cleanStr(v.nombre) === vacanteClean;\n    })\n);\n\n// 4. FALLBACK: nadie tiene la vacante → Gerente\nconst candidatos = matches.length > 0 ? matches : [gerente];\n\n// 5. SI SOLO HAY 1: salida directa, sin turno\nif (candidatos.length === 1) {\n    return {\n        json: {\n            nombre_reclutador: candidatos[0].nombre,\n            telefono_reclutador: candidatos[0].telefono,\n            calendar_id: candidatos[0].calendar_id,\n            vacante_detectada: vacante,\n            nave_candidato: naveActual,\n            grupo_turno: null,\n            turno_total: 1,\n            candidatos_turno: null\n        }\n    };\n}\n\n// 6. HAY MÚLTIPLES: preparar datos para TurnoReclutador (Postgres)\nconst grupoKey = candidatos\n    .map(r => r.nombre)\n    .sort()\n    .join('|')\n    .substring(0, 100);\n\nreturn {\n    json: {\n        vacante_detectada: vacante,\n        nave_candidato: naveActual,\n        grupo_turno: grupoKey,\n        turno_total: candidatos.length,\n        candidatos_turno: JSON.stringify(\n            candidatos.map(r => ({\n                nombre: r.nombre,\n                telefono: r.telefono,\n                calendar_id: r.calendar_id,\n                emoji: r.emoji || '📅'\n            }))\n        )\n    }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1776,
+        -16
+      ],
+      "id": "fb8b1dfd-e6c1-4e0b-abb7-24fd10189c09",
+      "name": "DefinirAgenda"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "af84644c-a90f-45f3-85d3-c6d22a873329",
+              "name": "nombre",
+              "value": "={{ $json.nombre }}",
+              "type": "string"
+            },
+            {
+              "id": "53b26a3b-fa30-43e8-b1c4-801fc48785b4",
+              "name": "telefono",
+              "value": "={{ $('Recibido desde Inicio').first().json._contacto.number }}",
+              "type": "string"
+            },
+            {
+              "id": "30533886-0647-4f45-9857-5a55d8f14a88",
+              "name": "correo",
+              "value": "={{$json.correo}}",
+              "type": "string"
+            },
+            {
+              "id": "6fe3227e-7efd-4a36-b22c-e55bb07a770a",
+              "name": "vacante_interes",
+              "value": "={{ $json.vacante_solicitada || $json.vacante_interes }}",
+              "type": "string"
+            },
+            {
+              "id": "f575001f-2a79-4761-9e4a-c95ec8843b4e",
+              "name": "=veredicto",
+              "value": "={{ $json.veredicto }}",
+              "type": "string"
+            },
+            {
+              "id": "b652857f-6bac-4369-82f9-f4e35be791c6",
+              "name": "mensaje_usuario",
+              "value": "={{ $json.mensaje_usuario }}",
+              "type": "string"
+            },
+            {
+              "id": "db470049-7909-4246-b329-adf984fc3e3d",
+              "name": "cv_manual",
+              "value": "={{ $json.cv_manual }}",
+              "type": "string"
+            },
+            {
+              "id": "4414305c-24ff-4d47-b111-d8d49f3c3be0",
+              "name": "resumen_excel",
+              "value": "={{ $json.resumen_excel }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        656,
+        48
+      ],
+      "id": "63838da3-0517-4d91-9a46-44f16a882b7f",
+      "name": "DatosListos"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. OBTENER EL JSON LIMPIO DE GEMINI\nconst item = $input.first();\nconst rawText = item.json.content?.parts?.[0]?.text || item.json.output || item.json.text || \"{}\";\n\nconst jsonMatch = rawText.match(/\\{[\\s\\S]*\\}/);\nconst cleanJson = jsonMatch ? jsonMatch[0] : rawText.replace(/```json|```/g, '').trim();\n\nlet datos = {};\ntry { datos = JSON.parse(cleanJson); } catch (e) { datos = {}; }\n\n// 2. EXTRAER VARIABLES BÁSICAS\nconst tipo = (datos.tipo_documento || \"GENERICO\").toUpperCase();\nconst nombreOriginal = datos.nombre_completo || \"Candidato\";\nconst nombreLimpio = nombreOriginal\n    .normalize(\"NFD\").replace(/[\\u0300-\\u036f]/g, \"\")\n    .replace(/[^a-zA-Z0-9 ]/g, \"\")\n    .replace(/\\s+/g, \"_\");\nconst vacanteAnuncio = datos.vacante_anuncio || \"General\";\n\nlet telefono = $('Recibido desde Inicio').first().json._contacto.number;\n\n// 3. RENOMBRAR ARCHIVO FÍSICO\nlet binaryData = {};\ntry { binaryData = $('DescargarMedia').first().binary; } catch(e) { binaryData = item.binary; }\n\nif (binaryData) {\n    const key = Object.keys(binaryData)[0];\n    if (binaryData[key]) {\n        const ext = (binaryData[key].fileExtension || \"pdf\").replace('.', '');\n        binaryData[key].fileName = `${tipo}_${nombreLimpio}_${telefono}.${ext}`;\n    }\n}\n\nlet edadCalculada = null;\nif (datos.fecha_nacimiento && datos.fecha_nacimiento !== \"No visible\" && datos.fecha_nacimiento !== \"null\") {\n    const matchAno = datos.fecha_nacimiento.match(/\\d{4}/);\n    if (matchAno) {\n        edadCalculada = (new Date().getFullYear() - parseInt(matchAno[0])).toString() + \" años\";\n    }\n}\nlet nombreWhatsApp = $('Recibido desde Inicio').first().json._webhook.body.payload._data?.notifyName || \"Candidato\";\n\n// 4. LÓGICA DEL MENSAJE PARA SOFÍA (AI CHAT)\nconst dbData = $('Recibido desde Inicio').first().json._candidato || {};\nlet msgUsuario = datos.mensaje_usuario || \"\"; \n\n// 🚀 MAGIA: Rescatamos el texto del candidato que acompaña a la imagen\nconst captionUsuario = $('Recibido desde Inicio').first().json._webhook.body.payload.body || \"\";\n\nif (!msgUsuario || msgUsuario === \"null\") {\n    if (tipo === \"SOLICITUD\" && dbData.estado !== 'CV_RECIBIDO') {\n        msgUsuario = \"El candidato acaba de enviar la PRIMERA foto de su solicitud (frente). Agradécele e indícale que por favor envíe también la foto de la PARTE TRASERA para tener su expediente completo. Dile que si su solicitud solo tiene un lado o ya mandó ambas, responda 'Listo'.\";\n    } else if (tipo === \"ANUNCIO\") {\n        // Armamos el contexto de la imagen + lo que escribió el usuario\n        msgUsuario = `[SISTEMA: El candidato te envió una captura de pantalla del anuncio de la vacante: *${vacanteAnuncio}*.`;\n        if (captionUsuario) {\n            msgUsuario += ` Además, escribió este mensaje: \"${captionUsuario}\".`;\n        }\n        msgUsuario += ` OBLIGATORIO: Atiéndelo de forma natural, asume que le interesa esa vacante y muéstrale los detalles o pregúntale si quiere aplicar.]`;\n    } else if (tipo === \"INE\") {\n        if (dbData.datos_rfc) {\n            msgUsuario = \"[SISTEMA: AMBOS DOCUMENTOS COMPLETOS. El candidato entregó INE y RFC. Revisa INMEDIATAMENTE tu calendario y ofrécele fechas de entrevista.]\";\n        } else {\n            msgUsuario = \"[SISTEMA: El candidato entregó su INE, pero FALTA SU CONSTANCIA. Agradécele por el INE y pídele obligatoriamente su Constancia de Situación Fiscal (RFC). TIENES ESTRICTAMENTE PROHIBIDO AGENDAR CITA AÚN.]\";\n        }\n    } else if (tipo === \"CONSTANCIA\") {\n        if (dbData.datos_ine) {\n            msgUsuario = \"[SISTEMA: AMBOS DOCUMENTOS COMPLETOS. El candidato entregó INE y RFC. Revisa INMEDIATAMENTE tu calendario y ofrécele fechas de entrevista.]\";\n        } else {\n            msgUsuario = \"[SISTEMA: El candidato entregó su Constancia (RFC), pero FALTA SU INE. Agradécele por la Constancia y pídele obligatoriamente la foto frontal de su INE. TIENES ESTRICTAMENTE PROHIBIDO AGENDAR CITA AÚN.]\";\n        }\n    } else if (tipo === \"CV\" || (tipo === \"SOLICITUD\" && dbData.estado === 'CV_RECIBIDO')) {\n        if (!datos.correo) {\n            msgUsuario = \"[SISTEMA: CV Recibido. Pregunta ÚNICAMENTE: '¡Recibí tu documento y tu perfil está súper bien! 👏 Antes de continuar, ¿me podrías proporcionar tu correo electrónico, por favor? 📧']\";\n        } else {\n            msgUsuario = \"[SISTEMA: CV Recibido. Pregunta ÚNICAMENTE: '¡Recibí tu documento y tu perfil está súper bien! 👏 Antes de continuar, me gustaría hacerte una pregunta rápida: ¿Te encuentras laborando actualmente? 💼']\";\n        }\n    } else {\n        msgUsuario = \"El candidato envió un documento. Confírmale de recibido de forma amable.\";\n    }\n} else if (tipo === \"ANUNCIO\") {\n    msgUsuario = `[SISTEMA: El candidato te envió una foto del anuncio de la vacante: *${vacanteAnuncio}*. Mensaje: \"${captionUsuario}\". Atiéndelo.]`;\n}\n\n// 4.5 VALIDACIÓN CRUZADA DE CURP\nlet identidadBloqueada = false;\nlet identidadMotivo = \"\";\n\nif (tipo === \"INE\" && dbData.datos_rfc && dbData.datos_rfc.curp && datos.curp) {\n    if (dbData.datos_rfc.curp.trim().toUpperCase() !== datos.curp.trim().toUpperCase()) {\n        identidadBloqueada = true;\n        identidadMotivo = `La CURP del INE (${datos.curp}) no coincide con la Constancia (${dbData.datos_rfc.curp}).`;\n    }\n} else if (tipo === \"CONSTANCIA\" && dbData.datos_ine && dbData.datos_ine.curp && datos.curp) {\n    if (dbData.datos_ine.curp.trim().toUpperCase() !== datos.curp.trim().toUpperCase()) {\n        identidadBloqueada = true;\n        identidadMotivo = `La CURP de la Constancia (${datos.curp}) no coincide con el INE (${dbData.datos_ine.curp}).`;\n    }\n}\n\nif (identidadBloqueada) {\n    msgUsuario = \"[SISTEMA: ALERTA CRÍTICA. Los documentos (INE y RFC) no pertenecen a la misma persona porque su CURP no coincide. Bloquea el proceso y pide que envíe el documento correcto. Tienes ESTRICTAMENTE PROHIBIDO ofrecer fechas de entrevista.]\";\n}\n\n// 5. SALIDA\nreturn {\n    json: {\n        nombre: nombreOriginal,\n        telefono: telefono,\n        tipo_origen: tipo,\n        cv_manual: datos,\n        experiencia: datos.experiencia || \"\",\n        veredicto: datos.veredicto || null,\n        motivo: datos.motivo || null,\n        resumen_excel: datos.resumen_excel || null,\n        fecha_nacimiento: datos.fecha_nacimiento || \"No visible\",\n        vacante_anuncio: vacanteAnuncio,\n        mensaje_usuario: msgUsuario,\n        edad_calculada: edadCalculada,\n        nombre_chat: nombreWhatsApp,\n        correo: datos.correo || null,\n        identidad_bloqueada: identidadBloqueada,\n        identidad_motivo: identidadMotivo\n    },\n    binary: binaryData\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        432,
+        48
+      ],
+      "id": "6257d4c4-5803-441c-9b06-1c8954033fe3",
+      "name": "SepararJSON"
+    },
+    {
+      "parameters": {
+        "resource": "audio",
+        "modelId": {
+          "__rl": true,
+          "value": "models/gemini-2.5-flash",
+          "mode": "list",
+          "cachedResultName": "models/gemini-2.5-flash"
+        },
+        "inputType": "binary",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        1328,
+        -304
+      ],
+      "id": "115e47f3-5a6e-4ad3-9ed7-50ae4b534892",
+      "name": "TranscribirAudio",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "QZklxwEDRZxFLQzG",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const fs = require('fs');\n\nlet prompt = fs.readFileSync('/home/node/virgo_files/prompts/chat_prompt.md', 'utf8');\nlet menuNavesTxt = \"\";\ntry { menuNavesTxt = fs.readFileSync('/home/node/virgo_files/prompts/menu_naves.txt', 'utf8'); } catch(e) {}\n\nconst webhook = $('Recibido desde Inicio').first().json._webhook ?? {};\nconst webhookData = webhook.body?.payload ?? {};\nconst dbData = $('Recibido desde Inicio').first().json._candidato || {};\n\nlet naveActual = dbData.nave_interes || \"Pendiente\";\nconst estadoActual = dbData.estado || 'NUEVO';\n\nconst timeZone = 'America/Mexico_City';\nconst nowObj = new Date();\nconst fechaActual = nowObj.toLocaleString('es-MX', { timeZone, weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: 'numeric', hour12: true });\nconst anioActual = nowObj.getFullYear();\nconst mananaObj = new Date(nowObj);\nmananaObj.setDate(mananaObj.getDate() + 1);\nconst fechaManana = mananaObj.toLocaleDateString('es-MX', { timeZone, weekday: 'long', day: 'numeric', month: 'long' });\n\nlet menuTxt = \"\";\nlet detalleTxt = \"\";\nconst mapaNaves = {\n    \"1\": \"Dulcería (Mandarina)\",\n    \"2\": \"CEDIS\",\n    \"3\": \"Materias Primas\",\n    \"4\": \"Desechables\",\n    \"5\": \"Sonrisas\"\n};\n\nconst enlacesUbicacion = {\n    \"1\": \"https://maps.app.goo.gl/DeZubHeaCt6Zkx3a6\",\n    \"2\": \"https://maps.app.goo.gl/aFWd4zHejmNnVGh5A\",\n    \"3\": \"https://maps.app.goo.gl/W8rbZRNFCUr7CBUR7\",\n    \"4\": \"\",\n    \"5\": \"\"\n};\n\nconst naveElegida = dbData.nave_interes || \"\";\n\nconst estadosSinCatalogo = [\n    'CITA_AGENDADA',\n    'DOCUMENTOS_NO_COINCIDEN',\n    'CV_RECIBIDO',\n    'INE_VALIDADA'\n];\nconst necesitaCatalogo = !estadosSinCatalogo.includes(estadoActual);\n\nif (!necesitaCatalogo) {\n    menuTxt = \"[Catálogo omitido: no aplica en esta etapa del proceso]\";\n    detalleTxt = \"[Catálogo omitido: no aplica en esta etapa del proceso]\";\n} else if (naveElegida && naveElegida !== \"Pendiente\") {\n    for (const ext of ['md', 'txt']) {\n        try {\n            menuTxt = fs.readFileSync(`/home/node/virgo_files/prompts/menu_vacantes_${naveElegida}.${ext}`, 'utf8');\n            break;\n        } catch(e) {}\n    }\n    for (const ext of ['md', 'txt']) {\n        try {\n            detalleTxt = fs.readFileSync(`/home/node/virgo_files/prompts/detalle_vacantes_${naveElegida}.${ext}`, 'utf8');\n            break;\n        } catch(e) {}\n    }\n} else {\n    for (let i = 1; i <= 5; i++) {\n        for (const ext of ['md', 'txt']) {\n            try {\n                let menu = fs.readFileSync(`/home/node/virgo_files/prompts/menu_vacantes_${i}.${ext}`, 'utf8');\n                let url = enlacesUbicacion[i] ? `(${enlacesUbicacion[i]})` : '';\n                if (menu.trim()) menuTxt += `\\n--- SUCURSAL ${i}: ${mapaNaves[i]} ${url} ---\\n${menu}\\n`;\n                break;\n            } catch(e) {}\n        }\n        for (const ext of ['md', 'txt']) {\n            try {\n                let detalle = fs.readFileSync(`/home/node/virgo_files/prompts/detalle_vacantes_${i}.${ext}`, 'utf8');\n                if (detalle.trim()) detalleTxt += `\\n--- SUCURSAL ${i}: ${mapaNaves[i]} ---\\n${detalle}\\n`;\n                break;\n            } catch(e) {}\n        }\n    }\n}\n\nif (menuTxt === \"\") menuTxt = \"No hay vacantes en ninguna sucursal por el momento.\";\nif (detalleTxt === \"\") detalleTxt = \"Información no disponible.\";\n\nlet nombreReal = dbData.nombre_chat || dbData.nombre_ine || dbData.nombre_solicitud || 'Desconocido';\nif (nombreReal === 'Candidato' || nombreReal === 'No registrado') nombreReal = 'Desconocido';\n\nlet semaforoIne = \"PENDIENTE\";\nif (dbData.nombre_confirmado === true || dbData.estado === 'INE_VALIDADA' || dbData.cv_manual) semaforoIne = \"VERIFICADO\";\n\nprompt = prompt.replace(/{{NOMBRE_WHATSAPP}}/g, webhookData._data?.notifyName || 'Usuario');\nprompt = prompt.replace(/{{TELEFONO_ID}}/g, $('Recibido desde Inicio').first().json._contacto?.number || '000');\nprompt = prompt.replace(/{{NAVE_ACTUAL}}/g, naveActual);\nprompt = prompt.replace(/{{MENU_NAVES}}/g, menuNavesTxt);\nprompt = prompt.replace(/{{MENU_VACANTES}}/g, menuTxt);\nprompt = prompt.replace(/{{DETALLE_VACANTES}}/g, detalleTxt);\nprompt = prompt.replace(/{{FECHA_HORA_ACTUAL}}/g, fechaActual);\nprompt = prompt.replace(/{{FECHA_MANANA}}/g, fechaManana);\nprompt = prompt.replace(/{{ANIO_ACTUAL}}/g, anioActual);\nprompt = prompt.replace(/{{STATUS_INE}}/g, semaforoIne);\nprompt = prompt.replace(/{{NOMBRE_REGISTRADO}}/g, nombreReal);\nprompt = prompt.replace(/{{ESTADO_ACTUAL}}/g, estadoActual);\nprompt = prompt.replace(/{{VACANTE_INTERES}}/g, dbData.vacante_interes || 'Ninguna');\nprompt = prompt.replace(/{{RESUMEN_ANTERIOR}}/g, dbData.resumen_ia || 'Conversación nueva.');\n\nreturn { json: { system_prompt_procesado: prompt } };\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1552,
+        -16
+      ],
+      "id": "49e132d8-ba5c-454a-9a89-1ee91a69ff7c",
+      "name": "CargarPrompt"
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Start Typing",
+        "session": "={{ $('Recibido desde Inicio').first().json._webhook.body.session }}",
+        "chatId": "={{ $('Recibido desde Inicio').first().json._contacto.number + '@c.us' }}",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        -912,
+        -112
+      ],
+      "id": "eaacd030-b9a1-4a8b-8062-6fb45b2e7adb",
+      "name": "Escribiendo...1",
+      "credentials": {
+        "wahaApi": {
+          "id": "OBarvY73V8DKtYv0",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "Chatting",
+        "operation": "Start Typing",
+        "session": "=default",
+        "chatId": "={{ $('Recibido desde Inicio').first().json._contacto.number + '@c.us' }}",
+        "requestOptions": {}
+      },
+      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
+      "typeVersion": 202502,
+      "position": [
+        1328,
+        336
+      ],
+      "id": "359acf1c-52bf-4c82-b9a1-050f3f7988aa",
+      "name": "Escribiendo...",
+      "credentials": {
+        "wahaApi": {
+          "id": "OBarvY73V8DKtYv0",
+          "name": "WAHA account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:3001/api/upload-cv",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": []
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "form-data-value",
+              "name": "telefono"
+            },
+            {
+              "parameterType": "formBinary",
+              "name": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1104,
+        -48
+      ],
+      "id": "a465e1c3-65cd-4bd2-920f-ac0cb7e18589",
+      "name": "SubirCV"
+    },
+    {
+      "parameters": {
+        "jsCode": "for (const item of items) {\n  if (item.binary && item.binary.data) {\n    item.binary.data.fileName = 'audio.ogg';\n    item.binary.data.fileExtension = 'ogg';\n    item.binary.data.mimeType = 'audio/ogg';\n  }\n}\nreturn items;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1104,
+        -304
+      ],
+      "id": "f0308ba8-e809-4098-851e-efcff7db6fbb",
+      "name": "CambiarFormato"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "3b31c6d6-1305-4d06-b355-7ee47c38cf14",
+              "leftValue": "={{ $('Recibido desde Inicio').first().json._webhook.body.payload.hasMedia }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1152,
+        -16
+      ],
+      "id": "446d40aa-fbea-47e4-afa7-a88b429f1780",
+      "name": "¿Texto o Media?"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c113e1ac-6ad6-44e2-bbd4-6ce5a13aee76",
+              "name": "_webhook",
+              "value": "={{ $('Recibido desde Inicio').first().json._webhook }}",
+              "type": "object"
+            },
+            {
+              "id": "0ba7a60d-ebfc-4363-b119-ae60e93509ad",
+              "name": "_contacto",
+              "value": "={{ $('Recibido desde Inicio').first().json._contacto }}",
+              "type": "object"
+            },
+            {
+              "id": "59277d90-f431-4109-a192-97779babaf7b",
+              "name": "_candidato",
+              "value": "={{ $('Recibido desde Inicio').first().json._candidato }}",
+              "type": "object"
+            },
+            {
+              "id": "762b2501-cf51-4460-9984-40d03b480844",
+              "name": "_prompt",
+              "value": "={{ $('CargarPrompt').first().json }}",
+              "type": "object"
+            },
+            {
+              "id": "b251d8b2-e86a-40a1-8043-1924a6c66ed7",
+              "name": "_agenda",
+              "value": "={{ $json }}",
+              "type": "object"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "cf348d32-54af-4454-a427-4a3fda79cd87",
+      "name": "PrepararDatosFlujoChat",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2000,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "ZrmeVu3Id67pmzN0",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/ZrmeVu3Id67pmzN0",
+          "cachedResultName": "3_Sofia - Flujo de Chat"
+        },
+        "workflowInputs": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "_webhook",
+              "displayName": "_webhook",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "_contacto",
+              "displayName": "_contacto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "_candidato",
+              "displayName": "_candidato",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "_prompt",
+              "displayName": "_prompt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            },
+            {
+              "id": "_agenda",
+              "displayName": "_agenda",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "0a1b32c2-b363-49f6-b5da-c822f21c1974",
+      "name": "Ejecutar Subflujo: Flujo de Chat",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        2224,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n  \"_webhook\": \"{...payload original del Webhook...}\",\n  \"_contacto\": \"{...salida de IgnorarEquipo...}\",\n  \"_candidato\": \"{...salida de ObtenerDatosCandidato...}\"\n}"
+      },
+      "id": "4dc14b38-d1cc-49d1-b02c-251cf715afd5",
+      "name": "Recibido desde Inicio",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -1344,
+        -16
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Vacantes": {
+      "main": [
+        [
+          {
+            "node": "Analyze document",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AvisoMeme": {
+      "main": [
+        [
+          {
+            "node": "CargarPrompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze document": {
+      "main": [
+        [
+          {
+            "node": "SepararJSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es Word?": {
+      "main": [
+        [
+          {
+            "node": "PedirPDF",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Vacantes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Es Audio?": {
+      "main": [
+        [
+          {
+            "node": "CambiarFormato",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Es Word?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DescargarMedia": {
+      "main": [
+        [
+          {
+            "node": "¿Es Audio?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Actualizar_Expediente": {
+      "main": [
+        [
+          {
+            "node": "CargarPrompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "AvisoMeme",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "SubirCV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DefinirAgenda": {
+      "main": [
+        [
+          {
+            "node": "PrepararDatosFlujoChat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DatosListos": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SepararJSON": {
+      "main": [
+        [
+          {
+            "node": "DatosListos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TranscribirAudio": {
+      "main": [
+        [
+          {
+            "node": "CargarPrompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CargarPrompt": {
+      "main": [
+        [
+          {
+            "node": "DefinirAgenda",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escribiendo...1": {
+      "main": [
+        [
+          {
+            "node": "DescargarMedia",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escribiendo...": {
+      "main": [
+        [
+          {
+            "node": "CargarPrompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "SubirCV": {
+      "main": [
+        [
+          {
+            "node": "Actualizar_Expediente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CambiarFormato": {
+      "main": [
+        [
+          {
+            "node": "TranscribirAudio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Texto o Media?": {
+      "main": [
+        [
+          {
+            "node": "Escribiendo...1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Escribiendo...",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PrepararDatosFlujoChat": {
+      "main": [
+        [
+          {
+            "node": "Ejecutar Subflujo: Flujo de Chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recibido desde Inicio": {
+      "main": [
+        [
+          {
+            "node": "¿Texto o Media?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "1d9605d4-ee7d-4187-9fec-eb3357dd0cbe",
+  "meta": {
+    "instanceId": "e485a5a7ac8114c62636ecba6367db69dad6bc18fb5dd48f890b21271541f05c"
+  },
+  "nodeGroups": [],
+  "id": "JpbqOo4nQSOOO0bM",
+  "tags": []
+}

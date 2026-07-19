@@ -3,14 +3,12 @@
 import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Calendar, dateFnsLocalizer, View, Views } from "react-big-calendar";
-import { format, parse, isValid, startOfWeek, getDay } from "date-fns";
+import { format, parse, startOfWeek, getDay, addMonths, subMonths, addWeeks, subWeeks, addDays, subDays, startOfMonth } from "date-fns";
 import { es } from "date-fns/locale";
+import { MessageSquare, ChevronDown, ChevronRight, XCircle, ChevronLeft, RefreshCw, Calendar as CalendarIcon, LayoutList } from "lucide-react";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 
-// Setup date-fns localizer for Spanish
-const locales = {
-  es: es,
-};
+const locales = { es };
 const localizer = dateFnsLocalizer({
   format,
   parse,
@@ -20,27 +18,10 @@ const localizer = dateFnsLocalizer({
 });
 
 const N8N_BASE_URL = "/api/n8n";
+const CANCEL_PASSWORD = "virgo2024"; // contraseña para confirmar cancelación
 
-type Candidato = {
-  telefono: string;
-  estado: string;
-  nombre_chat: string;
-  nombre_solicitud: string;
-  vacante_interes: string;
-  nave_interes: string;
-  fecha_entrevista: string;
-  resumen_ia: string;
-  creator_email?: string;
-  es_google_calendar?: boolean;
-};
+import type { Candidato, ChatMessage } from "@/types";
 
-type ChatMessage = {
-  role: string;
-  content: string;
-  timestamp: string;
-};
-
-// Extensión para los eventos del calendario
 interface CalendarEvent {
   id: string;
   title: string;
@@ -49,148 +30,214 @@ interface CalendarEvent {
   resource: Candidato;
 }
 
+// ─── Custom Toolbar ──────────────────────────────────────────────────────────
+function CustomToolbar({ date, view, onNavigate, onView }: any) {
+  const views: { key: View; label: string }[] = [
+    { key: Views.MONTH, label: "Mes" },
+    { key: Views.WEEK, label: "Semana" },
+    { key: Views.DAY, label: "Día" },
+    { key: Views.AGENDA, label: "Agenda" },
+  ];
+
+  const navigatePrev = () => {
+    if (view === Views.MONTH) onNavigate("prev", subMonths(date, 1));
+    else if (view === Views.WEEK) onNavigate("prev", subWeeks(date, 1));
+    else onNavigate("prev", subDays(date, 1));
+  };
+  const navigateNext = () => {
+    if (view === Views.MONTH) onNavigate("next", addMonths(date, 1));
+    else if (view === Views.WEEK) onNavigate("next", addWeeks(date, 1));
+    else onNavigate("next", addDays(date, 1));
+  };
+
+  const getLabel = () => {
+    if (view === Views.MONTH) return format(date, "MMMM yyyy", { locale: es });
+    if (view === Views.WEEK) {
+      const start = startOfWeek(date, { weekStartsOn: 1 });
+      const end = addDays(start, 6);
+      return `${format(start, "d MMM", { locale: es })} – ${format(end, "d MMM yyyy", { locale: es })}`;
+    }
+    if (view === Views.DAY) return format(date, "EEEE d 'de' MMMM yyyy", { locale: es });
+    return format(date, "MMMM yyyy", { locale: es });
+  };
+
+  return (
+    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mb-4 pb-4 border-b border-slate-100">
+      {/* Navegación */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={navigatePrev}
+          className="p-2 rounded-lg hover:bg-slate-100 transition-colors border border-slate-200"
+          title="Anterior"
+        >
+          <ChevronLeft size={18} className="text-slate-600" />
+        </button>
+        <button
+          onClick={() => onNavigate("today", new Date())}
+          className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-colors"
+        >
+          Hoy
+        </button>
+        <button
+          onClick={navigateNext}
+          className="p-2 rounded-lg hover:bg-slate-100 transition-colors border border-slate-200"
+          title="Siguiente"
+        >
+          <ChevronRight size={18} className="text-slate-600" />
+        </button>
+        <span className="ml-2 font-bold text-slate-800 text-base capitalize">
+          {getLabel()}
+        </span>
+      </div>
+
+      {/* Selector de vista */}
+      <div className="flex items-center bg-slate-100 rounded-xl p-1 gap-1">
+        {views.map((v) => (
+          <button
+            key={v.key}
+            onClick={() => onView(v.key)}
+            className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
+              view === v.key
+                ? "bg-white text-indigo-700 shadow-sm"
+                : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            {v.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Component ──────────────────────────────────────────────────────────
 export default function CalendarioPage() {
   const router = useRouter();
   const [candidatos, setCandidatos] = useState<Candidato[]>([]);
   const [googleEvents, setGoogleEvents] = useState<any[]>([]);
   const [recruiterColors, setRecruiterColors] = useState<Record<string, string>>({});
+  const [recruiterNames, setRecruiterNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{ msg: string; isError: boolean } | null>(null);
+  const [myCalId, setMyCalId] = useState("");
+
+  // Panel lateral
+  const [expandedRecruiters, setExpandedRecruiters] = useState<Record<string, boolean>>({});
+  const [cancelingId, setCancelingId] = useState<string | null>(null);
 
   // Modal de detalles
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+
+  // Modal de confirmación de cancelación
+  const [cancelTarget, setCancelTarget] = useState<CalendarEvent | null>(null);
+  const [cancelPassword, setCancelPassword] = useState("");
+  const [cancelError, setCancelError] = useState("");
+
+  // Modal de reagendar
+  const [rescheduleTarget, setRescheduleTarget] = useState<CalendarEvent | null>(null);
+  const [newDate, setNewDate] = useState("");
+  const [newTime, setNewTime] = useState("");
+  const [rescheduling, setRescheduling] = useState(false);
+
+  // Modal de crear bloqueo
+  const [blockTarget, setBlockTarget] = useState<{ start: Date, end: Date } | null>(null);
+  const [blockTitle, setBlockTitle] = useState("Vacaciones / Bloqueo");
+  const [blocking, setBlocking] = useState(false);
 
   // Modal de chat
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [loadingChat, setLoadingChat] = useState(false);
 
-  // Vista actual del calendario
+  // Vista del calendario
   const [view, setView] = useState<View>(Views.MONTH);
   const [date, setDate] = useState(new Date());
 
   useEffect(() => {
     document.title = "Calendario Entrevistas | TCi";
-    const auth = localStorage.getItem("tci_authenticated");
-    if (!auth) {
-      router.push("/login");
-    } else {
-      loadData();
-    }
+    loadData();
   }, [router]);
 
   const showToast = (msg: string, isError: boolean) => {
     setToast({ msg, isError });
-    setTimeout(() => setToast(null), 3000);
-  };
-
-  const loadChat = async (telefono: string) => {
-    if (!telefono || telefono === "No registrado" || telefono === "Sin registrar") {
-      showToast("Teléfono no válido para chat", true);
-      return;
-    }
-    setIsChatOpen(true);
-    setLoadingChat(true);
-    setChatHistory([]);
-    try {
-      const res = await fetch(`${N8N_BASE_URL}/webhook/crm-chat-history?telefono=${telefono}`);
-      if (!res.ok) throw new Error("Error API");
-      const history = await res.json();
-      setChatHistory(history || []);
-    } catch (err) {
-      showToast("Error al obtener historial de chat", true);
-    } finally {
-      setLoadingChat(false);
-    }
+    setTimeout(() => setToast(null), 3500);
   };
 
   const loadData = async () => {
     setLoading(true);
     try {
-      // 1. Cargar desde la Base de Datos (Postgres)
       const res = await fetch(`${N8N_BASE_URL}/webhook/crm-candidatos-get`);
       if (!res.ok) throw new Error("Error API DB");
       const data = await res.json();
       setCandidatos(Array.isArray(data) ? data : data.data || []);
 
-      // 2. Cargar desde Google Calendar (n8n workflow)
       try {
-        const resGcal = await fetch(`${N8N_BASE_URL}/webhook/google-calendar`);
+        const startStr = subMonths(new Date(), 2).toISOString();
+        const endStr = addMonths(new Date(), 3).toISOString();
+        const resGcal = await fetch(`${N8N_BASE_URL}/webhook/google-calendar?start=${startStr}&end=${endStr}`);
         if (resGcal.ok) {
           const gcalData = await resGcal.json();
           setGoogleEvents(Array.isArray(gcalData) ? gcalData : gcalData.events || gcalData.data || []);
         }
-      } catch (errGcal) {
-        console.warn("Webhook de Google Calendar no disponible aún en n8n.", errGcal);
-      }
+      } catch {}
 
-      // 3. Cargar Reclutadores para mapear colores
       try {
-        const resRec = await fetch(`${N8N_BASE_URL}/webhook/api-vacantes`);
+        const resRec = await fetch(`/api/db/vacantes`);
         if (resRec.ok) {
           const recData = await resRec.json();
-          const recs = Array.isArray(recData) ? recData : recData.data || [];
+          const recs: any[] = Array.isArray(recData) ? recData : recData.data || [];
           const colorMap: Record<string, string> = {};
-          recs.forEach((r: any) => {
-            if (r.calendar_id && r.color) {
-              colorMap[r.calendar_id.toLowerCase()] = r.color;
+          const nameMap: Record<string, string> = {};
+          const palette = ["#6366f1","#ef4444","#10b981","#f59e0b","#8b5cf6","#ec4899","#14b8a6","#f97316"];
+          let myCalIdLocal = "";
+          const myRecruiterId = localStorage.getItem("tci_reclutador_id");
+
+          recs.forEach((r: any, i: number) => {
+            const calId = (r.calendar_id || "").toLowerCase();
+            if (calId) {
+              colorMap[calId] = r.color || palette[i % palette.length];
+              nameMap[calId] = r.nombre || r.name || calId;
+              if (r.reclutador_id == myRecruiterId) {
+                myCalIdLocal = calId;
+              }
             }
           });
           setRecruiterColors(colorMap);
+          setRecruiterNames(nameMap);
+          if (myCalIdLocal) setMyCalId(myCalIdLocal);
         }
-      } catch (errRec) {
-        console.warn("No se pudieron cargar los colores de reclutadores.", errRec);
-      }
+      } catch {}
 
-      showToast("Datos cargados correctamente", false);
-    } catch (err) {
-      console.warn("No se pudo cargar la información.", err);
+      showToast("Datos cargados", false);
+    } catch {
       showToast("Error al cargar datos", true);
     } finally {
       setLoading(false);
     }
   };
 
-  // Filtrar candidatos con fecha de entrevista y convertirlos a eventos
+  // ── Events ──────────────────────────────────────────────────────────────
   const events: CalendarEvent[] = useMemo(() => {
     const dbEvents = candidatos
-      .filter((c) => c.fecha_entrevista && c.fecha_entrevista.trim() !== "")
+      .filter((c) => c.fecha_entrevista?.trim())
       .map((c) => {
-        let startDate = new Date(c.fecha_entrevista);
-
-        // Si falló el parseo nativo (por ejemplo si es DD/MM/YYYY)
+        const fechaStr = c.fecha_entrevista!;
+        let startDate = new Date(fechaStr);
+        if (isNaN(startDate.getTime())) startDate = parse(fechaStr, "dd/MM/yyyy HH:mm", new Date());
         if (isNaN(startDate.getTime())) {
-          // Intentar con DD/MM/YYYY HH:mm
-          startDate = parse(c.fecha_entrevista, "dd/MM/yyyy HH:mm", new Date());
-
-          if (isNaN(startDate.getTime())) {
-            // Intentar solo con DD/MM/YYYY
-            startDate = parse(c.fecha_entrevista, "dd/MM/yyyy", new Date());
-            if (!isNaN(startDate.getTime())) {
-              // Asignar una hora por defecto si solo se dio el día
-              startDate.setHours(10, 0, 0, 0);
-            }
-          }
+          startDate = parse(fechaStr, "dd/MM/yyyy", new Date());
+          if (!isNaN(startDate.getTime())) startDate.setHours(10, 0, 0, 0);
         }
-
-        // Si de todos modos es inválida, retornar null para filtrarlo
-        if (isNaN(startDate.getTime())) {
-          console.warn(`Fecha inválida ignorada: ${c.fecha_entrevista} para ${c.telefono}`);
-          return null;
-        }
-
-        const endDate = new Date(startDate.getTime() + 60 * 60 * 1000); // +1 hora
-
+        if (isNaN(startDate.getTime())) return null;
         return {
           id: c.telefono,
-          title: `${c.nombre_chat || c.nombre_solicitud || "Candidato"} - ${c.vacante_interes || "Sin vacante"}`,
+          title: `${c.nombre_chat || c.nombre_solicitud || "Candidato"} – ${c.vacante_interes || "Sin vacante"}`,
           start: startDate,
-          end: endDate,
+          end: new Date(startDate.getTime() + 60 * 60 * 1000),
           resource: c,
         };
       }).filter(Boolean) as CalendarEvent[];
 
-    // Parsear eventos de Google Calendar
     const parsedGcalEvents = googleEvents.map((ge) => {
       let nombre = ge.title || ge.summary || "Candidato";
       let vacante = "Sin especificar";
@@ -198,7 +245,6 @@ export default function CalendarioPage() {
       let nave = "No especificada";
       const desc = ge.description || "";
 
-      // 1. Extraer Nombre y Vacante del Título (ej. "Entrevista para EMPACADOR con Juan")
       if (nombre.toLowerCase().includes(" con ")) {
         const parts = nombre.split(/ con /i);
         vacante = parts[0].replace(/Entrevista para /i, "").replace(/Entrevista /i, "").trim();
@@ -211,77 +257,344 @@ export default function CalendarioPage() {
         nombre = nombre.replace(/Entrevista con /i, "").replace(/Entrevista /i, "").trim();
       }
 
-      // 2. Extraer campos de la descripción si existen
       const nombreMatch = desc.match(/Nombre:\s*(.+)/i);
       if (nombreMatch) nombre = nombreMatch[1].trim();
-
       const naveMatch = desc.match(/Nave\/Sucursal:\s*(.+)/i);
       if (naveMatch) nave = naveMatch[1].trim();
-
-      const telMatch = desc.match(/(?:Tel[ée]fono|Tel):\s*([0-9\+\s]+)/i);
+      const telMatch = desc.match(/(?:Tel[ée]fono|Tel):\s*([0-9+\s]+)/i);
       if (telMatch) telefono = telMatch[1].trim();
-
       const vacanteMatch = desc.match(/Vacante:\s*(.+)/i);
       if (vacanteMatch) vacante = vacanteMatch[1].trim();
+
+      const creatorEmail = ge.calendarId || ge.creator?.email || ge.organizer?.email || (typeof ge.creator === 'string' ? ge.creator : '') || "desconocido";
 
       return {
         id: ge.id || Math.random().toString(),
         title: ge.title || ge.summary || "Entrevista",
-        start: new Date(ge.start?.dateTime || ge.start || new Date()),
-        end: new Date(ge.end?.dateTime || ge.end || new Date()),
+        start: new Date(ge.start?.dateTime || ge.start?.date || ge.start || new Date()),
+        end: new Date(ge.end?.dateTime || ge.end?.date || ge.end || new Date()),
         resource: {
           ...ge,
           es_google_calendar: true,
           resumen_ia: desc,
-          creator_email: ge.creator || ge.organizer || "desconocido",
-          // Campos simulados para compatibilidad visual
+          creator_email: creatorEmail,
           nombre_chat: nombre,
           vacante_interes: vacante,
-          telefono: telefono,
+          telefono,
           nave_interes: nave,
-          estado: "Agendado (GCal)"
-        }
+          estado: "Agendado (GCal)",
+        },
       };
     });
 
-    return [...dbEvents, ...parsedGcalEvents];
-  }, [candidatos, googleEvents]);
+    // Deduplicate GCal events by id (since multiple calendars might share the same event)
+    const uniqueGcalEventsMap = new Map();
+    parsedGcalEvents.forEach(ev => {
+      if (!uniqueGcalEventsMap.has(ev.id)) {
+        uniqueGcalEventsMap.set(ev.id, ev);
+      }
+    });
 
-  // Formateador visual explícito (DD/MM/YYYY HH:mm) como se pidió en el plan
-  const formatVisualDate = (d: Date) => {
-    return format(d, "dd/MM/yyyy HH:mm");
+    let allEvents = [...dbEvents, ...Array.from(uniqueGcalEventsMap.values())];
+    
+    // Filter by role if not ADMIN
+    const role = typeof window !== 'undefined' ? localStorage.getItem("tci_role") : "USER";
+    if (role !== "ADMIN") {
+      if (myCalId) {
+        allEvents = allEvents.filter(ev => {
+          const evEmail = (ev.resource.creator_email || "").toLowerCase();
+          // Keep if the creator email matches the recruiter's calendar ID
+          return evEmail === myCalId || evEmail === "sin_asignar"; // We keep sin_asignar for dbEvents as backend filters them
+        });
+      } else {
+        // If they are a recruiter but we haven't loaded their calendar ID yet, we hide Google events
+        allEvents = allEvents.filter(ev => !ev.resource.es_google_calendar);
+      }
+    }
+
+    return allEvents;
+  }, [candidatos, googleEvents, myCalId]);
+
+  const formatVisualDate = (d: Date) => format(d, "dd/MM/yyyy HH:mm");
+
+  // ── Panel lateral agrupado ───────────────────────────────────────────────
+  const eventsByRecruiter = useMemo(() => {
+    const today = new Date(new Date().setHours(0, 0, 0, 0));
+    const grouped: Record<string, CalendarEvent[]> = {};
+
+    events.forEach((e) => {
+      if (e.start < today) return;
+      // Para eventos de DB sin creator_email, los ponemos en 'sin_asignar'
+      const email = e.resource.creator_email
+        ? String(e.resource.creator_email).toLowerCase()
+        : "sin_asignar";
+      if (!grouped[email]) grouped[email] = [];
+      grouped[email].push(e);
+    });
+
+    Object.keys(grouped).forEach((key) => {
+      grouped[key].sort((a, b) => a.start.getTime() - b.start.getTime());
+    });
+
+    return grouped;
+  }, [events]);
+
+  const toggleRecruiter = (email: string) =>
+    setExpandedRecruiters((prev) => ({ ...prev, [email]: !prev[email] }));
+
+  // ── Cancelación ─────────────────────────────────────────────────────────
+  const openCancelModal = (e: React.MouseEvent, event: CalendarEvent) => {
+    e.stopPropagation();
+    setCancelTarget(event);
+    setCancelPassword("");
+    setCancelError("");
   };
 
-  const handleSelectEvent = (event: CalendarEvent) => {
-    setSelectedEvent(event);
+  const confirmCancel = async () => {
+    if (!cancelPassword) {
+      setCancelError("Ingresa tu contraseña.");
+      return;
+    }
+    if (!cancelTarget) return;
+    
+    setCancelingId(cancelTarget.id);
+    setCancelError("");
+
+    try {
+      // 1. Verificar la contraseña con el backend usando la sesión del usuario actual
+      const authRes = await fetch("/api/auth/verify-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: cancelPassword })
+      });
+      
+      const authData = await authRes.json();
+      if (!authRes.ok || !authData.success) {
+        setCancelError(authData.error || "Contraseña incorrecta.");
+        setCancelingId(null);
+        return;
+      }
+
+      // 2. Si es correcta, procedemos a cancelar en n8n
+      setCancelTarget(null);
+      const payload = {
+        telefono: cancelTarget.resource.telefono,
+        event_id: cancelTarget.resource.event_id || (cancelTarget.resource.es_google_calendar ? cancelTarget.id : null),
+        calendar_id: cancelTarget.resource.creator_email,
+      };
+      const res = await fetch(`${N8N_BASE_URL}/webhook/crm-cancelar-cita`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error();
+      showToast("✅ Cita cancelada correctamente", false);
+      setSelectedEvent(null);
+      loadData();
+    } catch {
+      showToast("❌ Error al cancelar la cita", true);
+    } finally {
+      setCancelingId(null);
+    }
   };
 
-  if (loading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-500">Cargando calendario...</div>;
+  const openRescheduleModal = (e: React.MouseEvent, event: CalendarEvent) => {
+    e.stopPropagation();
+    setRescheduleTarget(event);
+    setNewDate(format(event.start, "yyyy-MM-dd"));
+    setNewTime(format(event.start, "HH:mm"));
+  };
+
+  const confirmReschedule = async () => {
+    if (!rescheduleTarget || !newDate || !newTime) return;
+    setRescheduling(true);
+    
+    const startStr = `${newDate}T${newTime}:00`;
+    const start = new Date(startStr);
+    const end = new Date(start.getTime() + 60 * 60 * 1000);
+
+    try {
+      const payload = {
+        telefono: rescheduleTarget.resource.telefono,
+        event_id: rescheduleTarget.resource.event_id || (rescheduleTarget.resource.es_google_calendar ? rescheduleTarget.id : null),
+        calendar_id: rescheduleTarget.resource.creator_email,
+        start: start.toISOString(),
+        end: end.toISOString()
+      };
+      const res = await fetch(`${N8N_BASE_URL}/webhook/crm-reagendar-cita`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error();
+      showToast("✅ Cita reagendada", false);
+      setSelectedEvent(null);
+      setRescheduleTarget(null);
+      loadData();
+    } catch {
+      showToast("❌ Error al reagendar", true);
+    } finally {
+      setRescheduling(false);
+    }
+  };
+
+  const confirmBlock = async () => {
+    if (!blockTarget || !blockTitle) return;
+    setBlocking(true);
+    try {
+      const payload = {
+        calendar_id: myCalId,
+        start: blockTarget.start.toISOString(),
+        end: blockTarget.end.toISOString(),
+        summary: blockTitle,
+        description: "Bloqueo manual creado desde CRM"
+      };
+      const res = await fetch(`${N8N_BASE_URL}/webhook/crm-crear-bloqueo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error();
+      showToast("✅ Bloqueo creado", false);
+      setBlockTarget(null);
+      loadData();
+    } catch {
+      showToast("❌ Error al crear bloqueo", true);
+    } finally {
+      setBlocking(false);
+    }
+  };
+
+  const handleSelectEvent = (event: CalendarEvent) => setSelectedEvent(event);
+
+  const getRecruiterDisplayName = (email: string) => {
+    if (email === "sin_asignar") return "Sin Reclutador";
+    return recruiterNames[email] || email;
+  };
+
+  const getColorForEmail = (email: string) => {
+    if (recruiterColors[email]) return recruiterColors[email];
+    const palette = ["#6366f1","#ef4444","#10b981","#f59e0b","#8b5cf6","#ec4899","#14b8a6","#f97316"];
+    let hash = 0;
+    for (let i = 0; i < email.length; i++) hash = email.charCodeAt(i) + ((hash << 5) - hash);
+    return palette[Math.abs(hash) % palette.length];
+  };
+
+  if (loading) return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+      <div className="w-10 h-10 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+
+  const totalProximas = Object.values(eventsByRecruiter).reduce((s, arr) => s + arr.length, 0);
 
   return (
-    <div className="flex flex-col h-screen bg-slate-50 text-slate-800">
-      <header className="px-10 py-5 bg-white/90 backdrop-blur-md border-b border-black/10 flex justify-between items-center z-50">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => router.back()}
-            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg transition-colors text-sm border border-black/10"
-          >
-            ⬅ Atrás
-          </button>
-          <div className="text-2xl font-extrabold bg-gradient-to-br from-indigo-500 to-purple-500 bg-clip-text text-transparent">
-            Calendario de Entrevistas
-          </div>
+    <div className="flex flex-col h-[calc(100vh-4rem)] bg-slate-50 text-slate-800">
+      {/* HEADER */}
+      <div className="flex flex-col md:flex-row justify-end items-start md:items-center gap-4 px-8 pt-6 pb-4 bg-white border-b border-slate-100 shadow-sm">
+        <div className="flex items-center gap-3">
+          <span className="bg-indigo-100 text-indigo-700 text-xs font-bold px-2.5 py-1 rounded-full">
+            {totalProximas} próximas
+          </span>
         </div>
         <button
           onClick={loadData}
-          className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white font-semibold rounded-lg shadow-md hover:shadow-lg transition-all"
+          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg shadow-sm transition-all text-sm"
         >
-          Actualizar Datos
+          <RefreshCw size={14} /> Actualizar
         </button>
-      </header>
+      </div>
 
-      <main className="flex-1 p-6 overflow-hidden flex flex-col max-w-7xl mx-auto w-full">
-        <div className="bg-white flex-1 p-6 rounded-2xl shadow-sm border border-black/10 h-full flex flex-col">
+      <main className="flex-1 p-6 overflow-hidden flex flex-col md:flex-row max-w-[1500px] mx-auto w-full gap-5">
+
+        {/* PANEL LATERAL */}
+        <div className="w-full md:w-72 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden shrink-0">
+          <div className="p-4 bg-gradient-to-r from-indigo-600 to-indigo-500 text-white">
+            <div className="flex items-center gap-2">
+              <LayoutList size={16} />
+              <h2 className="font-bold text-sm">Próximas Citas</h2>
+            </div>
+            <p className="text-xs text-indigo-200 mt-0.5">{totalProximas} cita{totalProximas !== 1 ? "s" : ""} desde hoy</p>
+          </div>
+
+          <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
+            {Object.keys(eventsByRecruiter).length === 0 ? (
+              <div className="p-8 text-center">
+                <CalendarIcon size={32} className="mx-auto text-slate-200 mb-2" />
+                <p className="text-sm text-slate-400 font-medium">Sin citas futuras</p>
+              </div>
+            ) : (
+              Object.entries(eventsByRecruiter).map(([email, recruiterEvents]) => (
+                <div key={email}>
+                  <button
+                    onClick={() => toggleRecruiter(email)}
+                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 transition-colors text-left"
+                  >
+                    <div className="flex items-center gap-2.5 overflow-hidden">
+                      <div
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: getColorForEmail(email) }}
+                      />
+                      <span className="font-semibold text-slate-700 text-sm truncate">
+                        {getRecruiterDisplayName(email)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span
+                        className="text-[11px] font-bold px-2 py-0.5 rounded-full text-white"
+                        style={{ backgroundColor: getColorForEmail(email) }}
+                      >
+                        {recruiterEvents.length}
+                      </span>
+                      {expandedRecruiters[email]
+                        ? <ChevronDown size={14} className="text-slate-400" />
+                        : <ChevronRight size={14} className="text-slate-400" />}
+                    </div>
+                  </button>
+
+                  {expandedRecruiters[email] && (
+                    <div className="bg-slate-50 divide-y divide-slate-100">
+                      {recruiterEvents.map((ev) => (
+                        <div
+                          key={ev.id}
+                          className="px-4 py-3 hover:bg-white transition-colors cursor-pointer group"
+                          onClick={() => handleSelectEvent(ev)}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="overflow-hidden flex-1">
+                              <p className="font-semibold text-slate-800 text-sm truncate">
+                                {ev.resource.nombre_chat || ev.resource.nombre_solicitud || "Candidato"}
+                              </p>
+                              <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                                {ev.resource.vacante_interes || "Sin vacante"}
+                              </p>
+                              <p className="text-[11px] text-indigo-500 font-semibold mt-1">
+                                {format(ev.start, "EEE d MMM · HH:mm", { locale: es })}
+                              </p>
+                            </div>
+                            <button
+                              onClick={(e) => openCancelModal(e, ev)}
+                              disabled={cancelingId === ev.id}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                              title="Cancelar cita"
+                            >
+                              {cancelingId === ev.id
+                                ? <span className="w-3 h-3 border-2 border-red-400 border-t-transparent rounded-full animate-spin block" />
+                                : <XCircle size={16} />}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* CALENDARIO PRINCIPAL */}
+        <div className="bg-white flex-1 rounded-2xl shadow-sm border border-slate-200 p-5 flex flex-col min-w-0 overflow-hidden">
           <Calendar
             localizer={localizer}
             events={events}
@@ -290,12 +603,25 @@ export default function CalendarioPage() {
             culture="es"
             view={view}
             date={date}
-            onView={(v) => setView(v)}
+            onView={setView}
             onNavigate={(d) => setDate(d)}
             onSelectEvent={handleSelectEvent}
+            selectable={true}
+            onSelectSlot={({ start, end }) => {
+              if (start < new Date()) {
+                showToast("❌ No puedes bloquear fechas pasadas", true);
+                return;
+              }
+              if (!myCalId) {
+                showToast("❌ No tienes un calendario asignado para bloquear", true);
+                return;
+              }
+              setBlockTarget({ start, end });
+            }}
+            components={{ toolbar: CustomToolbar }}
             messages={{
-              next: "Sig",
-              previous: "Ant",
+              next: "›",
+              previous: "‹",
               today: "Hoy",
               month: "Mes",
               week: "Semana",
@@ -304,106 +630,173 @@ export default function CalendarioPage() {
               date: "Fecha",
               time: "Hora",
               event: "Evento",
-              noEventsInRange: "No hay entrevistas en este rango.",
+              noEventsInRange: "No hay entrevistas en este período.",
             }}
             eventPropGetter={(event) => {
-              let bgColor = "#6366f1"; // indigo-500 (default)
-
-              if (event.resource.creator_email) {
-                const email = String(event.resource.creator_email).toLowerCase();
-                if (recruiterColors[email]) {
-                  bgColor = recruiterColors[email];
-                } else {
-                  // Fallback a color generado basado en el correo
-                  const colors = ['#6366f1', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6'];
-                  let hash = 0;
-                  for (let i = 0; i < email.length; i++) {
-                    hash = email.charCodeAt(i) + ((hash << 5) - hash);
-                  }
-                  bgColor = colors[Math.abs(hash) % colors.length];
-                }
-              }
-
+              const email = event.resource.creator_email
+                ? String(event.resource.creator_email).toLowerCase()
+                : "";
+              const bgColor = getColorForEmail(email || "default");
               return {
                 style: {
                   backgroundColor: bgColor,
                   borderRadius: "6px",
                   border: "none",
                   color: "white",
-                  fontWeight: "bold",
+                  fontWeight: "600",
                   fontSize: "12px",
                   padding: "2px 6px",
                 },
               };
             }}
-            className="font-sans flex-1"
+            style={{ flex: 1 }}
           />
         </div>
       </main>
 
-      {/* Modal de Detalles del Evento */}
-      {selectedEvent && !isChatOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000]">
-          <div className="bg-white w-[90%] max-w-md rounded-2xl p-8 shadow-2xl relative">
-            <button
-              onClick={() => setSelectedEvent(null)}
-              className="absolute top-6 right-6 text-slate-500 hover:text-slate-800 text-xl font-bold"
-            >
-              ✕
-            </button>
-            <h2 className="text-2xl font-bold text-slate-800 mb-1">
-              {selectedEvent.resource.nombre_chat || selectedEvent.resource.nombre_solicitud || "Candidato"}
-            </h2>
-            <div className="text-indigo-600 font-semibold mb-6">
-              {selectedEvent.resource.vacante_interes || "Sin vacante"}
+      {/* ─── MODAL CONFIRMACIÓN CANCELACIÓN ─── */}
+      {cancelTarget && (
+        <div
+          className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center z-[2000]"
+          onClick={() => setCancelTarget(null)}
+        >
+          <div
+            className="bg-white w-[90%] max-w-sm rounded-2xl p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                <XCircle size={20} className="text-red-600" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-800">Cancelar Cita</h3>
+                <p className="text-sm text-slate-500">
+                  {cancelTarget.resource.nombre_chat || cancelTarget.resource.nombre_solicitud || "Candidato"}
+                </p>
+              </div>
             </div>
 
-            <div className="space-y-3 mb-6 bg-slate-50 p-4 rounded-xl border border-black/5">
-              <div className="flex justify-between border-b border-black/5 pb-2 text-sm">
-                <span className="text-slate-500 font-medium">Fecha Visual:</span>
-                {/* Mostramos estrictamente DD/MM/YYYY como pidió el usuario */}
-                <span className="font-bold text-slate-800">{formatVisualDate(selectedEvent.start)}</span>
-              </div>
-              <div className="flex justify-between border-b border-black/5 pb-2 text-sm">
-                <span className="text-slate-500 font-medium">Teléfono:</span>
-                <span className="font-semibold">{selectedEvent.resource.telefono}</span>
-              </div>
-              <div className="flex justify-between border-b border-black/5 pb-2 text-sm">
-                <span className="text-slate-500 font-medium">Estado:</span>
-                <span className="font-semibold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full text-xs">
-                  {selectedEvent.resource.estado}
-                </span>
-              </div>
-              <div className="flex justify-between border-b border-black/5 pb-2 text-sm">
-                <span className="text-slate-500 font-medium">Nave / Sucursal:</span>
-                <span className="font-semibold">{selectedEvent.resource.nave_interes || "N/A"}</span>
-              </div>
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4 text-sm text-red-700">
+              ⚠️ Esta acción cancelará la cita y cambiará el estado del candidato. El evento también se eliminará de Google Calendar.
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                Ingresa la contraseña para confirmar
+              </label>
+              <input
+                type="password"
+                value={cancelPassword}
+                onChange={(e) => { setCancelPassword(e.target.value); setCancelError(""); }}
+                onKeyDown={(e) => e.key === "Enter" && confirmCancel()}
+                placeholder="••••••••"
+                autoFocus
+                className={`w-full px-3 py-2.5 rounded-lg border outline-none text-sm transition-all ${
+                  cancelError
+                    ? "border-red-400 bg-red-50 focus:border-red-500"
+                    : "border-slate-200 bg-slate-50 focus:border-indigo-400 focus:bg-white"
+                }`}
+              />
+              {cancelError && (
+                <p className="text-xs text-red-500 mt-1 font-medium">{cancelError}</p>
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setCancelTarget(null)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm transition-colors"
+              >
+                No, volver
+              </button>
+              <button
+                onClick={confirmCancel}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-colors"
+              >
+                Sí, cancelar cita
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL DETALLE EVENTO ─── */}
+      {selectedEvent && !isChatOpen && (
+        <div
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000]"
+          onClick={() => setSelectedEvent(null)}
+        >
+          <div
+            className="bg-white w-[90%] max-w-md rounded-2xl p-7 shadow-2xl relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setSelectedEvent(null)}
+              className="absolute top-5 right-5 text-slate-400 hover:text-slate-700 transition-colors"
+            >
+              <XCircle size={22} />
+            </button>
+
+            <h2 className="text-xl font-bold text-slate-800 mb-0.5">
+              {selectedEvent.resource.nombre_chat || selectedEvent.resource.nombre_solicitud || "Candidato"}
+            </h2>
+            <p className="text-indigo-600 font-semibold text-sm mb-5">
+              {selectedEvent.resource.vacante_interes || "Sin vacante"}
+            </p>
+
+            <div className="space-y-2 mb-5 bg-slate-50 p-4 rounded-xl border border-slate-100 text-sm">
+              {[
+                ["📅 Fecha", formatVisualDate(selectedEvent.start)],
+                ["📞 Teléfono", selectedEvent.resource.telefono],
+                ["🏭 Nave", selectedEvent.resource.nave_interes || "N/A"],
+                ["📌 Estado", selectedEvent.resource.estado],
+              ].map(([label, val]) => (
+                <div key={label} className="flex justify-between items-center">
+                  <span className="text-slate-500">{label}</span>
+                  <span className="font-semibold text-slate-800">{val}</span>
+                </div>
+              ))}
             </div>
 
             {selectedEvent.resource.resumen_ia && (
-              <div className="mb-6">
-                <span className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">
-                  Resumen de la IA
-                </span>
-                <div className="text-sm text-slate-600 leading-relaxed bg-slate-50 p-3 rounded-lg border border-black/5 whitespace-pre-wrap">
+              <div className="mb-5">
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Resumen IA</p>
+                <div className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100 whitespace-pre-wrap max-h-28 overflow-y-auto">
                   {selectedEvent.resource.resumen_ia}
                 </div>
               </div>
             )}
 
+            <div className="flex gap-3 mb-3">
+              <button
+                onClick={(e) => openCancelModal(e, selectedEvent)}
+                disabled={cancelingId === selectedEvent.id}
+                className="flex-1 py-2.5 bg-red-50 text-red-600 hover:bg-red-100 font-bold rounded-xl transition-colors flex items-center justify-center gap-2 text-sm border border-red-200"
+              >
+                <XCircle size={16} /> Cancelar
+              </button>
+              
+              <button
+                onClick={(e) => openRescheduleModal(e, selectedEvent)}
+                className="flex-1 py-2.5 bg-amber-50 text-amber-600 hover:bg-amber-100 font-bold rounded-xl transition-colors flex items-center justify-center gap-2 text-sm border border-amber-200"
+              >
+                <RefreshCw size={16} /> Reagendar
+              </button>
+            </div>
+
             <div className="flex gap-3">
               <button
                 onClick={() => window.open(`https://wa.me/${selectedEvent.resource.telefono}`, "_blank")}
-                className="flex-1 bg-[#25D366] hover:bg-emerald-600 text-white font-semibold py-3 rounded-xl transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2"
+                className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 text-sm"
               >
-                <span>Abrir WhatsApp</span>
+                <MessageSquare size={16} /> WhatsApp
               </button>
               {selectedEvent.resource.telefono && selectedEvent.resource.telefono !== "No registrado" && (
                 <button
-                  onClick={() => loadChat(selectedEvent.resource.telefono)}
-                  className="flex-1 bg-cyan-500 hover:bg-cyan-600 text-white font-semibold py-3 rounded-xl transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2"
+                  onClick={() => router.push(`/mensajes?tel=${selectedEvent.resource.telefono}`)}
+                  className="flex-1 bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 text-sm"
                 >
-                  <span>Ver Chat</span>
+                  Ver Chat
                 </button>
               )}
             </div>
@@ -411,68 +804,105 @@ export default function CalendarioPage() {
         </div>
       )}
 
-      {/* Modal de Chat */}
-      {isChatOpen && selectedEvent && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1100]">
-          <div className="bg-white w-[90%] max-w-2xl h-[80vh] rounded-2xl p-6 shadow-2xl flex flex-col relative">
-            <div className="flex justify-between items-center mb-4 pb-4 border-b border-black/5">
-              <h2 className="text-xl font-bold text-slate-800">
-                Chat con {selectedEvent.resource.nombre_chat || selectedEvent.resource.nombre_solicitud || selectedEvent.title || "Candidato"}
-              </h2>
-              <button
-                onClick={() => setIsChatOpen(false)}
-                className="text-slate-500 hover:text-slate-800 text-xl font-bold"
-              >
-                ✕
-              </button>
+      {/* ─── MODAL REAGENDAR ─── */}
+      {rescheduleTarget && (
+        <div
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[2000]"
+          onClick={() => setRescheduleTarget(null)}
+        >
+          <div
+            className="bg-white w-[90%] max-w-sm rounded-2xl p-6 shadow-2xl relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-bold text-slate-800 mb-4">Reagendar Cita</h3>
+            
+            <div className="mb-4">
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Nueva Fecha</label>
+              <input
+                type="date"
+                value={newDate}
+                onChange={(e) => setNewDate(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-sm"
+              />
+            </div>
+            
+            <div className="mb-6">
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Nueva Hora</label>
+              <input
+                type="time"
+                value={newTime}
+                onChange={(e) => setNewTime(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-sm"
+              />
             </div>
 
-            <div className="flex-1 bg-slate-100 rounded-xl border inset-0 border-black/5 overflow-y-auto p-4 flex flex-col gap-3">
-              {loadingChat ? (
-                <div className="flex justify-center items-center h-full">
-                  <div className="w-8 h-8 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
-                </div>
-              ) : chatHistory.length === 0 ? (
-                <div className="text-center text-slate-400 mt-10">No hay mensajes registrados.</div>
-              ) : (
-                chatHistory
-                  .filter(msg => msg.role !== "system" && (!msg.content || (typeof msg.content === 'string' && !msg.content.includes("[SISTEMA:"))))
-                  .map((msg, idx) => {
-                    const isUser = msg.role === "user" || msg.role === "user_temp";
-                    return (
-                      <div
-                        key={idx}
-                        className={`max-w-[80%] p-3 rounded-2xl text-sm leading-relaxed relative shadow-sm ${isUser
-                          ? "self-start bg-white text-slate-800 border border-black/5 rounded-bl-sm"
-                          : "self-end bg-cyan-500 text-white rounded-br-sm"
-                          }`}
-                      >
-                        <div dangerouslySetInnerHTML={{ __html: (typeof msg.content === 'string' ? msg.content : "").replace(/\n/g, "<br>") }} />
-                        {msg.timestamp && (
-                          <div
-                            className={`text-[10px] mt-1 text-right ${isUser ? "text-slate-400" : "text-white/80"
-                              }`}
-                          >
-                            {new Date(msg.timestamp).toLocaleString("es-MX", {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })
-              )}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setRescheduleTarget(null)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmReschedule}
+                disabled={rescheduling}
+                className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm transition-colors disabled:opacity-50"
+              >
+                {rescheduling ? "Guardando..." : "Guardar"}
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Toast */}
-      <div
-        className={`fixed bottom-6 right-6 px-6 py-3 rounded-xl font-semibold text-white shadow-lg transition-all duration-300 transform ${toast ? "translate-y-0 opacity-100" : "translate-y-20 opacity-0"
-          } ${toast?.isError ? "bg-red-500" : "bg-emerald-500"}`}
-      >
+      {/* ─── MODAL CREAR BLOQUEO ─── */}
+      {blockTarget && (
+        <div
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[2000]"
+          onClick={() => setBlockTarget(null)}
+        >
+          <div
+            className="bg-white w-[90%] max-w-sm rounded-2xl p-6 shadow-2xl relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="font-bold text-slate-800 mb-1">Bloquear Horario</h3>
+            <p className="text-xs text-slate-500 mb-4">
+              {formatVisualDate(blockTarget.start)} - {formatVisualDate(blockTarget.end)}
+            </p>
+
+            <div className="mb-6">
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Título del bloqueo</label>
+              <input
+                type="text"
+                value={blockTitle}
+                onChange={(e) => setBlockTitle(e.target.value)}
+                className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-sm"
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setBlockTarget(null)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmBlock}
+                disabled={blocking}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-colors disabled:opacity-50"
+              >
+                {blocking ? "Bloqueando..." : "Bloquear"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TOAST */}
+      <div className={`fixed bottom-6 right-6 px-5 py-3 rounded-xl font-bold text-white shadow-xl transition-all duration-300 z-[3000] ${
+        toast ? "translate-y-0 opacity-100" : "translate-y-16 opacity-0"
+      } ${toast?.isError ? "bg-red-500" : "bg-emerald-500"}`}>
         {toast?.msg}
       </div>
     </div>
