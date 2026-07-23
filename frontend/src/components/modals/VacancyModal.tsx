@@ -2,7 +2,6 @@
 
 import type { Vacante } from "@/types";
 
-const NAVES = ["1", "2", "3"];
 
 type Props = {
   isEditing: boolean;
@@ -14,6 +13,7 @@ type Props = {
   setVPalabrasClave: (v: string) => void;
   vNaves: string[];
   toggleNave: (n: string) => void;
+  availableNaves: {id: string, nombre: string}[];
   onSave: () => void;
   onCancel: () => void;
 };
@@ -28,6 +28,7 @@ export default function VacancyModal({
   setVPalabrasClave,
   vNaves,
   toggleNave,
+  availableNaves,
   onSave,
   onCancel,
 }: Props) {
@@ -72,21 +73,25 @@ export default function VacancyModal({
             <label className="block text-sm text-slate-500 font-medium mb-2">
               Nave / Sucursal (Selecciona una o varias)
             </label>
-            <div className="flex gap-4 p-4 bg-slate-50 border border-black/10 rounded-xl">
-              {NAVES.map((n) => (
-                <label
-                  key={n}
-                  className="flex items-center gap-2 cursor-pointer text-sm font-medium text-slate-700"
-                >
-                  <input
-                    type="checkbox"
-                    className="w-4 h-4 accent-indigo-500"
-                    checked={vNaves.includes(n)}
-                    onChange={() => toggleNave(n)}
-                  />
-                  Nave {n}
-                </label>
-              ))}
+            <div className="flex flex-col gap-3 p-4 bg-slate-50 border border-black/10 rounded-xl max-h-48 overflow-y-auto">
+              {availableNaves.length > 0 ? (
+                availableNaves.map((n) => (
+                  <label
+                    key={n.id}
+                    className="flex items-center gap-2 cursor-pointer text-sm font-medium text-slate-700"
+                  >
+                    <input
+                      type="checkbox"
+                      className="w-4 h-4 accent-indigo-500"
+                      checked={vNaves.includes(n.id)}
+                      onChange={() => toggleNave(n.id)}
+                    />
+                    {n.nombre}
+                  </label>
+                ))
+              ) : (
+                <span className="text-sm text-slate-400">No hay naves registradas.</span>
+              )}
             </div>
           </div>
 

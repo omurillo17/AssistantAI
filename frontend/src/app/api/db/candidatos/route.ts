@@ -17,6 +17,7 @@ const querySchema = z.object({
 export async function GET(request: Request) {
   let rol = "USER";
   let reclutador_id: string | null = null;
+  let jwt_empresa_id: string | null = null;
   
   try {
     const cookieStore = await cookies();
@@ -28,11 +29,19 @@ export async function GET(request: Request) {
     const { payload } = await jwtVerify(token, secret);
     rol = payload.rol as string;
     reclutador_id = payload.reclutador_id as string;
+    jwt_empresa_id = payload.empresa_id as string;
   } catch (err) {
     return NextResponse.json({ error: "Token inválido o expirado" }, { status: 401 });
   }
 
   const { searchParams } = new URL(request.url);
+  
+  let filter_empresa_id = searchParams.get("empresa_id");
+  let filter_nave_id = searchParams.get("nave_id");
+  if (rol !== "ROOT") {
+    filter_empresa_id = jwt_empresa_id;
+  }
+
   const parsedQuery = querySchema.safeParse({
     estado: searchParams.get('estado'),
     vacante: searchParams.get('vacante'),
@@ -52,6 +61,16 @@ export async function GET(request: Request) {
     const conditions: string[] = [];
     const values: (string | number)[] = [];
     let idx = 1;
+
+    if (filter_empresa_id) {
+      conditions.push(`empresa_id = $${idx++}`);
+      values.push(filter_empresa_id);
+    }
+
+    if (filter_nave_id) {
+      conditions.push(`nave_id = $${idx++}`);
+      values.push(filter_nave_id);
+    }
 
     if (estado && estado !== 'TODOS') {
       conditions.push(`estado = $${idx++}`);

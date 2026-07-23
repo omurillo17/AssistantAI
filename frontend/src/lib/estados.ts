@@ -245,21 +245,21 @@ export const ESTADOS_ORDENADOS: EstadoKey[] = [
 
 /** Estados que el CRM puede asignar manualmente */
 export const ESTADOS_CRM: EstadoKey[] = [
-  'ENTREVISTADO', 'CONTRATADO', 'RECHAZADO', 'CARTERA_GENERAL', 'CITA_CANCELADA', 'INACTIVO',
+  'CITA_AGENDADA', 'ENTREVISTADO', 'CONTRATADO', 'RECHAZADO', 'CARTERA_GENERAL', 'CITA_CANCELADA', 'INACTIVO',
   'INTERESADO', 'ESCALADO', // Para de-escalar manualmente
 ];
 
 /** Agrupaciones para el embudo de conversión */
 export const GRUPOS: Record<GrupoEstado, { label: string; color: string; estados: EstadoKey[] }> = {
-  pipeline: {
-    label: 'En Proceso',
-    color: 'text-blue-600',
-    estados: ['NUEVO', 'INTERESADO', 'CV_RECIBIDO', 'CV_MANUAL', 'FILTROS_COMPLETADOS', 'INE_VALIDADA', 'CITA_AGENDADA', 'RECORDATORIO_ENVIADO'],
-  },
   alerta: {
     label: 'Requieren Atención',
     color: 'text-red-500',
     estados: ['ESCALADO', 'DOCUMENTOS_NO_COINCIDEN', 'CITA_CANCELADA'],
+  },
+  pipeline: {
+    label: 'En Proceso',
+    color: 'text-blue-600',
+    estados: ['NUEVO', 'INTERESADO', 'CV_RECIBIDO', 'CV_MANUAL', 'FILTROS_COMPLETADOS', 'INE_VALIDADA', 'CITA_AGENDADA', 'RECORDATORIO_ENVIADO'],
   },
   exitoso: {
     label: 'Exitosos',
@@ -278,14 +278,14 @@ export const GRUPOS: Record<GrupoEstado, { label: string; color: string; estados
   },
 };
 
-/** Columnas del Kanban */
+/** Columnas del Kanban (Alertas y Escalados al Inicio) */
 export const KANBAN_COLUMNAS = [
+  { key: 'alerta', estados: ['ESCALADO', 'DOCUMENTOS_NO_COINCIDEN', 'CITA_CANCELADA'] as EstadoKey[], label: '🆘 Escalados / Alertas', color: 'border-purple-400' },
   { key: 'pipeline', estados: ['NUEVO', 'INTERESADO'] as EstadoKey[], label: 'Nuevos / Interesados', color: 'border-blue-300' },
   { key: 'cv', estados: ['CV_RECIBIDO', 'CV_MANUAL', 'FILTROS_COMPLETADOS'] as EstadoKey[], label: 'CV / Filtros', color: 'border-cyan-300' },
-  { key: 'docs', estados: ['INE_VALIDADA', 'DOCUMENTOS_NO_COINCIDEN'] as EstadoKey[], label: 'Documentos', color: 'border-violet-300' },
-  { key: 'cita', estados: ['CITA_AGENDADA', 'RECORDATORIO_ENVIADO'] as EstadoKey[], label: 'Cita Agendada', color: 'border-amber-300' },
-  { key: 'alerta', estados: ['ESCALADO', 'CITA_CANCELADA'] as EstadoKey[], label: 'Escalados / Alertas', color: 'border-purple-300' },
-  { key: 'final', estados: ['ENTREVISTADO', 'CONTRATADO'] as EstadoKey[], label: 'Finalizados', color: 'border-emerald-300' },
+  { key: 'docs', estados: ['INE_VALIDADA'] as EstadoKey[], label: 'Docs Validados', color: 'border-violet-300' },
+  { key: 'cita', estados: ['CITA_AGENDADA', 'RECORDATORIO_ENVIADO'] as EstadoKey[], label: '📅 Cita Agendada', color: 'border-amber-300' },
+  { key: 'final', estados: ['ENTREVISTADO', 'CONTRATADO'] as EstadoKey[], label: 'Finalizados / Entrevistados', color: 'border-emerald-300' },
   { key: 'pool', estados: ['CARTERA_GENERAL', 'RECHAZADO', 'INACTIVO'] as EstadoKey[], label: 'Pool / Cerrados', color: 'border-gray-300' },
 ];
 

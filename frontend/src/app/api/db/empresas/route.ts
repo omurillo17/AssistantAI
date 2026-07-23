@@ -1,0 +1,136 @@
+import { NextResponse } from 'next/server';
+import { pool } from '@/lib/db';
+import { cookies } from "next/headers";
+import { jwtVerify } from "jose";
+import { ENV } from "@/lib/env";
+
+export const dynamic = 'force-dynamic';
+
+async function verifyRoot() {
+  const cookieStore = await cookies();
+  const token = cookieStore.get("tci_session")?.value;
+  if (!token) return false;
+  try {
+    const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
+    const { payload } = await jwtVerify(token, secretKey);
+    return payload.usuario === 'omurillo17' || payload.usuario === 'root' || payload.rol === 'ROOT';
+  } catch (err) {
+    return false;
+  }
+}
+
+async function verifyAuth() {
+  const cookieStore = await cookies();
+  const token = cookieStore.get("tci_session")?.value;
+  if (!token) return null;
+  try {
+    const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
+    const { payload } = await jwtVerify(token, secretKey);
+    return payload;
+  } catch (err) {
+    return null;
+  }
+}
+
+export async function GET(request: Request) {
+  const payload = await verifyAuth();
+  if (!payload) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
+
+  try {
+    let query = `
+      SELECT e.id, e.nombre, e.telefono_whatsapp, e.prompt_ia, e.created_at,
+        (SELECT json_agg(row_to_json(n.*)) FROM (
+          SELECT id, nombre, ubicacion_maps, rfc, created_at, empresa_id FROM naves WHERE empresa_id = e.id ORDER BY created_at ASC
+        ) n) as naves
+      FROM empresas e
+    `;
+
+    const params: any[] = [];
+    if (payload.rol !== 'ROOT' && payload.empresa_id) {
+      query += ` WHERE e.id = $1 `;
+      params.push(payload.empresa_id);
+    }
+    
+    query += ` ORDER BY e.created_at ASC `;
+
+    const res = await pool.query(query, params);
+
+    return NextResponse.json({ success: true, empresas: res.rows });
+  } catch (err) {
+    console.error('Error fetching empresas:', err);
+    return NextResponse.json({ error: 'Error al obtener empresas' }, { status: 500 });
+  }
+}
+
+export async function POST(request: Request) {
+  if (!(await verifyRoot())) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
+
+  try {
+    const body = await request.json();
+    const { nombre, telefono_whatsapp, prompt_ia } = body;
+
+    if (!nombre) {
+      return NextResponse.json({ error: "El nombre es obligatorio" }, { status: 400 });
+    }
+
+    const res = await pool.query(
+      `INSERT INTO empresas (nombre, telefono_whatsapp, prompt_ia) VALUES ($1, $2, $3) RETURNING *`,
+      [nombre, telefono_whatsapp || '', prompt_ia || '']
+    );
+
+    return NextResponse.json({ success: true, empresa: res.rows[0] });
+  } catch (err) {
+    console.error('Error creating empresa:', err);
+    return NextResponse.json({ error: 'Error al crear empresa' }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  if (!(await verifyRoot())) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
+
+  try {
+    const body = await request.json();
+    const { id, nombre, telefono_whatsapp, prompt_ia } = body;
+
+    if (!id || !nombre) {
+      return NextResponse.json({ error: "ID y nombre son obligatorios" }, { status: 400 });
+    }
+
+    const res = await pool.query(
+      `UPDATE empresas SET nombre = $1, telefono_whatsapp = $2, prompt_ia = $3 WHERE id = $4 RETURNING *`,
+      [nombre, telefono_whatsapp || '', prompt_ia || '', id]
+    );
+
+    return NextResponse.json({ success: true, empresa: res.rows[0] });
+  } catch (err) {
+    console.error('Error updating empresa:', err);
+    return NextResponse.json({ error: 'Error al actualizar empresa' }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  if (!(await verifyRoot())) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
+
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json({ error: "ID de empresa es obligatorio" }, { status: 400 });
+    }
+
+    await pool.query(`DELETE FROM empresas WHERE id = $1`, [id]);
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error('Error deleting empresa:', err);
+    return NextResponse.json({ error: 'Error al eliminar empresa' }, { status: 500 });
+  }
+}

@@ -284,16 +284,17 @@ function MensajesInner() {
 
                   <button onClick={() => router.push(`/crm`)} className="px-3 py-1.5 hover:bg-black/5 text-slate-600 rounded-lg text-sm font-semibold transition-colors">Ver CRM</button>
 
-                  {m.candidatoActivo?.escalado && !m.estaAtendidoPorOtro ? (
-                    <>
-                      <button onClick={m.transferir} disabled={!!m.actionLoading} className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 bg-indigo-500 hover:bg-indigo-600 disabled:opacity-70 text-white rounded-lg transition-colors shadow-sm">
-                        {m.actionLoading === "transferir" ? <Loader2 size={12} className="animate-spin" /> : <UserPlus size={12} />} Transferir
-                      </button>
-                      <button onClick={m.devolverAlBot} disabled={!!m.actionLoading} className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 bg-[#00a884] hover:bg-[#008f6f] disabled:opacity-70 text-white rounded-lg transition-colors shadow-sm">
-                        {m.actionLoading === "devolverAlBot" ? <Loader2 size={12} className="animate-spin" /> : <Bot size={12} />} Devolver al Bot
-                      </button>
-                    </>
-                  ) : (
+                  <button onClick={m.transferir} disabled={!!m.actionLoading} className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-70 text-white rounded-lg transition-colors shadow-sm">
+                    {m.actionLoading === "transferir" ? <Loader2 size={12} className="animate-spin" /> : <UserPlus size={12} />} Transferir
+                  </button>
+
+                  {m.candidatoActivo?.escalado && !m.estaAtendidoPorOtro && (
+                    <button onClick={m.devolverAlBot} disabled={!!m.actionLoading} className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 bg-[#00a884] hover:bg-[#008f6f] disabled:opacity-70 text-white rounded-lg transition-colors shadow-sm">
+                      {m.actionLoading === "devolverAlBot" ? <Loader2 size={12} className="animate-spin" /> : <Bot size={12} />} Devolver al Bot
+                    </button>
+                  )}
+
+                  {!m.candidatoActivo?.escalado && (
                     <button
                       onClick={() => {
                         if (m.estaAtendidoPorOtro) {
@@ -352,7 +353,13 @@ function MensajesInner() {
             <div className="p-6">
               <p className="text-sm text-slate-600 mb-4">Selecciona al reclutador al que deseas transferir este candidato. Se le notificará automáticamente por WhatsApp.</p>
               <select className="w-full border border-slate-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" value={m.selectedReclutador} onChange={e => m.setSelectedReclutador(e.target.value)}>
-                {m.reclutadores.map(rec => (<option key={rec} value={rec}>{rec}</option>))}
+                {m.reclutadores.map((grupo, idx) => (
+                  <optgroup key={idx} label={grupo.grupo_nombre ? `${grupo.grupo_nombre} (${grupo.empresa_nombre || 'Local'})` : 'Reclutadores'}>
+                    {grupo.reclutadores?.map((rec: any) => (
+                      <option key={rec.nombre} value={rec.nombre}>{rec.nombre} ({rec.rol})</option>
+                    ))}
+                  </optgroup>
+                ))}
               </select>
             </div>
             <div className="bg-slate-50 px-6 py-4 flex justify-end gap-3 border-t border-slate-100">

@@ -18,6 +18,7 @@ type Props = {
   onRemoveVacancy: (recIndex: number, vacIndex: number) => void;
   onDragStart: (recIndex: number, vacIndex: number) => void;
   onDrop: (e: React.DragEvent, targetRecIndex: number, targetVacIndex: number) => void;
+  availableNaves: {id: string, nombre: string}[];
 };
 
 export default function RecruiterCard({
@@ -34,6 +35,7 @@ export default function RecruiterCard({
   onRemoveVacancy,
   onDragStart,
   onDrop,
+  availableNaves,
 }: Props) {
   const router = useRouter();
   const isEditable = isAdmin || rec.reclutador_id === myRecId;
@@ -155,14 +157,17 @@ export default function RecruiterCard({
             </div>
             <div className="flex flex-wrap gap-1 mb-3">
               {Array.isArray(vac.naves) &&
-                vac.naves.map((n) => (
-                  <span
-                    key={n}
-                    className="bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[11px] font-bold"
-                  >
-                    {n}
-                  </span>
-                ))}
+                vac.naves.map((n) => {
+                  const naveName = availableNaves.find(an => an.id === n)?.nombre || n;
+                  return (
+                    <span
+                      key={n}
+                      className="bg-primary/10 text-primary px-2 py-0.5 rounded-full text-[11px] font-bold"
+                    >
+                      {naveName}
+                    </span>
+                  );
+                })}
             </div>
             {vac.palabras_clave && (
               <div className="text-[11px] text-slate-500 mb-3 italic">

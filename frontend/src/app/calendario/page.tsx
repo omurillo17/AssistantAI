@@ -117,6 +117,7 @@ export default function CalendarioPage() {
   const [googleEvents, setGoogleEvents] = useState<any[]>([]);
   const [recruiterColors, setRecruiterColors] = useState<Record<string, string>>({});
   const [recruiterNames, setRecruiterNames] = useState<Record<string, string>>({});
+  const [recruiterIdToEmail, setRecruiterIdToEmail] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{ msg: string; isError: boolean } | null>(null);
   const [myCalId, setMyCalId] = useState("");
@@ -188,6 +189,7 @@ export default function CalendarioPage() {
           const recs: any[] = Array.isArray(recData) ? recData : recData.data || [];
           const colorMap: Record<string, string> = {};
           const nameMap: Record<string, string> = {};
+          const idToEmailMap: Record<string, string> = {};
           const palette = ["#6366f1","#ef4444","#10b981","#f59e0b","#8b5cf6","#ec4899","#14b8a6","#f97316"];
           let myCalIdLocal = "";
           const myRecruiterId = localStorage.getItem("tci_reclutador_id");
@@ -197,6 +199,7 @@ export default function CalendarioPage() {
             if (calId) {
               colorMap[calId] = r.color || palette[i % palette.length];
               nameMap[calId] = r.nombre || r.name || calId;
+              if (r.reclutador_id) idToEmailMap[r.reclutador_id] = calId;
               if (r.reclutador_id == myRecruiterId) {
                 myCalIdLocal = calId;
               }
@@ -204,6 +207,7 @@ export default function CalendarioPage() {
           });
           setRecruiterColors(colorMap);
           setRecruiterNames(nameMap);
+          setRecruiterIdToEmail(idToEmailMap);
           if (myCalIdLocal) setMyCalId(myCalIdLocal);
         }
       } catch {}
@@ -234,7 +238,10 @@ export default function CalendarioPage() {
           title: `${c.nombre_chat || c.nombre_solicitud || "Candidato"} – ${c.vacante_interes || "Sin vacante"}`,
           start: startDate,
           end: new Date(startDate.getTime() + 60 * 60 * 1000),
-          resource: c,
+          resource: {
+            ...c,
+            creator_email: c.asignado_a ? (recruiterIdToEmail[c.asignado_a] || "sin_asignar") : "sin_asignar",
+          },
         };
       }).filter(Boolean) as CalendarEvent[];
 
@@ -297,19 +304,19 @@ export default function CalendarioPage() {
 
     let allEvents = [...dbEvents, ...Array.from(uniqueGcalEventsMap.values())];
     
-    // Filter by role if not ADMIN
+    // Filter by role if not ADMIN or ENCARGADO
     const role = typeof window !== 'undefined' ? localStorage.getItem("tci_role") : "USER";
-    if (role !== "ADMIN") {
-      if (myCalId) {
-        allEvents = allEvents.filter(ev => {
-          const evEmail = (ev.resource.creator_email || "").toLowerCase();
-          // Keep if the creator email matches the recruiter's calendar ID
-          return evEmail === myCalId || evEmail === "sin_asignar"; // We keep sin_asignar for dbEvents as backend filters them
-        });
-      } else {
-        // If they are a recruiter but we haven't loaded their calendar ID yet, we hide Google events
-        allEvents = allEvents.filter(ev => !ev.resource.es_google_calendar);
-      }
+    if (role !== "ADMIN" && role !== "ENCARGADO" && role !== "ROOT") {
+      const myRecruiterId = typeof window !== 'undefined' ? localStorage.getItem("tci_reclutador_id") : null;
+      allEvents = allEvents.filter(ev => {
+        const evEmail = (ev.resource.creator_email || "").toLowerCase();
+        
+        // Si tiene un correo/calendar_id, comprobar por correo. Si no, comprobar por asignado_a
+        const matchesEmail = myCalId && evEmail === myCalId;
+        const matchesId = myRecruiterId && ev.resource.asignado_a === myRecruiterId;
+        
+        return matchesEmail || matchesId;
+      });
     }
 
     return allEvents;

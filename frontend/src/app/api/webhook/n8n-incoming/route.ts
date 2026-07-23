@@ -30,8 +30,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Falta telefono' }, { status: 400 });
     }
 
-    // 1. Obtener estado actual (o inicializar)
-    let res = await pool.query('SELECT estado, tiene_cv, cv_manual as db_cv_manual, fecha_entrevista as db_fecha, privacidad_aceptada, escalado FROM candidatos WHERE telefono = $1', [telefono]);
+    // 1. Obtener estado actual (buscamos por telefono, asumiendo por ahora la primera empresa o la mas reciente si hay varias)
+    // En el futuro, n8n debe enviar el empresa_id
+    let res = await pool.query('SELECT id, estado, tiene_cv, cv_manual as db_cv_manual, fecha_entrevista as db_fecha, privacidad_aceptada, escalado FROM candidatos WHERE telefono = $1 ORDER BY updated_at DESC LIMIT 1', [telefono]);
     let currentState = 'NUEVO';
     let context = {
       telefono,
@@ -41,6 +42,11 @@ export async function POST(request: Request) {
       privacidad_aceptada: false,
       escalado: false,
     };
+    
+    // Verificación de Rechazo Global (Cross-Company/Nave)
+    const resRechazados = await pool.query(`SELECT nave_interes FROM candidatos WHERE telefono = $1 AND estado = 'RECHAZADO' LIMIT 1`, [telefono]);
+    let fueRechazadoGlobalmente = resRechazados.rowCount ? (resRechazados.rowCount > 0) : false;
+    let naveRechazo = fueRechazadoGlobalmente ? resRechazados.rows[0].nave_interes : null;
 
     if (res.rowCount && res.rowCount > 0) {
       currentState = res.rows[0].estado;
@@ -102,19 +108,31 @@ export async function POST(request: Request) {
       }
     }
 
+    // Determinar si escalar por rechazo previo
+    let esEscalado = newState.value === 'ESCALADO' || context.escalado;
+    let motivoEscalamiento = null;
+    if (fueRechazadoGlobalmente && currentState === 'NUEVO') {
+       esEscalado = true;
+       motivoEscalamiento = `ALERTA GLOBAL: Este candidato fue RECHAZADO previamente en la nave: ${naveRechazo || 'Desconocida'}.`;
+    }
+
+    // Buscamos una empresa_id default para no romper el UNIQUE constraint
+    const defaultEmpresaRes = await pool.query('SELECT id FROM empresas LIMIT 1');
+    const empresaId = (defaultEmpresaRes.rowCount && defaultEmpresaRes.rowCount > 0) ? defaultEmpresaRes.rows[0].id : null;
+
     const upsertQuery = `
       INSERT INTO candidatos (
         telefono, nombre, estado, ultima_interaccion, vacante_interes, 
         resumen_ia, filtros_tecnicos, cv_manual, fecha_entrevista, privacidad_aceptada, 
         nombre_chat, nombre_solicitud, edad, correo, experiencia, nave_interes, mensajes_bot_enviados,
-        veredicto, motivo_analisis
+        veredicto, motivo_analisis, empresa_id, escalado, escalation_reason
       )
       VALUES (
         $1, $9, $2, NOW(), $3, $4, $5, $6, $7, $8,
         $9, $10, $11, $12, $13, $14, 1,
-        $15, $16
+        $15, $16, $17, $18, $19
       )
-      ON CONFLICT (telefono) DO UPDATE SET 
+      ON CONFLICT (telefono, empresa_id) DO UPDATE SET 
         nombre = CASE WHEN candidatos.nombre IS NULL OR candidatos.nombre = '' OR candidatos.nombre = 'Candidato' THEN EXCLUDED.nombre ELSE candidatos.nombre END,
         estado = EXCLUDED.estado,
         ultima_interaccion = NOW(),
@@ -131,13 +149,14 @@ export async function POST(request: Request) {
         correo = CASE WHEN EXCLUDED.cv_manual IS NOT NULL AND (EXCLUDED.cv_manual->>'correo') IS NOT NULL THEN (EXCLUDED.cv_manual->>'correo') ELSE candidatos.correo END,
         experiencia = CASE WHEN EXCLUDED.cv_manual IS NOT NULL AND (EXCLUDED.cv_manual->>'experiencia') IS NOT NULL THEN (EXCLUDED.cv_manual->>'experiencia') ELSE candidatos.experiencia END,
         nave_interes = COALESCE(NULLIF(EXCLUDED.nave_interes, ''), candidatos.nave_interes),
-        escalado = EXCLUDED.estado = 'ESCALADO' OR candidatos.escalado,
+        escalado = EXCLUDED.escalado OR candidatos.escalado,
+        escalation_reason = COALESCE(NULLIF(EXCLUDED.escalation_reason, ''), candidatos.escalation_reason),
         veredicto = COALESCE(NULLIF(EXCLUDED.veredicto, ''), candidatos.veredicto),
         motivo_analisis = COALESCE(NULLIF(EXCLUDED.motivo_analisis, ''), candidatos.motivo_analisis)
       RETURNING id
     `;
     
-    await pool.query(upsertQuery, [
+    const upsertRes = await pool.query(upsertQuery, [
       telefono, 
       newState.value, 
       vacante, 
@@ -153,8 +172,13 @@ export async function POST(request: Request) {
       parsedCvManual?.experiencia || null,
       nave,
       veredicto,
-      motivo_analisis
+      motivo_analisis,
+      empresaId,
+      esEscalado,
+      motivoEscalamiento
     ]);
+
+    const candidatoId = upsertRes.rows[0].id;
 
     // 5. Insertar historial de mensajes
     // Mensaje del usuario
@@ -170,14 +194,14 @@ export async function POST(request: Request) {
 
     // 6. Actualizar bandeja compartida (mensajes_bandeja)
     await pool.query(`
-      INSERT INTO mensajes_bandeja (telefono, ultimo_mensaje, ultimo_mensaje_rol, mensajes_no_leidos, activo, ultimo_mensaje_at)
-      VALUES ($1, $2, 'user', 1, true, NOW())
-      ON CONFLICT (telefono) DO UPDATE SET 
+      INSERT INTO mensajes_bandeja (candidato_id, telefono, ultimo_mensaje, ultimo_mensaje_rol, mensajes_no_leidos, activo, ultimo_mensaje_at)
+      VALUES ($1, $2, $3, 'user', 1, true, NOW())
+      ON CONFLICT (candidato_id) DO UPDATE SET 
         ultimo_mensaje = EXCLUDED.ultimo_mensaje,
         ultimo_mensaje_at = NOW(),
         mensajes_no_leidos = mensajes_bandeja.mensajes_no_leidos + 1,
         activo = true
-    `, [telefono, mensaje_candidato]);
+    `, [candidatoId, telefono, mensaje_candidato]);
 
     return NextResponse.json({ success: true, estado: newState.value });
   } catch (err) {

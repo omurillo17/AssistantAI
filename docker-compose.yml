@@ -43,6 +43,11 @@ services:
       - NODE_FUNCTION_ALLOW_BUILTIN=fs,path,module,child_process
       - NODE_FUNCTION_ALLOW_EXTERNAL=*
       - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - TCI_API_BASE=${TCI_API_BASE:-http://host.docker.internal:3000}
+      - TCI_EMPRESA_ID=${TCI_EMPRESA_ID:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - n8n_data_final:/home/node/.n8n
       - ./virgo_data:/home/node/virgo_files

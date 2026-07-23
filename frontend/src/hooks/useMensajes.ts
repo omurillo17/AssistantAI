@@ -25,7 +25,7 @@ export function useMensajes() {
   const [filterVacante, setFilterVacante] = useState("");
   const [filterNave, setFilterNave] = useState("");
   const [toast, setToast] = useState<{ msg: string; isError: boolean } | null>(null);
-  const [reclutadores, setReclutadores] = useState<string[]>([]);
+  const [reclutadores, setReclutadores] = useState<any[]>([]);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showPhoneModal, setShowPhoneModal] = useState(false);
   const [selectedReclutador, setSelectedReclutador] = useState("");
@@ -101,7 +101,12 @@ export function useMensajes() {
   // ─── Data Loading ──────────────────────────────────────
   const loadMisVacantes = async (nombreUser: string) => {
     try {
-      const res = await fetch("/api/db/reclutador_vacantes");
+      const storedEmpresaId = localStorage.getItem("tci_empresa_id");
+      const storedNaveId = localStorage.getItem("tci_nave_id");
+      let query = "";
+      if (storedEmpresaId) query += `?empresa_id=${storedEmpresaId}`;
+      if (storedNaveId) query += (query ? `&` : `?`) + `nave_id=${storedNaveId}`;
+      const res = await fetch(`/api/db/vacantes${query}`);
       if (res.ok) {
         const data = await res.json();
         const searchName = nombreUser.trim().toLowerCase();
@@ -121,11 +126,28 @@ export function useMensajes() {
 
   const loadReclutadores = async () => {
     try {
-      const res = await fetch("/api/db/reclutadores");
+      const storedEmpresaId = localStorage.getItem("tci_empresa_id");
+      let query = "?grouped=true";
+      if (storedEmpresaId && storedEmpresaId !== "null" && storedEmpresaId !== "undefined") {
+        query += `&empresa_id=${storedEmpresaId}`;
+      }
+      const res = await fetch(`/api/db/reclutadores${query}`);
       if (res.ok) {
         const data = await res.json();
-        setReclutadores(data);
-        if (data.length > 0) setSelectedReclutador(data[0]);
+        if (data.grupos && Array.isArray(data.grupos)) {
+          setReclutadores(data.grupos);
+          const allRecs = data.grupos.flatMap((g: any) => g.reclutadores || []);
+          if (allRecs.length > 0) {
+            setSelectedReclutador(allRecs[0].nombre);
+          }
+        } else if (Array.isArray(data)) {
+          // Fallback legacy
+          setReclutadores([{
+            grupo_nombre: "Otros",
+            reclutadores: data.map(r => ({ nombre: r }))
+          }]);
+          if (data.length > 0) setSelectedReclutador(typeof data[0] === 'string' ? data[0] : data[0].nombre);
+        }
       }
     } catch (e) {
       console.error("Error cargando reclutadores", e);
@@ -135,7 +157,12 @@ export function useMensajes() {
   const loadConversaciones = useCallback(async (showLoad = true) => {
     if (showLoad) setLoading(true);
     try {
-      const res = await fetch("/api/db/mensajes?t=" + Date.now());
+      const storedEmpresaId = localStorage.getItem("tci_empresa_id");
+      const storedNaveId = localStorage.getItem("tci_nave_id");
+      let query = "";
+      if (storedEmpresaId) query += `&empresa_id=${storedEmpresaId}`;
+      if (storedNaveId) query += `&nave_id=${storedNaveId}`;
+      const res = await fetch(`/api/db/mensajes?t=${Date.now()}${query}`);
       if (!res.ok) {
         if (res.status === 429) return;
         throw new Error("Failed to fetch");
@@ -158,7 +185,12 @@ export function useMensajes() {
   const loadChat = useCallback(async (tel: string, showLoad = true, isPreview = false) => {
     if (showLoad) { setLoadingChat(true); setMensajes([]); setCandidatoActivo(null); isNearBottom.current = true; prevMessagesLength.current = 0; }
     try {
-      const res = await fetch(`/api/db/mensajes/${tel}${isPreview ? "?preview=true&" : "?"}t=${Date.now()}`);
+      const storedEmpresaId = localStorage.getItem("tci_empresa_id");
+      const storedNaveId = localStorage.getItem("tci_nave_id");
+      let query = "";
+      if (storedEmpresaId) query += `&empresa_id=${storedEmpresaId}`;
+      if (storedNaveId) query += `&nave_id=${storedNaveId}`;
+      const res = await fetch(`/api/db/mensajes/${tel}${isPreview ? "?preview=true&" : "?"}t=${Date.now()}${query}`);
       if (!res.ok) {
         if (res.status === 429) return;
         throw new Error("Failed to fetch");
@@ -186,7 +218,12 @@ export function useMensajes() {
     setSending(true);
     isNearBottom.current = true;
     try {
-      await fetch(`/api/db/mensajes/${activePhone}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texto: msgText, asignado_a: nombre }) });
+      const storedEmpresaId = localStorage.getItem("tci_empresa_id");
+      const storedNaveId = localStorage.getItem("tci_nave_id");
+      let query = "";
+      if (storedEmpresaId) query += `?empresa_id=${storedEmpresaId}`;
+      if (storedNaveId) query += (query ? `&` : `?`) + `nave_id=${storedNaveId}`;
+      await fetch(`/api/db/mensajes/${activePhone}${query}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texto: msgText, asignado_a: nombre }) });
       await loadChat(activePhone, false);
     } catch { showToast("Error al enviar", true); } finally { setSending(false); }
   };
@@ -195,7 +232,13 @@ export function useMensajes() {
     if (!activePhone) return;
     setActionLoading("tomarControl");
     try {
-      const res = await fetch("/api/db/candidato", {
+      const storedEmpresaId = localStorage.getItem("tci_empresa_id");
+      const storedNaveId = localStorage.getItem("tci_nave_id");
+      let query = "";
+      if (storedEmpresaId) query += `?empresa_id=${storedEmpresaId}`;
+      if (storedNaveId) query += (query ? `&` : `?`) + `nave_id=${storedNaveId}`;
+      
+      const res = await fetch(`/api/db/candidato${query}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -211,7 +254,7 @@ export function useMensajes() {
       setConversaciones(prev =>
         prev.map(c => c.telefono === activePhone ? { ...c, escalado: true, asignado_a: nombre } : c)
       );
-      await fetch("/api/db/mensajes", {
+      await fetch(`/api/db/mensajes${query}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ telefono: activePhone, asignado_a: nombre }),
@@ -228,7 +271,13 @@ export function useMensajes() {
     if (!activePhone) return;
     setActionLoading("tomarChat");
     try {
-      const res = await fetch("/api/db/mensajes", {
+      const storedEmpresaId = localStorage.getItem("tci_empresa_id");
+      const storedNaveId = localStorage.getItem("tci_nave_id");
+      let query = "";
+      if (storedEmpresaId) query += `?empresa_id=${storedEmpresaId}`;
+      if (storedNaveId) query += (query ? `&` : `?`) + `nave_id=${storedNaveId}`;
+
+      const res = await fetch(`/api/db/mensajes${query}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ telefono: activePhone, asignado_a: nombre }),
@@ -250,7 +299,13 @@ export function useMensajes() {
     if (!activePhone) return;
     setActionLoading("devolverAlBot");
     try {
-      const res = await fetch("/api/db/candidato", {
+      const storedEmpresaId = localStorage.getItem("tci_empresa_id");
+      const storedNaveId = localStorage.getItem("tci_nave_id");
+      let query = "";
+      if (storedEmpresaId) query += `?empresa_id=${storedEmpresaId}`;
+      if (storedNaveId) query += (query ? `&` : `?`) + `nave_id=${storedNaveId}`;
+
+      const res = await fetch(`/api/db/candidato${query}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -261,7 +316,7 @@ export function useMensajes() {
         }),
       });
       if (!res.ok) throw new Error();
-      await fetch("/api/db/mensajes", {
+      await fetch(`/api/db/mensajes${query}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ telefono: activePhone, asignado_a: null }),
@@ -280,30 +335,56 @@ export function useMensajes() {
 
   const transferir = () => {
     if (!activePhone) return;
+    loadReclutadores();
     setShowTransferModal(true);
   };
 
   const confirmTransferir = async () => {
     if (!activePhone || !selectedReclutador) return;
+    
+    // Find the target reclutador to see if we need to change empresa_id
+    let targetEmpresaId: string | null = null;
+    if (reclutadores && reclutadores.length > 0) {
+      for (const grupo of reclutadores) {
+        const found = grupo.reclutadores?.find((r: any) => r.nombre === selectedReclutador);
+        if (found && grupo.empresa_id) {
+          targetEmpresaId = grupo.empresa_id;
+          break;
+        }
+      }
+    }
+
     setActionLoading("transferir");
     try {
-      const res = await fetch("/api/db/candidato", {
+      const storedEmpresaId = localStorage.getItem("tci_empresa_id");
+      const storedNaveId = localStorage.getItem("tci_nave_id");
+      let query = "";
+      if (storedEmpresaId) query += `?empresa_id=${storedEmpresaId}`;
+      if (storedNaveId) query += (query ? `&` : `?`) + `nave_id=${storedNaveId}`;
+
+      const bodyData: any = {
+        telefono: activePhone,
+        escalado: true,
+        estado: "ESCALADO",
+        escalation_reason: `Transferido a ${selectedReclutador} por ${nombre}`,
+        asignado_a: selectedReclutador
+      };
+
+      if (targetEmpresaId && targetEmpresaId !== storedEmpresaId) {
+        bodyData.empresa_id = targetEmpresaId;
+      }
+
+      const res = await fetch(`/api/db/candidato${query}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          telefono: activePhone,
-          escalado: true,
-          estado: "ESCALADO",
-          escalation_reason: `Transferido a ${selectedReclutador} por ${nombre}`,
-          asignado_a: selectedReclutador
-        }),
+        body: JSON.stringify(bodyData),
       });
       if (!res.ok) throw new Error();
       setCandidatoActivo(prev => prev ? { ...prev, escalado: true, estado: "ESCALADO", asignado_a: selectedReclutador } : prev);
       setConversaciones(prev =>
         prev.map(c => c.telefono === activePhone ? { ...c, escalado: true, asignado_a: selectedReclutador } : c)
       );
-      await fetch("/api/db/mensajes", {
+      await fetch(`/api/db/mensajes${query}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ telefono: activePhone, asignado_a: selectedReclutador }),

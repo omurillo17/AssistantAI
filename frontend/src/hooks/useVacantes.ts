@@ -15,6 +15,7 @@ export function useVacantes() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [myRecId, setMyRecId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; isError: boolean } | null>(null);
+  const [availableNaves, setAvailableNaves] = useState<{id: string, nombre: string}[]>([]);
 
   // ─── Vacancy Modal State ─────────────────────────────────
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -55,13 +56,49 @@ export function useVacantes() {
     setIsAdmin(localStorage.getItem("tci_role") === "ADMIN");
     setMyRecId(localStorage.getItem("tci_reclutador_id"));
     loadData();
+    loadNaves();
   }, [router]);
+
+  const loadNaves = async () => {
+    try {
+      const role = localStorage.getItem("tci_role") || "USER";
+      const res = await fetch("/api/db/empresas");
+      if (res.ok) {
+        const data = await res.json();
+        let fetchedEmpresas = data.empresas || [];
+        
+        try {
+          const navesAsignadasStr = localStorage.getItem("tci_naves_asignadas");
+          if (navesAsignadasStr && role !== "ROOT" && role !== "ADMIN") {
+            const allowedNaves = JSON.parse(navesAsignadasStr);
+            if (Array.isArray(allowedNaves) && allowedNaves.length > 0) {
+              fetchedEmpresas = fetchedEmpresas.map((emp: any) => ({
+                ...emp,
+                naves: emp.naves ? emp.naves.filter((n: any) => allowedNaves.includes(n.id)) : []
+              })).filter((emp: any) => emp.naves.length > 0);
+            }
+          }
+        } catch (e) {}
+
+        const allNaves = fetchedEmpresas.flatMap((e: any) => e.naves || []);
+        setAvailableNaves(allNaves);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   // ─── Data Operations ────────────────────────────────────
   const loadData = async () => {
     setLoading(true);
     try {
-      const res = await fetch(API_URL);
+      const storedEmpresaId = localStorage.getItem("tci_empresa_id");
+      const storedNaveId = localStorage.getItem("tci_nave_id");
+      let query = "";
+      if (storedEmpresaId) query += `?empresa_id=${storedEmpresaId}`;
+      if (storedNaveId) query += (query ? `&` : `?`) + `nave_id=${storedNaveId}`;
+      
+      const res = await fetch(`${API_URL}${query}`);
       if (!res.ok) throw new Error();
       const data = await res.json();
       const raw = Array.isArray(data) ? data : data.data || [];
@@ -94,7 +131,14 @@ export function useVacantes() {
   const saveData = async () => {
     try {
       showToast("Guardando...", false);
-      const res = await fetch(API_URL, {
+      
+      const storedEmpresaId = localStorage.getItem("tci_empresa_id");
+      const storedNaveId = localStorage.getItem("tci_nave_id");
+      let query = "";
+      if (storedEmpresaId) query += `?empresa_id=${storedEmpresaId}`;
+      if (storedNaveId) query += (query ? `&` : `?`) + `nave_id=${storedNaveId}`;
+
+      const res = await fetch(`${API_URL}${query}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -324,6 +368,7 @@ export function useVacantes() {
     isAdmin,
     myRecId,
     toast,
+    availableNaves,
 
     // Data operations
     loadData,

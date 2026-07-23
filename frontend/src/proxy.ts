@@ -5,7 +5,9 @@ import { jwtVerify } from "jose";
 const JWT_SECRET = process.env.JWT_SECRET;
 
 // Rutas exclusivas para ADMIN
-const adminOnlyRoutes = ["/configuracion", "/reclutadores", "/usuarios", "/api/db/usuarios"];
+const adminOnlyRoutes = ["/configuracion", "/reclutadores"];
+// Rutas exclusivas para ADMIN y ENCARGADO
+const adminAndEncargadoRoutes = ["/usuarios", "/api/db/usuarios", "/api/db/grupos"];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -43,7 +45,16 @@ export async function proxy(request: NextRequest) {
 
     // Si es una ruta protegida solo para ADMIN
     const isAdminRoute = adminOnlyRoutes.some(r => pathname.startsWith(r));
-    if (isAdminRoute && userRole !== "ADMIN") {
+    if (isAdminRoute && userRole !== "ADMIN" && userRole !== "ROOT") {
+      if (pathname.startsWith("/api/")) {
+        return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
+      }
+      return NextResponse.redirect(new URL("/", request.url));
+    }
+
+    // Si es ruta para ADMIN o ENCARGADO
+    const isAdminEncargadoRoute = adminAndEncargadoRoutes.some(r => pathname.startsWith(r));
+    if (isAdminEncargadoRoute && userRole !== "ADMIN" && userRole !== "ENCARGADO" && userRole !== "ROOT") {
       if (pathname.startsWith("/api/")) {
         return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
       }

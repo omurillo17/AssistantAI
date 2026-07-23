@@ -1,0 +1,449 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Building2, MapPin, Plus, Trash2, Edit, X, Phone, ChevronDown, Briefcase } from "lucide-react";
+import LigarModal from "@/components/saas/LigarModal";
+import SaasGrupoModal from "@/components/saas/SaasGrupoModal";
+import AdminModal from "@/components/saas/AdminModal";
+import EmpresaModal from "@/components/saas/EmpresaModal";
+import NaveModal from "@/components/saas/NaveModal";
+
+type Nave = {
+  id: string;
+  nombre: string;
+  rfc: string;
+  ubicacion_maps: string;
+  created_at: string;
+};
+
+type Empresa = {
+  id: string;
+  nombre: string;
+  telefono_whatsapp: string;
+  prompt_ia: string;
+  created_at: string;
+  naves: Nave[];
+};
+
+export default function SaasAdminPage() {
+  const router = useRouter();
+  const [isRoot, setIsRoot] = useState<boolean | null>(null);
+  const [empresas, setEmpresas] = useState<Empresa[]>([]);
+  const [empresasLigadas, setEmpresasLigadas] = useState<any[]>([]);
+  const [grupos, setGrupos] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Modals state
+  const [showEmpresaModal, setShowEmpresaModal] = useState(false);
+  const [showNaveModal, setShowNaveModal] = useState(false);
+  const [showLigarModal, setShowLigarModal] = useState(false);
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [showGrupoModal, setShowGrupoModal] = useState(false);
+
+  // Selected for modals
+  const [editingEmpresa, setEditingEmpresa] = useState<Empresa | null>(null);
+  const [editingNave, setEditingNave] = useState<Nave | null>(null);
+  const [selectedEmpresaForNave, setSelectedEmpresaForNave] = useState<string>("");
+  const [selectedEmpresaForAdmin, setSelectedEmpresaForAdmin] = useState<Empresa | null>(null);
+  const [selectedEmpresaForGrupo, setSelectedEmpresaForGrupo] = useState<Empresa | null>(null);
+
+  // UI State
+  const [expandedEmpresa, setExpandedEmpresa] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ msg: string; isError: boolean } | null>(null);
+
+  useEffect(() => {
+    document.title = "SaaS Admin | TCi";
+    const username = localStorage.getItem("tci_username");
+    if (username === "omurillo17" || username === "root") {
+      setIsRoot(true);
+      fetchData();
+    } else {
+      setIsRoot(false);
+    }
+  }, [router]);
+
+  const showToast = (msg: string, isError: boolean = false) => {
+    setToast({ msg, isError });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const fetchData = async () => {
+    setLoading(true);
+    try {
+      await Promise.all([fetchEmpresas(), fetchEmpresasLigadas(), fetchGrupos()]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchGrupos = async () => {
+    try {
+      const res = await fetch("/api/db/grupos");
+      if (res.ok) setGrupos(await res.json());
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteGrupo = async (grupoId: string) => {
+    if (!confirm("¿Eliminar este grupo? Los reclutadores asignados a él perderán su asignación.")) return;
+    try {
+      const res = await fetch(`/api/db/grupos?id=${grupoId}`, { method: "DELETE" });
+      if (res.ok) { showToast("Grupo eliminado"); fetchGrupos(); }
+    } catch (e) { showToast("Error", true); }
+  };
+
+  const fetchEmpresasLigadas = async () => {
+    try {
+      const res = await fetch("/api/db/empresas-ligadas");
+      const data = await res.json();
+      if (data.success) {
+        setEmpresasLigadas(data.relaciones || []);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const fetchEmpresas = async () => {
+    try {
+      const res = await fetch("/api/db/empresas");
+      const data = await res.json();
+      if (data.empresas) {
+        setEmpresas(data.empresas);
+      }
+    } catch (err) {
+      showToast("Error al cargar empresas", true);
+    }
+  };
+
+  const handleDeleteEmpresa = async (id: string) => {
+    if (!confirm("¿Estás seguro de eliminar esta Empresa? Se eliminarán todas sus Naves y Vacantes.")) return;
+    try {
+      const res = await fetch(`/api/db/empresas?id=${id}`, { method: "DELETE" });
+      if (res.ok) {
+        showToast("Empresa eliminada");
+        fetchEmpresas();
+      }
+    } catch (e) {
+      showToast("Error al eliminar", true);
+    }
+  };
+
+  const handleDeleteNave = async (id: string) => {
+    if (!confirm("¿Estás seguro de eliminar esta Nave?")) return;
+    try {
+      const res = await fetch(`/api/db/naves?id=${id}`, { method: "DELETE" });
+      if (res.ok) {
+        showToast("Nave eliminada");
+        fetchEmpresas();
+      }
+    } catch (e) {
+      showToast("Error al eliminar", true);
+    }
+  };
+
+  const handleDeleteLigar = async (empresaA: string, empresaB: string) => {
+    if (!confirm("¿Estás seguro de desligar estas empresas?")) return;
+    try {
+      const res = await fetch(`/api/db/empresas-ligadas?empresaA=${empresaA}&empresaB=${empresaB}`, { method: "DELETE" });
+      if (res.ok) {
+        showToast("Empresas desligadas");
+        fetchEmpresasLigadas();
+      }
+    } catch (e) {
+      showToast("Error al desligar", true);
+    }
+  };
+
+  if (isRoot === null || loading && empresas.length === 0) {
+    return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-500 font-medium">Cargando Plataforma SaaS...</div>;
+  }
+
+  if (isRoot === false) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50 p-6">
+        <div className="bg-white p-8 rounded-2xl shadow-sm border border-black/10 w-full max-w-md text-center">
+          <div className="text-5xl mb-4">🔒</div>
+          <h1 className="text-2xl font-bold text-slate-800 mb-2">Acceso Root Requerido</h1>
+          <p className="text-slate-500 mb-6 text-sm">Esta sección está restringida al administrador global del sistema SaaS.</p>
+          <button onClick={() => router.push('/')} className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition-colors">
+            Volver al Inicio
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-slate-800 p-6 md:p-10 font-sans">
+      
+      {/* Header Premium */}
+      <div className="max-w-6xl mx-auto mb-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div>
+          <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded-full mb-3 uppercase tracking-wider">
+            <Briefcase size={14} /> Global Administration
+          </div>
+          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900 mb-2">SaaS Multi-Tenant</h1>
+          <p className="text-slate-500 text-lg max-w-xl">Gestiona las empresas, asigna naves y controla la infraestructura de todos los clientes de Virgo.</p>
+        </div>
+        <button 
+          onClick={() => { setEditingEmpresa(null); setShowEmpresaModal(true); }}
+          className="bg-slate-900 hover:bg-slate-800 text-white px-6 py-3.5 rounded-xl font-bold shadow-lg shadow-slate-900/20 transition-all flex items-center gap-3 transform hover:-translate-y-0.5 active:translate-y-0"
+        >
+          <Plus size={20} /> Registrar Nueva Empresa
+        </button>
+      </div>
+
+      {/* Main Content Grid */}
+      <div className="max-w-6xl mx-auto flex flex-col gap-6">
+        {empresas.map((emp) => {
+          const isExpanded = expandedEmpresa === emp.id;
+          return (
+            <div key={emp.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all duration-300 hover:shadow-md">
+              {/* Company Header Row */}
+              <div 
+                className={`p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer transition-colors ${isExpanded ? 'bg-slate-50/50' : 'hover:bg-slate-50'}`}
+                onClick={() => setExpandedEmpresa(isExpanded ? null : emp.id)}
+              >
+                <div className="flex items-center gap-4">
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-colors ${isExpanded ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600'}`}>
+                    <Building2 size={24} />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900">{emp.nombre}</h2>
+                    <div className="flex items-center gap-4 text-sm text-slate-500 mt-1">
+                      <span className="flex items-center gap-1.5"><Phone size={14} /> {emp.telefono_whatsapp || 'Sin WhatsApp'}</span>
+                      <span className="flex items-center gap-1.5"><MapPin size={14} /> {(emp.naves || []).length} Naves activas</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex items-center gap-3">
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setEditingEmpresa(emp); setShowEmpresaModal(true); }}
+                    className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                    title="Editar Empresa"
+                  >
+                    <Edit size={18} />
+                  </button>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); handleDeleteEmpresa(emp.id); }}
+                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    title="Eliminar Empresa"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                  <div className="w-px h-6 bg-slate-200 mx-1"></div>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setSelectedEmpresaForAdmin(emp); setShowAdminModal(true); }}
+                    className="px-4 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-semibold rounded-lg text-sm transition-colors flex items-center gap-2"
+                  >
+                    <Plus size={16} /> Crear Admin
+                  </button>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setSelectedEmpresaForNave(emp.id); setEditingNave(null); setShowNaveModal(true); }}
+                    className="px-4 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-semibold rounded-lg text-sm transition-colors flex items-center gap-2"
+                  >
+                    <Plus size={16} /> Añadir Nave
+                  </button>
+                  <div className={`p-1 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}>
+                    <ChevronDown size={20} className="text-slate-400" />
+                  </div>
+                </div>
+              </div>
+
+              {/* Naves (Expanded View) */}
+              {isExpanded && (() => {
+                const empGrupos = grupos.filter(g => g.empresa_id === emp.id);
+                const navesEnGrupo = new Set(empGrupos.flatMap((g: any) => g.naves_asignadas || []));
+                const navesSinGrupo = (emp.naves || []).filter(n => !navesEnGrupo.has(n.id));
+
+                const NaveCard = ({ nave }: { nave: Nave }) => (
+                  <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow group relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-1 h-full bg-indigo-400"></div>
+                    <div className="flex justify-between items-start mb-3">
+                      <h4 className="font-bold text-slate-800 text-base leading-tight pr-14">{nave.nombre}</h4>
+                      <span className="text-xs font-semibold text-slate-400 block mt-1">RFC: {nave.rfc || 'Sin RFC'}</span>
+                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity absolute top-3 right-3">
+                        <button onClick={() => { setSelectedEmpresaForNave(emp.id); setEditingNave(nave); setShowNaveModal(true); }} className="p-1.5 text-slate-400 hover:text-indigo-600 bg-slate-50 rounded"><Edit size={14} /></button>
+                        <button onClick={() => handleDeleteNave(nave.id)} className="p-1.5 text-slate-400 hover:text-red-600 bg-slate-50 rounded"><Trash2 size={14} /></button>
+                      </div>
+                    </div>
+                    {nave.ubicacion_maps ? (
+                      <a href={nave.ubicacion_maps} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-sm text-indigo-600 font-medium hover:underline bg-indigo-50 px-2.5 py-1 rounded-md">
+                        <MapPin size={14} /> Ver en Maps
+                      </a>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-sm text-slate-400 font-medium bg-slate-50 px-2.5 py-1 rounded-md">
+                        <MapPin size={14} /> Sin ubicación
+                      </span>
+                    )}
+                  </div>
+                );
+
+                return (
+                  <div className="border-t border-slate-100 p-6 bg-slate-50/50">
+                    {/* Header section */}
+                    <div className="mb-5 flex items-center justify-between">
+                      <div className="text-sm font-bold text-slate-400 uppercase tracking-wider">Sub-Empresas (Naves) por Grupo</div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setSelectedEmpresaForGrupo(emp); setShowGrupoModal(true); }}
+                        className="px-3 py-1.5 bg-violet-50 text-violet-700 hover:bg-violet-100 font-semibold rounded-lg text-xs transition-colors flex items-center gap-1.5"
+                      >
+                        <Plus size={14} /> Nuevo Grupo
+                      </button>
+                    </div>
+
+                    {(!emp.naves || emp.naves.length === 0) ? (
+                      <div className="text-center py-10 border-2 border-dashed border-slate-200 rounded-xl bg-white">
+                        <MapPin size={32} className="mx-auto text-slate-300 mb-3" />
+                        <h3 className="text-slate-500 font-medium mb-1">Esta empresa no tiene Naves.</h3>
+                        <p className="text-sm text-slate-400">Registra al menos una nave para poder asignar vacantes.</p>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col gap-6">
+                        {/* Grupos con naves */}
+                        {empGrupos.map((grupo: any) => {
+                          const navesDelGrupo = (emp.naves || []).filter(n => (grupo.naves_asignadas || []).includes(n.id));
+                          return (
+                            <div key={grupo.id}>
+                              <div className="flex items-center gap-3 mb-3">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-3 h-3 rounded-full bg-violet-500"></div>
+                                  <span className="text-sm font-bold text-slate-700">{grupo.nombre}</span>
+                                  <span className="text-xs text-slate-400">({navesDelGrupo.length} naves)</span>
+                                </div>
+                                <div className="flex-1 h-px bg-slate-200"></div>
+                                <button onClick={() => handleDeleteGrupo(grupo.id)} className="p-1 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={13} /></button>
+                              </div>
+                              {navesDelGrupo.length === 0 ? (
+                                <p className="text-xs text-slate-400 italic ml-5">Sin naves asignadas a este grupo.</p>
+                              ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 ml-5">
+                                  {navesDelGrupo.map(nave => <NaveCard key={nave.id} nave={nave} />)}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {/* Naves sin grupo */}
+                        {navesSinGrupo.length > 0 && (
+                          <div>
+                            <div className="flex items-center gap-3 mb-3">
+                              <div className="flex items-center gap-2">
+                                <div className="w-3 h-3 rounded-full bg-slate-300"></div>
+                                <span className="text-sm font-bold text-slate-400">Sin grupo asignado</span>
+                                <span className="text-xs text-slate-400">({navesSinGrupo.length} naves)</span>
+                              </div>
+                              <div className="flex-1 h-px bg-slate-200"></div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 ml-5">
+                              {navesSinGrupo.map(nave => <NaveCard key={nave.id} nave={nave} />)}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Seccion Empresas Ligadas */}
+      <div className="max-w-6xl mx-auto mt-12 mb-6 flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900">Empresas Ligadas</h2>
+          <p className="text-slate-500 text-sm mt-1">Conecta empresas para permitir transferencia de candidatos entre sus encargados.</p>
+        </div>
+        <button 
+          onClick={() => setShowLigarModal(true)}
+          className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-4 py-2 rounded-lg font-bold transition-colors flex items-center gap-2"
+        >
+          <Plus size={18} /> Ligar Empresas
+        </button>
+      </div>
+
+      <div className="max-w-6xl mx-auto flex flex-col gap-4">
+        {empresasLigadas.length === 0 ? (
+           <div className="text-center py-8 border-2 border-dashed border-slate-200 rounded-xl bg-white">
+             <h3 className="text-slate-500 font-medium">No hay empresas ligadas.</h3>
+           </div>
+        ) : (
+          empresasLigadas.map((rel, idx) => (
+            <div key={idx} className="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between shadow-sm">
+              <div className="flex items-center gap-4">
+                <span className="font-bold text-slate-800 bg-slate-100 px-3 py-1 rounded-lg">{rel.origen_nombre}</span>
+                <span className="text-slate-400">↔</span>
+                <span className="font-bold text-slate-800 bg-slate-100 px-3 py-1 rounded-lg">{rel.destino_nombre}</span>
+              </div>
+              <button 
+                onClick={() => handleDeleteLigar(rel.empresa_origen_id, rel.empresa_destino_id)}
+                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                title="Desligar"
+              >
+                <Trash2 size={18} />
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Modales SaaS Refactorizados */}
+      <EmpresaModal
+        isOpen={showEmpresaModal}
+        onClose={() => { setShowEmpresaModal(false); setEditingEmpresa(null); }}
+        onSuccess={fetchEmpresas}
+        empresa={editingEmpresa}
+        showToast={showToast}
+      />
+
+      <NaveModal
+        isOpen={showNaveModal}
+        onClose={() => { setShowNaveModal(false); setEditingNave(null); setSelectedEmpresaForNave(""); }}
+        onSuccess={fetchEmpresas}
+        nave={editingNave}
+        empresaId={selectedEmpresaForNave}
+        showToast={showToast}
+      />
+
+      <SaasGrupoModal
+        isOpen={showGrupoModal}
+        onClose={() => { setShowGrupoModal(false); setSelectedEmpresaForGrupo(null); }}
+        onSuccess={fetchGrupos}
+        empresa={selectedEmpresaForGrupo}
+        showToast={showToast}
+      />
+
+      <AdminModal
+        isOpen={showAdminModal}
+        onClose={() => { setShowAdminModal(false); setSelectedEmpresaForAdmin(null); }}
+        onSuccess={fetchEmpresas}
+        empresa={selectedEmpresaForAdmin}
+        showToast={showToast}
+      />
+
+      <LigarModal
+        isOpen={showLigarModal}
+        onClose={() => setShowLigarModal(false)}
+        onSuccess={fetchEmpresasLigadas}
+        empresas={empresas}
+        showToast={showToast}
+      />
+
+      {/* Toast */}
+      <div
+        className={`fixed bottom-6 right-6 px-5 py-3 rounded-xl font-semibold text-white shadow-xl transition-all duration-300 transform z-[200] ${
+          toast ? "translate-y-0 opacity-100" : "translate-y-16 opacity-0"
+        } ${toast?.isError ? "bg-red-500" : "bg-slate-800"}`}
+      >
+        {toast?.msg}
+      </div>
+    </div>
+  );
+}
