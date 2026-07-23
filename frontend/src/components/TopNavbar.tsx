@@ -1,8 +1,9 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, UserCircle, Search, LogOut } from "lucide-react";
+import { Bell, UserCircle, Search, LogOut, Building2, ChevronDown } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
+import { useTenant } from "@/hooks/useTenant";
 
 export function TopNavbar() {
   const pathname = usePathname();
@@ -17,6 +18,11 @@ export function TopNavbar() {
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const empresaMenuRef = useRef<HTMLDivElement>(null);
+
+  const { empresaId, naveId, setTenant } = useTenant();
+  const [empresas, setEmpresas] = useState<any[]>([]);
+  const [isEmpresaMenuOpen, setIsEmpresaMenuOpen] = useState(false);
 
   useEffect(() => {
     setUsername(localStorage.getItem("tci_username") || "Usuario");
@@ -33,10 +39,37 @@ export function TopNavbar() {
       if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
         setIsNotifOpen(false);
       }
+      if (empresaMenuRef.current && !empresaMenuRef.current.contains(event.target as Node)) {
+        setIsEmpresaMenuOpen(false);
+      }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [pathname, router]);
+
+  useEffect(() => {
+    fetch("/api/db/empresas")
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          let fetchedEmpresas = data.empresas || [];
+          
+          try {
+            const navesAsignadasStr = localStorage.getItem("tci_naves_asignadas");
+            if (role !== "ROOT" && role !== "ADMIN") {
+              const allowedNaves = JSON.parse(navesAsignadasStr || "[]");
+              fetchedEmpresas = fetchedEmpresas.map((emp: any) => ({
+                ...emp,
+                naves: emp.naves ? emp.naves.filter((n: any) => allowedNaves.includes(n.id)) : []
+              })).filter((emp: any) => emp.naves.length > 0);
+            }
+          } catch (e) {}
+
+          setEmpresas(fetchedEmpresas);
+        }
+      })
+      .catch(e => console.error(e));
+  }, [role]);
 
   const fetchNotifs = async () => {
     try {
@@ -74,6 +107,10 @@ export function TopNavbar() {
   const handleLogout = () => {
     localStorage.removeItem("tci_username");
     localStorage.removeItem("tci_role");
+    localStorage.removeItem("tci_reclutador_id");
+    localStorage.removeItem("tci_naves_asignadas");
+    localStorage.removeItem("tci_grupo_id");
+    localStorage.removeItem("tci_empresa_id");
 
     // In a real app we might also need to hit a logout API to clear the HttpOnly cookie, 
     // but for now deleting the cookie in JS or redirecting to a logout route is best.
@@ -90,7 +127,7 @@ export function TopNavbar() {
     if (pathname.startsWith("/crm")) return "CRM Reclutamiento";
     if (pathname.startsWith("/vacantes")) return "Gestión de Vacantes";
     if (pathname.startsWith("/calendario")) return "Calendario de Entrevistas";
-    if (pathname.startsWith("/candidatos")) return "Expediente de Candidato";
+    if (pathname.startsWith("/expedientes")) return "Expediente de Candidato";
     if (pathname.startsWith("/configuracion")) return "Configuración";
     if (pathname.startsWith("/usuarios")) return "Gestión de Usuarios";
     if (pathname.startsWith("/empresa")) return "Perfil de Empresa";
@@ -118,7 +155,76 @@ export function TopNavbar() {
       </div>
 
       {/* Right side items */}
-      <div className="flex items-center gap-5 text-white">
+      <div className="flex items-center gap-4 text-white">
+        
+        {/* Empresa Selector */}
+        {true && (
+          <div className="relative" ref={empresaMenuRef}>
+            <button
+              onClick={() => setIsEmpresaMenuOpen(!isEmpresaMenuOpen)}
+              className={`flex items-center gap-2 py-1.5 px-3 rounded-lg transition-colors focus:outline-none border border-white/20 hover:bg-white/10 ${!empresaId ? 'bg-amber-500/20 text-amber-100 border-amber-500/50' : 'bg-white/5'}`}
+            >
+              <Building2 size={18} className={!empresaId ? 'text-amber-400' : ''} />
+              <div className="text-sm font-semibold hidden md:block max-w-[150px] truncate">
+                {naveId
+                  ? (empresas.flatMap(e => e.naves || []).find(n => n.id === naveId)?.nombre || "Nave Desconocida")
+                  : empresaId 
+                    ? (empresas.find(e => e.id === empresaId)?.nombre || "Empresa Desconocida")
+                    : role === "ROOT" ? "Vista Global" : "Selecciona Empresa"}
+              </div>
+              <ChevronDown size={16} className="opacity-70" />
+            </button>
+
+            {isEmpresaMenuOpen && (
+              <div className="absolute right-0 mt-2 w-72 bg-white rounded-xl shadow-xl py-2 z-50 text-slate-800 border border-slate-100 max-h-96 overflow-y-auto">
+                <div className="px-4 py-2 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                  Seleccionar Vista
+                </div>
+                
+                {role === "ROOT" && (
+                  <button
+                    onClick={() => { setTenant(null, null); setIsEmpresaMenuOpen(false); window.location.reload(); }}
+                    className={`block w-full text-left px-4 py-3 text-sm transition-colors border-b border-slate-50 hover:bg-slate-50 ${!empresaId && !naveId ? 'bg-indigo-50 font-bold text-indigo-700' : 'text-slate-700'}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Building2 size={16} />
+                      <span>Todas las Empresas (Vista Global)</span>
+                    </div>
+                  </button>
+                )}
+
+                {empresas.map(emp => (
+                  <div key={emp.id} className="border-b border-slate-50 last:border-0">
+                    <button
+                      onClick={() => { setTenant(emp.id, null); setIsEmpresaMenuOpen(false); window.location.reload(); }}
+                      className={`block w-full text-left px-4 py-3 text-sm transition-colors hover:bg-slate-50 ${empresaId === emp.id && !naveId ? 'bg-indigo-50 font-bold text-indigo-700' : 'text-slate-700'}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Building2 size={16} className={empresaId === emp.id && !naveId ? "text-indigo-600" : "text-slate-400"} />
+                        <span className="truncate">{emp.nombre} (Todo)</span>
+                      </div>
+                    </button>
+                    {emp.naves && emp.naves.map((nave: any) => (
+                      <button
+                        key={nave.id}
+                        onClick={() => { setTenant(emp.id, nave.id); setIsEmpresaMenuOpen(false); window.location.reload(); }}
+                        className={`block w-full text-left pl-8 pr-4 py-2 text-sm transition-colors hover:bg-slate-50 ${naveId === nave.id ? 'bg-indigo-50 font-bold text-indigo-700' : 'text-slate-600'}`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <div className={`w-1.5 h-1.5 rounded-full ${naveId === nave.id ? 'bg-indigo-600' : 'bg-slate-300'}`}></div>
+                          <span className="truncate">{nave.nombre}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="w-px h-6 bg-white/20 hidden md:block"></div>
+
         <div className="relative" ref={notifRef}>
           <button 
             onClick={toggleNotifs}

@@ -49,6 +49,7 @@ export default function VacantesPage() {
                 onRemoveVacancy={v.removeVacancy}
                 onDragStart={v.handleDragStart}
                 onDrop={v.handleDrop}
+                availableNaves={v.availableNaves}
               />
             ))}
           </div>
@@ -82,9 +83,12 @@ export default function VacantesPage() {
                       <input type="checkbox" className="w-5 h-5 accent-indigo-500 cursor-pointer" checked={vac.activa} onChange={() => v.toggleVacancy(recIndex, vacIndex)} />
                     </div>
                     <div className="flex flex-wrap gap-2 mb-3">
-                      {Array.isArray(vac.naves) && vac.naves.map((n) => (
-                        <span key={n} className="bg-primary/10 text-primary px-3 py-1 rounded-full text-xs font-bold">Nave {n}</span>
-                      ))}
+                      {Array.isArray(vac.naves) && vac.naves.map((n) => {
+                        const naveName = v.availableNaves.find(an => an.id === n)?.nombre || n;
+                        return (
+                          <span key={n} className="bg-primary/10 text-primary px-3 py-1 rounded-full text-xs font-bold">{naveName}</span>
+                        );
+                      })}
                     </div>
                     {vac.palabras_clave && (
                       <div className="text-sm text-slate-500 mb-4 italic">
@@ -123,6 +127,7 @@ export default function VacantesPage() {
           vDetalles={v.vDetalles} setVDetalles={v.setVDetalles}
           vPalabrasClave={v.vPalabrasClave} setVPalabrasClave={v.setVPalabrasClave}
           vNaves={v.vNaves} toggleNave={v.toggleNave}
+          availableNaves={v.availableNaves}
           onSave={v.saveVacancy} onCancel={() => v.setIsModalOpen(false)}
         />
       )}

@@ -14,16 +14,19 @@ export default function Home() {
     document.title = "Plataforma TCi";
     setRole(localStorage.getItem("tci_role") || "USER");
     setLoading(false);
-      // Cargar badge de mensajes no leídos
-      fetch("/api/db/mensajes")
-        .then(r => r.json())
-        .then(data => {
-          if (Array.isArray(data)) {
-            const total = data.reduce((acc: number, c: any) => acc + (c.mensajes_no_leidos || 0), 0);
-            setNoLeidos(total);
-          }
-        })
-        .catch(() => { });
+    const storedEmpresaId = localStorage.getItem("tci_empresa_id");
+    const query = storedEmpresaId ? `?empresa_id=${storedEmpresaId}` : "";
+
+    // Cargar badge de mensajes no leídos
+    fetch(`/api/db/mensajes${query}`)
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          const total = data.reduce((acc: number, c: any) => acc + (c.mensajes_no_leidos || 0), 0);
+          setNoLeidos(total);
+        }
+      })
+      .catch(() => { });
   }, [router]);
 
   if (loading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-500">Cargando...</div>;
@@ -74,7 +77,7 @@ export default function Home() {
         </Link>
 
         {/* Expedientes */}
-        <Link href="/candidatos" className="bg-info rounded-lg relative overflow-hidden text-white shadow-sm hover:shadow-md transition-shadow block">
+        <Link href="/expedientes" className="bg-info rounded-lg relative overflow-hidden text-white shadow-sm hover:shadow-md transition-shadow block">
           <div className="p-5 relative z-10">
             <h3 className="text-3xl font-bold mb-1">Expedientes</h3>
             <p className="text-white/80 text-sm">Base de candidatos</p>
@@ -100,7 +103,7 @@ export default function Home() {
             Ir al módulo <span className="ml-1">→</span>
           </div>
         </Link>
-        
+
         {/* Calendario */}
         <Link href="/calendario" className="bg-indigo-500 rounded-lg relative overflow-hidden text-white shadow-sm hover:shadow-md transition-shadow block">
           <div className="p-5 relative z-10">
@@ -116,9 +119,9 @@ export default function Home() {
         </Link>
       </div>
 
-      {role === "ADMIN" && (
+      {(role === "ADMIN" || role === "ROOT") && (
         <>
-          <h2 className="text-lg font-bold text-slate-700 mb-4 mt-8">Configuración y Reportes</h2>
+          <h2 className="text-lg font-bold text-slate-700 mb-4 mt-8">Configuración y Administración</h2>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Link href="/usuarios" className="bg-white p-5 rounded-lg border-t-4 border-indigo-500 shadow-sm hover:shadow text-slate-700 transition-all">
               <div className="flex items-center gap-3 mb-2">
@@ -135,6 +138,16 @@ export default function Home() {
               </div>
               <p className="text-sm text-slate-500">Gestión de Prompts y personalidad del bot.</p>
             </Link>
+
+            {role === "ROOT" && (
+              <Link href="/saas" className="bg-white p-5 rounded-lg border-t-4 border-amber-500 shadow-sm hover:shadow text-slate-700 transition-all">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="text-2xl">🌐</div>
+                  <h3 className="font-bold text-lg">SaaS Admin</h3>
+                </div>
+                <p className="text-sm text-slate-500">Administración de empresas, naves y grupos.</p>
+              </Link>
+            )}
           </div>
         </>
       )}

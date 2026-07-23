@@ -8,6 +8,7 @@ import { ENV } from "@/lib/env";
 import { cookies } from "next/headers";
 
 const postSchema = z.object({
+  candidato_id: z.string().uuid("ID de candidato inválido").optional(),
   telefono: z.string().min(1, "Falta el campo telefono").max(20),
   ultimo_mensaje: z.string().optional(),
   ultimo_mensaje_rol: z.string().max(50).optional().default('user'),
@@ -31,6 +32,7 @@ export async function GET(request: Request) {
     let rol = "USER";
     let reclutador_id = null;
     let usuario = null;
+    let jwt_empresa_id: string | null = null;
 
     try {
       const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
@@ -38,8 +40,18 @@ export async function GET(request: Request) {
       rol = payload.rol as string;
       reclutador_id = payload.reclutador_id as string | null;
       usuario = payload.usuario as string;
+      jwt_empresa_id = payload.empresa_id as string | null;
     } catch (err) {
       return NextResponse.json({ error: "Token inválido" }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    let filter_empresa_id = searchParams.get('empresa_id');
+    let filter_nave_id = searchParams.get('nave_id');
+    
+    // Si no es ROOT, forzamos su empresa_id del JWT
+    if (rol !== "ROOT") {
+      filter_empresa_id = jwt_empresa_id;
     }
 
     let filterClause = `
@@ -51,13 +63,27 @@ export async function GET(request: Request) {
          ))
     `;
     let queryParams: any[] = [];
+    let paramIndex = 1;
+
+    if (filter_empresa_id) {
+      filterClause += ` AND c.empresa_id = $${paramIndex}`;
+      queryParams.push(filter_empresa_id);
+      paramIndex++;
+    }
+
+    if (filter_nave_id) {
+      filterClause += ` AND c.nave_id = $${paramIndex}`;
+      queryParams.push(filter_nave_id);
+      paramIndex++;
+    }
 
     // Eliminado el filtro por asignado_a para que todos los reclutadores vean todos los mensajes
 
     const res = await pool.query(`
       SELECT
+        c.id AS candidato_id,
         c.telefono,
-        COALESCE(NULLIF(TRIM(c.nombre_chat),''), NULLIF(TRIM(c.nombre_solicitud),''), NULLIF(TRIM(c.nombre_ine),''), NULLIF(TRIM(c.nombre),''), c.telefono) AS nombre,
+        COALESCE(NULLIF(TRIM(c.nombre_ine),''), NULLIF(TRIM(c.nombre_solicitud),''), NULLIF(TRIM(c.nombre_constancia),''), NULLIF(TRIM(c.nombre_chat),''), NULLIF(TRIM(c.nombre),''), c.telefono) AS nombre,
         c.estado,
         c.escalado,
         c.escalation_reason,
@@ -71,7 +97,7 @@ export async function GET(request: Request) {
         mb.ultimo_mensaje_at,
         mb.activo AS bandeja_activa
       FROM candidatos c
-      LEFT JOIN mensajes_bandeja mb ON mb.telefono = c.telefono
+      LEFT JOIN mensajes_bandeja mb ON mb.candidato_id = c.id
       ${filterClause}
       ORDER BY
         COALESCE(mb.ultimo_mensaje_at, c.ultima_interaccion) DESC
@@ -96,9 +122,13 @@ export async function POST(request: Request) {
     if (!token) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
+    let jwt_empresa_id: string | null = null;
+    let rol = "USER";
     try {
       const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
-      await jwtVerify(token, secretKey);
+      const { payload } = await jwtVerify(token, secretKey);
+      jwt_empresa_id = payload.empresa_id as string;
+      rol = payload.rol as string;
     } catch (err) {
       return NextResponse.json({ error: "Token inválido" }, { status: 401 });
     }
@@ -110,6 +140,7 @@ export async function POST(request: Request) {
     }
 
     const {
+      candidato_id,
       telefono,
       ultimo_mensaje,
       ultimo_mensaje_rol,
@@ -118,9 +149,32 @@ export async function POST(request: Request) {
       activo,
     } = parsed.data;
 
+    let targetCandidatoId = candidato_id;
+
+    if (!targetCandidatoId && telefono) {
+      // Fallback: If no candidato_id is provided, try to find one by phone
+      // IMPORTANT: In SaaS mode, N8N MUST send empresa_id (via JWT or URL) so we find the RIGHT candidate!
+      const { searchParams } = new URL(request.url);
+      let target_empresa = searchParams.get('empresa_id') || jwt_empresa_id;
+      
+      let candRes;
+      if (target_empresa) {
+         candRes = await pool.query('SELECT id FROM candidatos WHERE telefono = $1 AND empresa_id = $2 ORDER BY updated_at DESC LIMIT 1', [telefono, target_empresa]);
+      } else {
+         candRes = await pool.query('SELECT id FROM candidatos WHERE telefono = $1 ORDER BY updated_at DESC LIMIT 1', [telefono]);
+      }
+      
+      if (candRes.rowCount && candRes.rowCount > 0) {
+        targetCandidatoId = candRes.rows[0].id;
+      } else {
+        return NextResponse.json({ error: "No se encontró candidato para este teléfono" }, { status: 404 });
+      }
+    }
+
     // Upsert en mensajes_bandeja
     const setClauses: string[] = ['updated_at = NOW()'];
     const values: any[] = [
+      targetCandidatoId,
       telefono,
       ultimo_mensaje ?? '',
       ultimo_mensaje_rol,
@@ -128,7 +182,7 @@ export async function POST(request: Request) {
       mensajes_no_leidos,
       activo
     ];
-    let idx = 7;
+    let idx = 8;
 
     if (ultimo_mensaje !== undefined) {
       setClauses.push(`ultimo_mensaje = $${idx++}`);
@@ -153,9 +207,9 @@ export async function POST(request: Request) {
     }
 
     const res = await pool.query(
-      `INSERT INTO mensajes_bandeja (telefono, ultimo_mensaje, ultimo_mensaje_rol, asignado_a, mensajes_no_leidos, activo)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (telefono) DO UPDATE SET ${setClauses.join(', ')}
+      `INSERT INTO mensajes_bandeja (candidato_id, telefono, ultimo_mensaje, ultimo_mensaje_rol, asignado_a, mensajes_no_leidos, activo)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (candidato_id) DO UPDATE SET ${setClauses.join(', ')}
        RETURNING *`,
       values
     );
@@ -184,15 +238,24 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Token inválido" }, { status: 401 });
     }
     const body = await request.json();
-    const { telefono, asignado_a } = body;
+    const { candidato_id, telefono, asignado_a } = body;
 
-    if (!telefono) {
-      return NextResponse.json({ error: "Falta teléfono" }, { status: 400 });
+    let targetCandidatoId = candidato_id;
+
+    if (!targetCandidatoId && telefono) {
+      const candRes = await pool.query('SELECT id FROM candidatos WHERE telefono = $1 ORDER BY updated_at DESC LIMIT 1', [telefono]);
+      if (candRes.rowCount && candRes.rowCount > 0) {
+        targetCandidatoId = candRes.rows[0].id;
+      }
+    }
+
+    if (!targetCandidatoId) {
+      return NextResponse.json({ error: "Falta identificador del candidato" }, { status: 400 });
     }
 
     const res = await pool.query(
-      `UPDATE mensajes_bandeja SET asignado_a = $1, updated_at = NOW() WHERE telefono = $2 RETURNING *`,
-      [asignado_a, telefono]
+      `UPDATE mensajes_bandeja SET asignado_a = $1, updated_at = NOW() WHERE candidato_id = $2 RETURNING *`,
+      [asignado_a, targetCandidatoId]
     );
 
     return NextResponse.json({ success: true, updated: res.rows[0] });

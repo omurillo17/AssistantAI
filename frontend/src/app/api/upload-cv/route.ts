@@ -26,8 +26,12 @@ export async function POST(request: Request) {
       }
 
       if (typeof fileData === 'string') {
-        console.log("fileData was a string, parsing as base64 or raw string");
-        buffer = Buffer.from(fileData);
+        if (fileData === 'undefined' || fileData === 'null' || !fileData.trim()) {
+          return NextResponse.json({ error: "Datos de archivo inválidos" }, { status: 400 });
+        }
+        // Si viene en base64 o texto
+        const cleanStr = fileData.replace(/^data:application\/pdf;base64,/, '');
+        buffer = Buffer.from(cleanStr, 'base64');
       } else {
         file = fileData as unknown as File;
         originalFilename = (file as any)?.name || 'document.pdf';
@@ -37,9 +41,10 @@ export async function POST(request: Request) {
       // If sent as raw binary body
       const arrayBuffer = await request.arrayBuffer();
       buffer = Buffer.from(arrayBuffer);
-      if (buffer.length === 0) {
-        return NextResponse.json({ error: "Empty request body" }, { status: 400 });
-      }
+    }
+
+    if (buffer.length === 0 || (buffer.length <= 20 && buffer.toString().includes('undefined'))) {
+      return NextResponse.json({ error: "El archivo enviado está vacío o corrupto" }, { status: 400 });
     }
 
     // Sanitize filename

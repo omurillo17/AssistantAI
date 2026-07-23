@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Home,
   Kanban,
@@ -13,24 +13,42 @@ import {
   Settings,
   FolderOpen,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Activity
 } from "lucide-react";
 
 export function Sidebar() {
   const pathname = usePathname();
   const [isExpanded, setIsExpanded] = useState(false);
+  const [userRole, setUserRole] = useState("");
+
+  // Use effect to check root
+  useEffect(() => {
+    const role = localStorage.getItem("tci_role") || "";
+    setUserRole(role);
+  }, [pathname]);
 
   // Ocultar sidebar en la página de login
   if (pathname === "/login") return null;
 
   const menu = [
     { name: "Inicio", path: "/", icon: <Home size={18} /> },
-    { name: "Dashboards", path: "/dashboards", icon: <Kanban size={18} /> },
+    { name: "Dashboards", path: "/dashboards", icon: <Activity size={18} /> },
+    { name: "Expedientes", path: "/expedientes", icon: <FolderOpen size={18} /> },
     { name: "Mensajes", path: "/mensajes", icon: <MessageSquare size={18} /> },
     { name: "Vacantes", path: "/vacantes", icon: <Briefcase size={18} /> },
     { name: "Calendario", path: "/calendario", icon: <Calendar size={18} /> },
     { name: "Configuración", path: "/configuracion", icon: <Settings size={18} /> },
   ];
+
+  if (userRole === "ROOT" || userRole === "ADMIN" || userRole === "ENCARGADO") {
+    menu.push({ name: "Usuarios", path: "/usuarios", icon: <Users size={18} /> });
+  }
+
+  if (userRole === "ROOT") {
+    // Add a glowing / premium icon effect for SaaS Admin
+    menu.push({ name: "SaaS Admin", path: "/saas", icon: <Briefcase size={18} className="text-amber-500" /> });
+  }
 
   return (
     <aside className={`${isExpanded ? "w-64" : "w-[72px]"} bg-white border-r border-slate-200 flex flex-col flex-shrink-0 h-screen sticky top-0 transition-all duration-300 z-50 relative`}>

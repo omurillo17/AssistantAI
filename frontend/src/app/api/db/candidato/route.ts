@@ -16,6 +16,7 @@ const patchBodySchema = z.object({
   escalation_reason: z.string().nullable().optional(),
   event_id: z.string().nullable().optional(),
   asignado_a: z.string().nullable().optional(),
+  empresa_id: z.string().uuid().optional(),
 });
 
 const WAHA_BASE = process.env.WAHA_BASE_URL || "http://localhost:3000";
@@ -40,6 +41,7 @@ export async function GET(request: Request) {
 
   let rol = "USER";
   let reclutador_id: string | null = null;
+  let jwt_empresa_id: string | null = null;
   
   try {
     const cookieStore = await cookies();
@@ -51,14 +53,33 @@ export async function GET(request: Request) {
     const { payload } = await jwtVerify(token, secret);
     rol = payload.rol as string;
     reclutador_id = payload.reclutador_id as string;
+    jwt_empresa_id = payload.empresa_id as string;
   } catch (err) {
     return NextResponse.json({ error: "Token inválido" }, { status: 401 });
+  }
+
+  let filter_empresa_id = searchParams.get('empresa_id');
+  let filter_nave_id = searchParams.get('nave_id');
+  if (rol !== "ROOT") {
+    filter_empresa_id = jwt_empresa_id;
   }
 
   try {
     let filterClause = "telefono LIKE $1";
     const queryParams: any[] = [`%${telefono}%`];
     let idx = 2;
+
+    if (filter_empresa_id) {
+      filterClause += ` AND empresa_id = $${idx}`;
+      queryParams.push(filter_empresa_id);
+      idx++;
+    }
+
+    if (filter_nave_id) {
+      filterClause += ` AND nave_id = $${idx}`;
+      queryParams.push(filter_nave_id);
+      idx++;
+    }
 
     if (rol === "RECLUTADOR" && reclutador_id) {
       filterClause += `
@@ -67,6 +88,7 @@ export async function GET(request: Request) {
         )
       `;
       queryParams.push(reclutador_id);
+      idx++;
     }
 
     const res = await pool.query(
@@ -95,12 +117,20 @@ export async function PATCH(request: Request) {
     if (!token) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
+    let jwt_empresa_id: string | null = null;
+    let rol = "USER";
     try {
       const secretKey = new TextEncoder().encode(process.env.JWT_SECRET || 'secret-key-default');
-      await jwtVerify(token, secretKey);
+      const { payload } = await jwtVerify(token, secretKey);
+      jwt_empresa_id = payload.empresa_id as string;
+      rol = payload.rol as string;
     } catch (err) {
       return NextResponse.json({ error: "Token inválido" }, { status: 401 });
     }
+    
+    const { searchParams } = new URL(request.url);
+    let target_empresa = searchParams.get('empresa_id') || jwt_empresa_id;
+    let target_nave = searchParams.get('nave_id');
     const body = await request.json();
     const parsed = patchBodySchema.safeParse(body);
 
@@ -109,7 +139,7 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Datos inválidos", details: parsed.error.issues }, { status: 400 });
     }
 
-    const { telefono, estado, notas, vacante_interes, escalado, escalation_reason, event_id, asignado_a } = parsed.data;
+    const { telefono, estado, notas, vacante_interes, escalado, escalation_reason, event_id, asignado_a, empresa_id } = parsed.data;
 
     const campos: string[] = ['updated_at = NOW()'];
     const valores: (string | boolean | null)[] = [];
@@ -139,6 +169,10 @@ export async function PATCH(request: Request) {
       campos.push(`asignado_a = $${idx++}`);
       valores.push(asignado_a);
     }
+    if (empresa_id !== undefined) {
+      campos.push(`empresa_id = $${idx++}`);
+      valores.push(empresa_id);
+    }
     if (escalado !== undefined) {
       campos.push(`escalado = $${idx++}`);
       valores.push(escalado);
@@ -155,8 +189,19 @@ export async function PATCH(request: Request) {
     }
 
     valores.push(telefono);
+    let target_empresa_clause = "";
+    if (target_empresa) {
+        target_empresa_clause += ` AND empresa_id = $${idx + 1}`;
+        valores.push(target_empresa);
+        idx++;
+    }
+    if (target_nave) {
+        target_empresa_clause += ` AND nave_id = $${idx + 1}`;
+        valores.push(target_nave);
+        idx++;
+    }
     const res = await pool.query(
-      `UPDATE candidatos SET ${campos.join(', ')} WHERE telefono = $${idx} RETURNING id, telefono, estado, escalado, escalated_at, updated_at`,
+      `UPDATE candidatos SET ${campos.join(', ')} WHERE telefono = $${idx - target_empresa_clause.split('AND').length + 1}${target_empresa_clause} RETURNING id, telefono, estado, escalado, escalated_at, updated_at`,
       valores
     );
 

@@ -34,7 +34,10 @@ export async function POST(request: Request) {
 
     // Query using normalized username
     const res = await pool.query(
-      `SELECT id, usuario, password_hash, rol, reclutador_id FROM usuarios WHERE usuario = $1`,
+      `SELECT u.id, u.usuario, u.password_hash, u.rol, u.reclutador_id, u.empresa_id, u.grupo_id, g.naves_asignadas 
+       FROM usuarios u
+       LEFT JOIN grupos_reclutamiento g ON u.grupo_id = g.id 
+       WHERE u.usuario = $1`,
       [normalizedUser]
     );
 
@@ -48,14 +51,30 @@ export async function POST(request: Request) {
     if (passwordMatch) {
       // Create a JWT token
       const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
-      const token = await new SignJWT({ authenticated: true, usuario: user.usuario, rol: user.rol, reclutador_id: user.reclutador_id })
+      const token = await new SignJWT({ 
+        authenticated: true, 
+        usuario: user.usuario, 
+        rol: user.rol, 
+        reclutador_id: user.reclutador_id,
+        empresa_id: user.empresa_id,
+        grupo_id: user.grupo_id,
+        naves_asignadas: user.naves_asignadas || []
+      })
         .setProtectedHeader({ alg: "HS256" })
         .setIssuedAt()
         .setExpirationTime("24h")
         .sign(secretKey);
 
       // Create response and set HttpOnly Cookie
-      const response = NextResponse.json({ success: true, usuario: user.usuario, rol: user.rol, reclutador_id: user.reclutador_id });
+      const response = NextResponse.json({ 
+        success: true, 
+        usuario: user.usuario, 
+        rol: user.rol, 
+        reclutador_id: user.reclutador_id,
+        empresa_id: user.empresa_id,
+        grupo_id: user.grupo_id,
+        naves_asignadas: user.naves_asignadas || []
+      });
       response.cookies.set("tci_session", token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",

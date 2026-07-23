@@ -42,24 +42,26 @@ export async function GET(
       [telefono]
     );
 
+    // Info del candidato
+    const candRes = await pool.query(
+      `SELECT id as candidato_id, telefono, COALESCE(NULLIF(TRIM(nombre_ine),''), NULLIF(TRIM(nombre_solicitud),''), NULLIF(TRIM(nombre_constancia),''), NULLIF(TRIM(nombre_chat),''), NULLIF(TRIM(nombre),''), telefono) AS nombre,
+              estado, escalado, escalation_reason, vacante_interes, nave_interes, correo
+       FROM candidatos WHERE telefono = $1 ORDER BY updated_at DESC LIMIT 1`,
+      [telefono]
+    );
+
+    const candidatoId = candRes.rows[0]?.candidato_id;
+
     // Solo resetear si NO es modo preview
     const { searchParams } = new URL(_request.url);
     const isPreview = searchParams.get('preview') === 'true';
 
-    if (!isPreview) {
+    if (!isPreview && candidatoId) {
       await pool.query(
-        `UPDATE mensajes_bandeja SET mensajes_no_leidos = 0 WHERE telefono = $1`,
-        [telefono]
+        `UPDATE mensajes_bandeja SET mensajes_no_leidos = 0 WHERE candidato_id = $1`,
+        [candidatoId]
       );
     }
-
-    // Info del candidato
-    const candRes = await pool.query(
-      `SELECT telefono, COALESCE(NULLIF(TRIM(nombre_chat),''), NULLIF(TRIM(nombre_solicitud),''), NULLIF(TRIM(nombre_ine),''), NULLIF(TRIM(nombre),''), telefono) AS nombre,
-              estado, escalado, escalation_reason, vacante_interes, nave_interes, correo
-       FROM candidatos WHERE telefono = $1 LIMIT 1`,
-      [telefono]
-    );
 
     return NextResponse.json({
       candidato: candRes.rows[0] || null,
@@ -92,10 +94,14 @@ export async function POST(
 
     // 1. Buscar candidato_id
     const candRes = await pool.query(
-      `SELECT id FROM candidatos WHERE telefono = $1 LIMIT 1`,
+      `SELECT id FROM candidatos WHERE telefono = $1 ORDER BY updated_at DESC LIMIT 1`,
       [telefono]
     );
     const candidato_id = candRes.rows[0]?.id || null;
+
+    if (!candidato_id) {
+        return NextResponse.json({ error: 'Candidato no encontrado en la base de datos' }, { status: 404 });
+    }
 
     // 2. Guardar en conversation_history (Para que UI lo vea instantáneo)
     const savedMsg = await pool.query(
@@ -107,15 +113,15 @@ export async function POST(
 
     // 3. Actualizar mensajes_bandeja
     await pool.query(
-      `INSERT INTO mensajes_bandeja (telefono, ultimo_mensaje, ultimo_mensaje_rol, asignado_a, mensajes_no_leidos, activo)
-       VALUES ($1, $2, 'assistant', $3, 0, TRUE)
-       ON CONFLICT (telefono) DO UPDATE SET
-         ultimo_mensaje = $2,
+      `INSERT INTO mensajes_bandeja (candidato_id, telefono, ultimo_mensaje, ultimo_mensaje_rol, asignado_a, mensajes_no_leidos, activo)
+       VALUES ($1, $2, $3, 'assistant', $4, 0, TRUE)
+       ON CONFLICT (candidato_id) DO UPDATE SET
+         ultimo_mensaje = $3,
          ultimo_mensaje_rol = 'assistant',
          ultimo_mensaje_at = NOW(),
-         asignado_a = COALESCE($3, mensajes_bandeja.asignado_a),
+         asignado_a = COALESCE($4, mensajes_bandeja.asignado_a),
          updated_at = NOW()`,
-      [telefono, texto.trim(), asignado_a || null]
+      [candidato_id, telefono, texto.trim(), asignado_a || null]
     );
 
     // 4. Guardar en cola_mensajes (Outbox Pattern)

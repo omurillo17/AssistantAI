@@ -31,6 +31,23 @@ export default function LoginPage() {
         localStorage.setItem("tci_role", data.rol || "USER");
         if (data.reclutador_id) {
           localStorage.setItem("tci_reclutador_id", data.reclutador_id);
+        } else {
+          localStorage.removeItem("tci_reclutador_id");
+        }
+        if (data.empresa_id) {
+          localStorage.setItem("tci_empresa_id", data.empresa_id);
+        } else {
+          localStorage.removeItem("tci_empresa_id");
+        }
+        if (data.grupo_id) {
+          localStorage.setItem("tci_grupo_id", data.grupo_id);
+        } else {
+          localStorage.removeItem("tci_grupo_id");
+        }
+        if (data.naves_asignadas && Array.isArray(data.naves_asignadas)) {
+          localStorage.setItem("tci_naves_asignadas", JSON.stringify(data.naves_asignadas));
+        } else {
+          localStorage.removeItem("tci_naves_asignadas");
         }
         router.push("/");
       } else {

@@ -25,8 +25,8 @@ export async function POST(request: Request) {
       identidad_motivo
     } = data;
     
-    let safe_nombre_chat = (nombre_chat || '').trim();
-    if (safe_nombre_chat === telefono || /^\+?\d+$/.test(safe_nombre_chat)) {
+    let safe_nombre_chat = (nombre_chat || '').replace(/[\uFE0F\u200B-\u200D\u200E\u200F\uFEFF]/g, '').trim();
+    if (!safe_nombre_chat || safe_nombre_chat === telefono || safe_nombre_chat === 'Candidato' || /^\+?\d+$/.test(safe_nombre_chat)) {
       safe_nombre_chat = '';
     }
 
@@ -49,14 +49,10 @@ export async function POST(request: Request) {
     const esBloqueado = identidad_bloqueada === 'true';
     const esCV = tipo_origen === 'CV' || tipo_origen === 'SOLICITUD';
     const esINE = tipo_origen === 'INE';
-    const esConstancia = tipo_origen === 'CONSTANCIA';
+    const esConstancia = ['CONSTANCIA', 'CSF', 'RFC', 'SAT'].includes((tipo_origen || '').toUpperCase());
 
     if (esBloqueado) {
-      event = { type: 'BLOQUEO_IDENTIDAD' }; // Debemos agregar esto o fallback a un error
-      // Si la máquina no tiene BLOQUEO_IDENTIDAD, forzaremos el estado manualmente después, pero
-      // lo ideal es mandarle algo que lo mueva. Por ahora no lo enviamos si no está en stateMachine,
-      // pero el SQL lo forzaba a 'DOCUMENTOS_NO_COINCIDEN'. 
-      // Emularemos la lógica original forzando el estado al final si es necesario.
+      event = { type: 'BLOQUEO_IDENTIDAD' };
     } else if (esCV) {
       event = { type: 'RECIBE_CV' };
     } else if (esINE || esConstancia) {
@@ -99,8 +95,43 @@ export async function POST(request: Request) {
       }
     }
 
+    // Extraer vacante con fallbacks inteligentes
+    let safe_vacante = (vacante || '').trim();
+    if (!safe_vacante || safe_vacante === 'General') {
+      const matchVacanteResumen = (resumen_ia_final || '').match(/Vacante:\s*([^.\n]+)/i);
+      if (matchVacanteResumen) {
+        safe_vacante = matchVacanteResumen[1].trim();
+      } else if (dbCandidato.vacante_interes && dbCandidato.vacante_interes !== 'General') {
+        safe_vacante = dbCandidato.vacante_interes;
+      }
+    }
+
     // Parseo seguro
-    const parsedDatos = typeof datos_documento === 'string' ? JSON.parse(datos_documento) : datos_documento;
+    let parsedDatos: any = {};
+    if (typeof datos_documento === 'string') {
+      try { parsedDatos = JSON.parse(datos_documento); } catch (e) { parsedDatos = {}; }
+    } else if (datos_documento && typeof datos_documento === 'object') {
+      parsedDatos = datos_documento;
+    }
+    if (parsedDatos && typeof parsedDatos === 'object' && link_cv) {
+      parsedDatos.url = link_cv;
+    }
+
+    const nombreDocExtrahido = (parsedDatos?.nombre_completo || parsedDatos?.nombre || '').replace(/[\uFE0F\u200B-\u200D\u200E\u200F\uFEFF]/g, '').trim();
+
+    let safe_nombre = (nombre || '').replace(/[\uFE0F\u200B-\u200D\u200E\u200F\uFEFF]/g, '').trim();
+    if (!safe_nombre || safe_nombre === 'Candidato' || safe_nombre === 'No registrado' || /^\+?\d+$/.test(safe_nombre)) {
+      safe_nombre = nombreDocExtrahido || 'Candidato';
+    }
+
+    // Obtener empresa_id si viene en el payload o usar la empresa por defecto de la BD
+    let targetEmpresaId = data.empresa_id || null;
+    if (!targetEmpresaId) {
+      const defaultEmpresaRes = await pool.query('SELECT id FROM empresas ORDER BY created_at ASC LIMIT 1');
+      if (defaultEmpresaRes.rowCount && defaultEmpresaRes.rowCount > 0) {
+        targetEmpresaId = defaultEmpresaRes.rows[0].id;
+      }
+    }
 
     // Construcción del upsert gigante pero ahora en backend
     const upsertQuery = `
@@ -108,7 +139,7 @@ export async function POST(request: Request) {
         telefono, nombre, vacante_interes, experiencia, resumen_ia, tiene_cv, estado, 
         ultima_interaccion, datos_ine, datos_rfc, cv_manual, nombre_confirmado, 
         veredicto, motivo_analisis, link_cv, nombre_chat, edad, correo, 
-        filtros_tecnicos, nombre_ine, nombre_constancia, nombre_solicitud
+        filtros_tecnicos, nombre_ine, nombre_constancia, nombre_solicitud, empresa_id, vacante_solicitada
       ) VALUES (
         $1,
         CAST($2 AS text),
@@ -119,9 +150,9 @@ export async function POST(request: Request) {
         $7, -- estado final
         NOW(),
         CASE WHEN $15 = 'true' THEN NULL WHEN $4 = 'INE' THEN CAST($8 AS jsonb) ELSE NULL END,
-        CASE WHEN $15 = 'true' THEN NULL WHEN $4 = 'CONSTANCIA' THEN CAST($18 AS text) ELSE NULL END,
+        CASE WHEN $15 = 'true' THEN NULL WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN CAST($18 AS text) ELSE NULL END,
         CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN CAST($8 AS jsonb) ELSE NULL END,
-        CASE WHEN $15 = 'true' THEN FALSE WHEN $4 IN ('INE', 'CONSTANCIA') THEN TRUE ELSE FALSE END,
+        CASE WHEN $15 = 'true' THEN FALSE WHEN $4 IN ('INE', 'CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN TRUE ELSE FALSE END,
         CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN COALESCE($9, 'VIABLE') ELSE NULL END,
         CASE 
             WHEN $15 = 'true' THEN COALESCE(NULLIF($16, ''), $10)
@@ -134,13 +165,16 @@ export async function POST(request: Request) {
         $14,
         CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $17 ELSE NULL END,
         CASE WHEN $15 = 'true' THEN NULL WHEN $4 = 'INE' THEN CAST($2 AS text) ELSE NULL END,
-        CASE WHEN $15 = 'true' THEN NULL WHEN $4 = 'CONSTANCIA' THEN CAST($2 AS text) ELSE NULL END,
-        CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN CAST($2 AS text) ELSE NULL END
+        CASE WHEN $15 = 'true' THEN NULL WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN CAST($2 AS text) ELSE NULL END,
+        CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN CAST($2 AS text) ELSE NULL END,
+        $19,
+        COALESCE(NULLIF($3, ''), 'General')
       )
-      ON CONFLICT (telefono) DO UPDATE SET
+      ON CONFLICT (telefono, empresa_id) DO UPDATE SET
         ultima_interaccion = NOW(),
         nombre = CASE WHEN candidatos.nombre IS NULL OR candidatos.nombre = '' OR candidatos.nombre = 'Candidato' THEN CAST($2 AS text) ELSE candidatos.nombre END,
-        vacante_interes = COALESCE(NULLIF($3, ''), candidatos.vacante_interes),
+        vacante_interes = COALESCE(NULLIF($3, ''), candidatos.vacante_interes, 'General'),
+        vacante_solicitada = COALESCE(NULLIF($3, ''), candidatos.vacante_solicitada, candidatos.vacante_interes, 'General'),
         experiencia = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $5 ELSE candidatos.experiencia END,
         tiene_cv = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN TRUE ELSE candidatos.tiene_cv END,
         cv_manual = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN CAST($8 AS jsonb) ELSE candidatos.cv_manual END,
@@ -152,13 +186,13 @@ export async function POST(request: Request) {
         END,
         link_cv = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN COALESCE($11, candidatos.link_cv) ELSE candidatos.link_cv END,
         filtros_tecnicos = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN COALESCE($17, candidatos.filtros_tecnicos) ELSE candidatos.filtros_tecnicos END,
-        nombre_confirmado = CASE WHEN $15 = 'true' THEN FALSE WHEN $4 IN ('INE', 'CONSTANCIA') THEN TRUE ELSE candidatos.nombre_confirmado END,
+        nombre_confirmado = CASE WHEN $15 = 'true' THEN FALSE WHEN $4 IN ('INE', 'CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN TRUE ELSE candidatos.nombre_confirmado END,
         datos_ine = CASE WHEN $15 = 'true' THEN candidatos.datos_ine WHEN $4 = 'INE' THEN CAST($8 AS jsonb) ELSE candidatos.datos_ine END,
-        datos_rfc = CASE WHEN $15 = 'true' THEN candidatos.datos_rfc WHEN $4 = 'CONSTANCIA' THEN CAST($18 AS text) ELSE candidatos.datos_rfc END,
+        datos_rfc = CASE WHEN $15 = 'true' THEN candidatos.datos_rfc WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN CAST($18 AS text) ELSE candidatos.datos_rfc END,
         nombre_ine = CASE WHEN $15 = 'true' THEN candidatos.nombre_ine WHEN $4 = 'INE' THEN CAST($2 AS text) ELSE candidatos.nombre_ine END,
-        nombre_constancia = CASE WHEN $15 = 'true' THEN candidatos.nombre_constancia WHEN $4 = 'CONSTANCIA' THEN CAST($2 AS text) ELSE candidatos.nombre_constancia END,
+        nombre_constancia = CASE WHEN $15 = 'true' THEN candidatos.nombre_constancia WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN CAST($2 AS text) ELSE candidatos.nombre_constancia END,
         nombre_solicitud = CASE WHEN $4 IN ('CV', 'SOLICITUD') AND candidatos.nombre_solicitud IS NULL THEN CAST($2 AS text) ELSE candidatos.nombre_solicitud END,
-        nombre_chat = COALESCE(candidatos.nombre_chat, NULLIF($12, '')),
+        nombre_chat = COALESCE(NULLIF($12, ''), candidatos.nombre_chat),
         edad = COALESCE(NULLIF($13, ''), candidatos.edad),
         correo = COALESCE(NULLIF($14, ''), candidatos.correo),
         estado = $7,
@@ -167,7 +201,7 @@ export async function POST(request: Request) {
 
     await pool.query(upsertQuery, [
       telefono,                 // $1
-      nombre || 'Candidato',    // $2
+      safe_nombre,              // $2
       vacante,                  // $3
       tipo_origen,              // $4
       experiencia,              // $5
@@ -183,7 +217,8 @@ export async function POST(request: Request) {
       identidad_bloqueada,      // $15
       identidad_motivo,         // $16
       filtros_tecnicos,         // $17
-      datos_documento ? JSON.stringify(parsedDatos) : null // $18
+      datos_documento ? JSON.stringify(parsedDatos) : null, // $18
+      targetEmpresaId           // $19
     ]);
 
     // Insertar el mensaje del usuario (usualmente un archivo adjunto enviado por WhatsApp)
