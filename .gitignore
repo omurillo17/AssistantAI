@@ -1,4 +1,7 @@
 *.env
+*.env.local
+.env.*
+!.env.example
 sk.txt
 waha_data_final/
 waha_files_final/
@@ -6,3 +9,4 @@ waha_files_final/
 Assistant AI PROD v.1.7.json
 Assistant AI
 *.dump
+node_modules/

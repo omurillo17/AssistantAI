@@ -1,102 +1,14 @@
 -- ============================================
--- ASSISTANT AI - DATABASE SETUP
--- Grupo Virgo
+-- ASSISTANT AI - DATABASE SETUP (COMPLETO)
+-- Plataforma SaaS Multi-tenant de Reclutamiento
 -- ============================================
 
--- Habilitar extensión UUID
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ============================================
--- TABLA: candidatos
--- Almacena información de todos los candidatos
+-- TRIGGER FUNCTION (reutilizada por varias tablas)
 -- ============================================
 
-CREATE TABLE IF NOT EXISTS candidatos (
-    -- Identificadores
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    telefono VARCHAR(15) UNIQUE NOT NULL,
-    nombre VARCHAR(100),
-    nombre_confirmado BOOLEAN DEFAULT FALSE,
-    nombre_chat VARCHAR(255),
-    nombre_solicitud VARCHAR(255),
-    nombre_ine VARCHAR(255),
-    nombre_constancia VARCHAR(255),
-    edad VARCHAR(50),
-    correo VARCHAR(255),
-    
-    -- Estado del proceso
-    estado VARCHAR(50) DEFAULT 'NUEVO',
-    vacante_interes VARCHAR(50),
-    tiene_cv BOOLEAN DEFAULT FALSE,
-    cv_manual JSONB,
-    datos_ine JSONB,
-    datos_rfc TEXT,
-    link_cv TEXT,
-    
-    -- Análisis de CV (si aplica)
-    experiencia TEXT,
-    veredicto VARCHAR(50),
-    vacante_solicitada VARCHAR(50),
-    vacante_sugerida VARCHAR(50),
-    motivo_analisis TEXT,
-    filtros_tecnicos TEXT,
-    
-    -- Memoria conversacional
-    resumen_ia TEXT,
-    ultima_actualizacion TIMESTAMP DEFAULT NOW(),
-    ultima_interaccion TIMESTAMP DEFAULT NOW(),
-    
-    -- Citas
-    ultima_cita TIMESTAMP,
-    total_citas INTEGER DEFAULT 0,
-    fecha_entrevista VARCHAR(255),
-    
-    -- Escalaciones
-    escalado BOOLEAN DEFAULT FALSE,
-    escalation_reason TEXT,
-    escalated_at TIMESTAMP,
-    
-    -- Metadata
-    privacidad_aceptada BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW(),
-    source VARCHAR(50) DEFAULT 'whatsapp',
-    
-    -- Constraints
-    CONSTRAINT valid_estado CHECK (estado IN (
-        'NUEVO',
-        'INTERESADO',
-        'CV_RECIBIDO',
-        'CV_MANUAL',
-        'CITA_AGENDADA',
-        'ESCALADO',
-        'CARTERA_GENERAL',
-        'ENTREVISTADO',
-        'CONTRATADO',
-        'RECHAZADO',
-        'INACTIVO',
-        'INE_VALIDADA',
-        'RECORDATORIO_ENVIADO',
-        'DOCUMENTOS_NO_COINCIDEN'
-    )),
-
-    
-    CONSTRAINT valid_veredicto CHECK (veredicto IN (
-        'VIABLE',
-        'REUBICACION',
-        'CARTERA_GENERAL',
-        NULL
-    ))
-);
-
--- Índices para optimizar consultas
-CREATE INDEX idx_candidatos_telefono ON candidatos(telefono);
-CREATE INDEX idx_candidatos_estado ON candidatos(estado);
-CREATE INDEX idx_candidatos_vacante ON candidatos(vacante_interes);
-CREATE INDEX idx_candidatos_created ON candidatos(created_at DESC);
-CREATE INDEX idx_candidatos_escalado ON candidatos(escalado) WHERE escalado = TRUE;
-
--- Trigger para actualizar updated_at automáticamente
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -105,10 +17,322 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- ============================================
+-- TABLA: empresas
+-- Tenants del sistema SaaS
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS empresas (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    nombre VARCHAR(255) NOT NULL,
+    telefono_whatsapp VARCHAR(50) DEFAULT '',
+    prompt_ia TEXT DEFAULT '',
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- ============================================
+-- TABLA: naves
+-- Sucursales/plantas por empresa
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS naves (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    empresa_id UUID NOT NULL REFERENCES empresas(id) ON DELETE CASCADE,
+    nombre VARCHAR(255) NOT NULL,
+    rfc VARCHAR(50) DEFAULT '',
+    ubicacion_maps TEXT DEFAULT '',
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_naves_empresa ON naves(empresa_id);
+
+-- ============================================
+-- TABLA: empresas_ligadas
+-- Relacion entre empresas para compartir datos
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS empresas_ligadas (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    empresa_origen_id UUID NOT NULL REFERENCES empresas(id) ON DELETE CASCADE,
+    empresa_destino_id UUID NOT NULL REFERENCES empresas(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    CONSTRAINT uq_empresas_ligadas UNIQUE (empresa_origen_id, empresa_destino_id)
+);
+
+-- ============================================
+-- TABLA: grupos_reclutamiento
+-- Grupos de reclutadores con naves asignadas
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS grupos_reclutamiento (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    empresa_id UUID NOT NULL REFERENCES empresas(id) ON DELETE CASCADE,
+    nombre VARCHAR(255) NOT NULL,
+    naves_asignadas JSONB DEFAULT '[]',
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_grupos_empresa ON grupos_reclutamiento(empresa_id);
+
+-- ============================================
+-- TABLA: reclutadores
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS reclutadores (
+    id VARCHAR(100) PRIMARY KEY,
+    nombre VARCHAR(255) NOT NULL,
+    activo BOOLEAN DEFAULT TRUE,
+    telefono VARCHAR(50) DEFAULT '',
+    calendar_id VARCHAR(255) DEFAULT '',
+    color VARCHAR(20) DEFAULT '#6366f1',
+    empresa_id UUID REFERENCES empresas(id) ON DELETE SET NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_reclutadores_empresa ON reclutadores(empresa_id);
+
+CREATE TRIGGER update_reclutadores_updated_at
+    BEFORE UPDATE ON reclutadores
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================
+-- TABLA: vacantes_def
+-- Definicion de vacantes por reclutador
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS vacantes_def (
+    id VARCHAR(100) PRIMARY KEY,
+    reclutador_id VARCHAR(100) NOT NULL REFERENCES reclutadores(id) ON DELETE CASCADE,
+    nombre VARCHAR(255) NOT NULL,
+    naves TEXT DEFAULT '[]',
+    detalles TEXT DEFAULT '',
+    palabras_clave TEXT DEFAULT '',
+    filtros JSONB DEFAULT '[]',
+    activa BOOLEAN DEFAULT TRUE,
+    orden INTEGER DEFAULT 0,
+    empresa_id UUID REFERENCES empresas(id) ON DELETE SET NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_vacantes_reclutador ON vacantes_def(reclutador_id);
+CREATE INDEX IF NOT EXISTS idx_vacantes_empresa ON vacantes_def(empresa_id);
+
+CREATE TRIGGER update_vacantes_def_updated_at
+    BEFORE UPDATE ON vacantes_def
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================
+-- TABLA: usuarios
+-- Usuarios del CRM/panel de administracion
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS usuarios (
+    id SERIAL PRIMARY KEY,
+    usuario VARCHAR(100) UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    actual_password TEXT,
+    rol VARCHAR(50) DEFAULT 'USER',
+    reclutador_id VARCHAR(100) REFERENCES reclutadores(id) ON DELETE SET NULL,
+    grupo_id UUID REFERENCES grupos_reclutamiento(id) ON DELETE SET NULL,
+    empresa_id UUID REFERENCES empresas(id) ON DELETE SET NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    CONSTRAINT valid_rol CHECK (rol IN ('ROOT', 'ADMIN', 'USER', 'RECLUTADOR', 'ENCARGADO'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_usuarios_empresa ON usuarios(empresa_id);
+
+-- ============================================
+-- TABLA: candidatos
+-- Tabla principal de candidatos
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS candidatos (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    telefono VARCHAR(20) NOT NULL,
+    nombre VARCHAR(255),
+    nombre_confirmado BOOLEAN DEFAULT FALSE,
+    nombre_chat VARCHAR(255),
+    nombre_solicitud VARCHAR(255),
+    nombre_ine VARCHAR(255),
+    nombre_constancia VARCHAR(255),
+    edad VARCHAR(50),
+    correo VARCHAR(255),
+
+    estado VARCHAR(50) DEFAULT 'NUEVO',
+    vacante_interes VARCHAR(100),
+    nave_interes VARCHAR(100),
+    tiene_cv BOOLEAN DEFAULT FALSE,
+    cv_manual JSONB,
+    datos_ine JSONB,
+    datos_rfc TEXT,
+    link_cv TEXT,
+
+    experiencia TEXT,
+    veredicto VARCHAR(50),
+    vacante_solicitada VARCHAR(100),
+    vacante_sugerida VARCHAR(100),
+    motivo_analisis TEXT,
+    filtros_tecnicos TEXT,
+
+    resumen_ia TEXT,
+    ultima_actualizacion TIMESTAMP DEFAULT NOW(),
+    ultima_interaccion TIMESTAMP DEFAULT NOW(),
+
+    ultima_cita TIMESTAMP,
+    total_citas INTEGER DEFAULT 0,
+    fecha_entrevista VARCHAR(255),
+    event_id VARCHAR(255),
+
+    escalado BOOLEAN DEFAULT FALSE,
+    escalation_reason TEXT,
+    escalated_at TIMESTAMP,
+
+    asignado_a VARCHAR(255),
+    mensajes_bot_enviados INTEGER DEFAULT 0,
+    privacidad_aceptada BOOLEAN DEFAULT FALSE,
+    ultima_ejecucion_id VARCHAR(255),
+
+    empresa_id UUID REFERENCES empresas(id) ON DELETE SET NULL,
+    nave_id UUID REFERENCES naves(id) ON DELETE SET NULL,
+
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    source VARCHAR(50) DEFAULT 'whatsapp',
+
+    CONSTRAINT uq_candidato_telefono_empresa UNIQUE (telefono, empresa_id),
+
+    CONSTRAINT valid_estado CHECK (estado IN (
+        'NUEVO', 'INTERESADO', 'CV_RECIBIDO', 'CV_MANUAL',
+        'FILTROS_COMPLETADOS', 'INE_VALIDADA',
+        'CITA_AGENDADA', 'CITA_CANCELADA', 'RECORDATORIO_ENVIADO',
+        'ESCALADO', 'DOCUMENTOS_NO_COINCIDEN',
+        'ENTREVISTADO', 'CONTRATADO',
+        'RECHAZADO', 'CARTERA_GENERAL', 'INACTIVO'
+    )),
+
+    CONSTRAINT valid_veredicto CHECK (veredicto IS NULL OR veredicto IN (
+        'VIABLE', 'NO VIABLE', 'REUBICACION', 'CARTERA_GENERAL', 'RECHAZADO'
+    ))
+);
+
+CREATE INDEX IF NOT EXISTS idx_candidatos_telefono ON candidatos(telefono);
+CREATE INDEX IF NOT EXISTS idx_candidatos_estado ON candidatos(estado);
+CREATE INDEX IF NOT EXISTS idx_candidatos_vacante ON candidatos(vacante_interes);
+CREATE INDEX IF NOT EXISTS idx_candidatos_created ON candidatos(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_candidatos_escalado ON candidatos(escalado) WHERE escalado = TRUE;
+CREATE INDEX IF NOT EXISTS idx_candidatos_empresa ON candidatos(empresa_id);
+
 CREATE TRIGGER update_candidatos_updated_at
     BEFORE UPDATE ON candidatos
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================
+-- TABLA: conversation_history
+-- Historial completo de mensajes
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS conversation_history (
+    id SERIAL PRIMARY KEY,
+    timestamp TIMESTAMP DEFAULT NOW(),
+    candidato_id UUID REFERENCES candidatos(id) ON DELETE CASCADE,
+    telefono VARCHAR(50) NOT NULL,
+    role VARCHAR(50) NOT NULL,
+    message_type VARCHAR(20),
+    content TEXT,
+    media_url TEXT,
+    detected_codes JSONB,
+    ai_model VARCHAR(50),
+    tokens_used INTEGER,
+    response_time_ms INTEGER,
+    CONSTRAINT valid_role CHECK (role IN ('user', 'assistant', 'system', 'user_temp'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_candidato ON conversation_history(candidato_id);
+CREATE INDEX IF NOT EXISTS idx_conversation_telefono ON conversation_history(telefono);
+CREATE INDEX IF NOT EXISTS idx_conversation_timestamp ON conversation_history(timestamp DESC);
+
+-- ============================================
+-- TABLA: mensajes_bandeja
+-- Bandeja de mensajes del CRM (inbox)
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS mensajes_bandeja (
+    id SERIAL PRIMARY KEY,
+    candidato_id UUID UNIQUE NOT NULL REFERENCES candidatos(id) ON DELETE CASCADE,
+    telefono VARCHAR(50),
+    ultimo_mensaje TEXT,
+    ultimo_mensaje_rol VARCHAR(50) DEFAULT 'user',
+    ultimo_mensaje_at TIMESTAMP DEFAULT NOW(),
+    asignado_a VARCHAR(255),
+    mensajes_no_leidos INTEGER DEFAULT 0,
+    activo BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_bandeja_candidato ON mensajes_bandeja(candidato_id);
+CREATE INDEX IF NOT EXISTS idx_bandeja_activo ON mensajes_bandeja(activo) WHERE activo = TRUE;
+
+CREATE TRIGGER update_bandeja_updated_at
+    BEFORE UPDATE ON mensajes_bandeja
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================
+-- TABLA: notificaciones
+-- Notificaciones para reclutadores en el CRM
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS notificaciones (
+    id SERIAL PRIMARY KEY,
+    reclutador_id VARCHAR(100) REFERENCES reclutadores(id) ON DELETE CASCADE,
+    mensaje TEXT NOT NULL,
+    leida BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_notificaciones_reclutador ON notificaciones(reclutador_id);
+CREATE INDEX IF NOT EXISTS idx_notificaciones_no_leidas ON notificaciones(leida) WHERE leida = FALSE;
+
+-- ============================================
+-- TABLA: cola_mensajes
+-- Outbox de mensajes pendientes de enviar via WAHA
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS cola_mensajes (
+    id SERIAL PRIMARY KEY,
+    telefono VARCHAR(50) NOT NULL,
+    texto TEXT NOT NULL,
+    asignado_a VARCHAR(255),
+    estado VARCHAR(20) DEFAULT 'PENDIENTE',
+    reintentos INTEGER DEFAULT 0,
+    error_detalle TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_cola_pendiente ON cola_mensajes(estado) WHERE estado = 'PENDIENTE';
+
+CREATE TRIGGER update_cola_updated_at
+    BEFORE UPDATE ON cola_mensajes
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================
+-- TABLA: reclutadores_turno
+-- Round-robin de asignacion entre reclutadores
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS reclutadores_turno (
+    grupo VARCHAR(100) PRIMARY KEY,
+    ultimo_index INTEGER DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT NOW()
+);
 
 -- ============================================
 -- TABLA: system_logs
@@ -133,11 +357,11 @@ CREATE TABLE IF NOT EXISTS system_logs (
     CONSTRAINT valid_severity CHECK (severity IN ('info', 'low', 'medium', 'high', 'critical'))
 );
 
-CREATE INDEX idx_logs_timestamp ON system_logs(timestamp DESC);
-CREATE INDEX idx_logs_severity ON system_logs(severity);
-CREATE INDEX idx_logs_resolved ON system_logs(resolved) WHERE resolved = FALSE;
-CREATE INDEX idx_logs_user ON system_logs(user_phone);
-CREATE INDEX idx_logs_execution ON system_logs(execution_id);
+CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON system_logs(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_logs_severity ON system_logs(severity);
+CREATE INDEX IF NOT EXISTS idx_logs_resolved ON system_logs(resolved) WHERE resolved = FALSE;
+CREATE INDEX IF NOT EXISTS idx_logs_user ON system_logs(user_phone);
+CREATE INDEX IF NOT EXISTS idx_logs_execution ON system_logs(execution_id);
 
 -- ============================================
 -- TABLA: notifications_log
@@ -148,7 +372,7 @@ CREATE TABLE IF NOT EXISTS notifications_log (
     timestamp TIMESTAMP DEFAULT NOW(),
     notification_type VARCHAR(50) NOT NULL,
     recipient VARCHAR(50) NOT NULL,
-    recipient_type VARCHAR(20), 
+    recipient_type VARCHAR(20),
     candidate_phone VARCHAR(15),
     candidate_name VARCHAR(100),
     vacante VARCHAR(50),
@@ -158,16 +382,16 @@ CREATE TABLE IF NOT EXISTS notifications_log (
     error_message TEXT,
     priority VARCHAR(20) DEFAULT 'normal',
     CONSTRAINT valid_notification_type CHECK (notification_type IN (
-        'NEW_APPOINTMENT', 'NEW_CV', 'MANUAL_PROFILE', 'ESCALATION', 
+        'NEW_APPOINTMENT', 'NEW_CV', 'MANUAL_PROFILE', 'ESCALATION',
         'GENERAL_POOL', 'GENERAL_UPDATE', 'ERROR'
     )),
     CONSTRAINT valid_priority CHECK (priority IN ('low', 'normal', 'high', 'urgent'))
 );
 
-CREATE INDEX idx_notifications_timestamp ON notifications_log(timestamp DESC);
-CREATE INDEX idx_notifications_type ON notifications_log(notification_type);
-CREATE INDEX idx_notifications_candidate ON notifications_log(candidate_phone);
-CREATE INDEX idx_notifications_delivered ON notifications_log(delivered);
+CREATE INDEX IF NOT EXISTS idx_notifications_timestamp ON notifications_log(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_type ON notifications_log(notification_type);
+CREATE INDEX IF NOT EXISTS idx_notifications_candidate ON notifications_log(candidate_phone);
+CREATE INDEX IF NOT EXISTS idx_notifications_delivered ON notifications_log(delivered);
 
 -- ============================================
 -- TABLA: metrics
@@ -181,40 +405,17 @@ CREATE TABLE IF NOT EXISTS metrics (
     metric_value NUMERIC,
     metric_unit VARCHAR(20),
     vacante VARCHAR(50),
-    periodo VARCHAR(20), 
+    periodo VARCHAR(20),
     metadata JSONB,
     CONSTRAINT valid_metric_type CHECK (metric_type IN (
-        'conversation', 'conversion', 'response_time', 'error_rate', 
+        'conversation', 'conversion', 'response_time', 'error_rate',
         'escalation_rate', 'appointment_rate', 'cv_submission_rate'
     ))
 );
 
-CREATE INDEX idx_metrics_timestamp ON metrics(timestamp DESC);
-CREATE INDEX idx_metrics_type ON metrics(metric_type, metric_name);
-CREATE INDEX idx_metrics_vacante ON metrics(vacante);
-
--- ============================================
--- TABLA: conversation_history
--- ============================================
-
-CREATE TABLE IF NOT EXISTS conversation_history (
-    id SERIAL PRIMARY KEY,
-    timestamp TIMESTAMP DEFAULT NOW(),
-    candidato_id UUID REFERENCES candidatos(id) ON DELETE CASCADE,
-    telefono VARCHAR(50) NOT NULL,
-    role VARCHAR(50) NOT NULL, 
-    message_type VARCHAR(20), 
-    content TEXT,
-    detected_codes JSONB,
-    ai_model VARCHAR(50),
-    tokens_used INTEGER,
-    response_time_ms INTEGER,
-    CONSTRAINT valid_role CHECK (role IN ('user', 'assistant', 'system', 'user_temp'))
-);
-
-CREATE INDEX idx_conversation_candidato ON conversation_history(candidato_id);
-CREATE INDEX idx_conversation_telefono ON conversation_history(telefono);
-CREATE INDEX idx_conversation_timestamp ON conversation_history(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_metrics_timestamp ON metrics(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_metrics_type ON metrics(metric_type, metric_name);
+CREATE INDEX IF NOT EXISTS idx_metrics_vacante ON metrics(vacante);
 
 -- ============================================
 -- TABLA: rate_limiting
@@ -234,11 +435,12 @@ CREATE TABLE IF NOT EXISTS rate_limiting (
     total_messages INTEGER DEFAULT 0
 );
 
-CREATE INDEX idx_ratelimit_telefono ON rate_limiting(telefono);
-CREATE INDEX idx_ratelimit_blocked ON rate_limiting(is_blocked) WHERE is_blocked = TRUE;
+CREATE INDEX IF NOT EXISTS idx_ratelimit_telefono ON rate_limiting(telefono);
+CREATE INDEX IF NOT EXISTS idx_ratelimit_blocked ON rate_limiting(is_blocked) WHERE is_blocked = TRUE;
 
 -- ============================================
--- TABLA: processed_webhooks (NUEVA)
+-- TABLA: processed_webhooks
+-- Deduplicacion de mensajes entrantes
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS processed_webhooks (
@@ -247,11 +449,11 @@ CREATE TABLE IF NOT EXISTS processed_webhooks (
 );
 
 -- ============================================
--- VISTAS ÚTILES
+-- VISTAS
 -- ============================================
 
 CREATE OR REPLACE VIEW candidatos_activos_por_vacante AS
-SELECT 
+SELECT
     vacante_interes,
     COUNT(*) as total,
     COUNT(CASE WHEN estado = 'CITA_AGENDADA' THEN 1 END) as con_cita,
@@ -262,7 +464,7 @@ WHERE estado NOT IN ('RECHAZADO', 'INACTIVO')
 GROUP BY vacante_interes;
 
 CREATE OR REPLACE VIEW errores_pendientes AS
-SELECT 
+SELECT
     severity,
     node_name,
     COUNT(*) as total,
@@ -271,7 +473,7 @@ SELECT
 FROM system_logs
 WHERE resolved = FALSE
 GROUP BY severity, node_name
-ORDER BY 
+ORDER BY
     CASE severity
         WHEN 'critical' THEN 1
         WHEN 'high' THEN 2
@@ -282,7 +484,7 @@ ORDER BY
     total DESC;
 
 CREATE OR REPLACE VIEW metricas_diarias AS
-SELECT 
+SELECT
     DATE(timestamp) as fecha,
     metric_type,
     metric_name,
@@ -295,7 +497,7 @@ GROUP BY DATE(timestamp), metric_type, metric_name
 ORDER BY fecha DESC, metric_type;
 
 -- ============================================
--- FUNCIONES ÚTILES
+-- FUNCIONES
 -- ============================================
 
 CREATE OR REPLACE FUNCTION get_or_create_candidato(p_telefono VARCHAR)
@@ -326,26 +528,29 @@ DECLARE
 BEGIN
     SELECT is_blocked, blocked_until INTO v_is_blocked, v_blocked_until
     FROM rate_limiting WHERE telefono = p_telefono;
-    
+
     IF v_is_blocked AND v_blocked_until > NOW() THEN RETURN FALSE; END IF;
-    
+
     SELECT messages_last_hour, messages_last_day INTO v_messages_hour, v_messages_day
     FROM rate_limiting WHERE telefono = p_telefono;
-    
+
     IF v_messages_hour IS NULL THEN
         INSERT INTO rate_limiting (telefono, messages_last_hour, messages_last_day)
         VALUES (p_telefono, 1, 1);
         RETURN TRUE;
     END IF;
-    
+
     IF v_messages_hour >= p_limit_hour OR v_messages_day >= p_limit_day THEN
         UPDATE rate_limiting SET is_blocked = TRUE, blocked_until = NOW() + INTERVAL '1 hour', block_reason = 'Rate limit exceeded'
         WHERE telefono = p_telefono;
         RETURN FALSE;
     END IF;
-    
+
     UPDATE rate_limiting
-    SET messages_last_hour = messages_last_hour + 1, messages_last_day = messages_last_day + 1, last_message_at = NOW(), total_messages = total_messages + 1
+    SET messages_last_hour = messages_last_hour + 1,
+        messages_last_day = messages_last_day + 1,
+        last_message_at = NOW(),
+        total_messages = total_messages + 1
     WHERE telefono = p_telefono;
     RETURN TRUE;
 END;
@@ -354,9 +559,12 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION cleanup_rate_limit()
 RETURNS void AS $$
 BEGIN
-    UPDATE rate_limiting SET messages_last_hour = 0, window_hour_start = NOW() WHERE window_hour_start < NOW() - INTERVAL '1 hour';
-    UPDATE rate_limiting SET messages_last_day = 0, window_day_start = NOW() WHERE window_day_start < NOW() - INTERVAL '1 day';
-    UPDATE rate_limiting SET is_blocked = FALSE, blocked_until = NULL, block_reason = NULL WHERE is_blocked = TRUE AND blocked_until < NOW();
+    UPDATE rate_limiting SET messages_last_hour = 0, window_hour_start = NOW()
+    WHERE window_hour_start < NOW() - INTERVAL '1 hour';
+    UPDATE rate_limiting SET messages_last_day = 0, window_day_start = NOW()
+    WHERE window_day_start < NOW() - INTERVAL '1 day';
+    UPDATE rate_limiting SET is_blocked = FALSE, blocked_until = NULL, block_reason = NULL
+    WHERE is_blocked = TRUE AND blocked_until < NOW();
 END;
 $$ LANGUAGE plpgsql;
 
@@ -365,7 +573,7 @@ $$ LANGUAGE plpgsql;
 -- ============================================
 
 INSERT INTO metrics (metric_type, metric_name, metric_value, metric_unit, periodo)
-VALUES 
+VALUES
     ('conversation', 'total_conversations', 0, 'count', 'daily'),
     ('conversion', 'cv_to_appointment_rate', 0, 'percentage', 'daily'),
     ('response_time', 'avg_response_time', 0, 'milliseconds', 'hourly'),
@@ -373,10 +581,7 @@ VALUES
 ON CONFLICT DO NOTHING;
 
 -- ============================================
--- FINALIZACIÓN
--- ============================================
-
 DO $$
 BEGIN
-    RAISE NOTICE '✅ Database setup actualizado exitosamente';
+    RAISE NOTICE 'Database setup completado - 18 tablas, 3 vistas, 3 funciones';
 END $$;
