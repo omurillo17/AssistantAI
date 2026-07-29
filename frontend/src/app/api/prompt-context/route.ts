@@ -1,10 +1,35 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
+import fs from 'fs';
+import path from 'path';
+
+// Prompt global de respaldo cuando la empresa no tiene un prompt_ia propio configurado
+const GLOBAL_PROMPT_PATH = path.join(process.cwd(), '..', 'virgo_data', 'prompts', 'chat_prompt.md');
+
+function getGlobalPromptBase(): string {
+  const candidatePaths = [
+    path.join(process.cwd(), '..', 'virgo_data', 'prompts', 'chat_prompt.md'),
+    path.join(process.cwd(), 'virgo_data', 'prompts', 'chat_prompt.md'),
+    '/home/node/virgo_files/prompts/chat_prompt.md',
+    'c:/Users/PC-801/Desktop/AssistantAI/virgo_data/prompts/chat_prompt.md'
+  ];
+
+  for (const p of candidatePaths) {
+    try {
+      if (fs.existsSync(p)) {
+        return fs.readFileSync(p, 'utf-8');
+      }
+    } catch (err) {}
+  }
+  console.error('Error leyendo el prompt global de respaldo en todas las rutas candidatas.');
+  return 'Error: No se pudo cargar el prompt base del sistema.';
+}
 
 /**
  * GET /api/prompt-context?empresa_id=xxx
  *
  * Genera dinamicamente desde PostgreSQL todo el contexto que necesita la IA de n8n:
+ * - prompt_base: Plantilla del prompt (override de la empresa si existe, si no el global)
  * - menu_naves: Lista de sucursales con direccion y link
  * - menu_vacantes: Listado simple de nombres de vacantes por nave
  * - detalle_vacantes: Detalles completos de cada vacante por nave
@@ -33,12 +58,17 @@ export async function GET(request: Request) {
 
     if (empresas.length === 0) {
       return NextResponse.json({
+        prompt_base: getGlobalPromptBase(),
         menu_naves: 'No hay sucursales registradas.',
         menu_vacantes: 'No hay vacantes disponibles por el momento.',
         detalle_vacantes: 'Informacion no disponible.',
         equipo_reclutadores: [],
       });
     }
+
+    // El prompt_ia de la empresa (si se definio uno en el panel SaaS) sobreescribe el prompt global
+    const empresaPromptIa = empresa_id ? (empresas[0]?.prompt_ia || '').trim() : '';
+    const prompt_base = empresaPromptIa || getGlobalPromptBase();
 
     const empresaIds = empresas.map((e: any) => e.id);
 
@@ -139,18 +169,18 @@ export async function GET(request: Request) {
       }
     }
 
-    // Mapa nave_numero => { naveName, vacantes[] }
-    const naveMap = new Map<string, { naveName: string; vacantes: Array<{ nombre: string; detalles: string }> }>();
+    // Mapa nave_id (UUID real, tal como se guarda en vacantes_def.naves) => { numero, naveName, vacantes[] }
+    // El "numero" (secuencial por empresa) solo se usa para el texto que ve la IA/n8n
+    // ("--- SUCURSAL {numero}: ---"), nunca como llave de cruce con las vacantes.
+    const naveMap = new Map<string, { numero: number; naveName: string; vacantes: Array<{ nombre: string; detalles: string }> }>();
     for (const nav of naves) {
-      const key = String(nav.numero);
-      naveMap.set(key, { naveName: nav.nombre, vacantes: [] });
+      naveMap.set(nav.id, { numero: nav.numero, naveName: nav.nombre, vacantes: [] });
     }
 
     for (const vac of todasLasVacantes) {
-      for (const naveKey of vac.naves) {
-        const key = String(naveKey);
-        if (naveMap.has(key)) {
-          const navData = naveMap.get(key)!;
+      for (const naveId of vac.naves) {
+        if (naveMap.has(naveId)) {
+          const navData = naveMap.get(naveId)!;
           if (!navData.vacantes.some((v: any) => v.nombre === vac.nombre)) {
             navData.vacantes.push({ nombre: vac.nombre, detalles: vac.detalles });
           }
@@ -161,9 +191,9 @@ export async function GET(request: Request) {
     // 7. Construir menu_vacantes y detalle_vacantes
     const menuVacantesParts: string[] = [];
     const detalleVacantesParts: string[] = [];
-    for (const [naveKey, navData] of naveMap.entries()) {
+    for (const navData of naveMap.values()) {
       if (navData.vacantes.length === 0) continue;
-      const header = `--- SUCURSAL ${naveKey}: ${navData.naveName} ---`;
+      const header = `--- SUCURSAL ${navData.numero}: ${navData.naveName} ---`;
       const menuLines = navData.vacantes.map((v: any, i: number) => `*${i + 1}. ${v.nombre}*`).join('\n');
       menuVacantesParts.push(`${header}\n${menuLines}`);
       const detalleLines = navData.vacantes
@@ -180,6 +210,7 @@ export async function GET(request: Request) {
       : 'Informacion no disponible.';
 
     return NextResponse.json({
+      prompt_base,
       menu_naves,
       menu_vacantes,
       detalle_vacantes,
@@ -192,8 +223,8 @@ export async function GET(request: Request) {
       },
     });
 
-  } catch (err) {
+  } catch (err: any) {
     console.error('Error generating prompt-context:', err);
-    return NextResponse.json({ error: 'Error generando contexto', details: String(err) }, { status: 500 });
+    return NextResponse.json({ error: 'Error generando contexto', details: String(err), stack: err?.stack || '' }, { status: 500 });
   }
 }

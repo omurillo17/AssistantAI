@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, useMemo, useCallback, useRef, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Users, UserCheck, CalendarDays, AlertTriangle,
   LayoutGrid, List, MessageSquare, Search
@@ -89,8 +89,11 @@ function EstadoBadge({ estado }: { estado: string }) {
   );
 }
 
-export default function ExpedientesPage() {
+function ExpedientesPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const telParam = searchParams.get("tel");
+  const appliedTelRef = useRef(false);
   const [vista, setVista] = useState<"kanban" | "tabla">("kanban");
   const [candidatos, setCandidatos] = useState<Candidato[]>([]);
   const [mensajes, setMensajes] = useState<any[]>([]);
@@ -137,6 +140,17 @@ export default function ExpedientesPage() {
     document.title = "Expedientes | Grupo Virgo";
     loadData();
   }, [loadData]);
+
+  // Abrir perfil directamente si llega ?tel= (ej. desde "Ver Perfil" en Bandeja de Mensajes)
+  useEffect(() => {
+    if (telParam && !appliedTelRef.current && candidatos.length > 0) {
+      const match = candidatos.find(c => c.telefono === telParam);
+      if (match) {
+        setSelectedCandidate(match);
+        appliedTelRef.current = true;
+      }
+    }
+  }, [telParam, candidatos]);
 
   // Actualización de estado
   const updateStatus = async (telefono: string, newStatus: string) => {
@@ -387,5 +401,18 @@ export default function ExpedientesPage() {
         </main>
       )}
     </div>
+  );
+}
+
+// ─── EXPORT CON SUSPENSE (requerido por useSearchParams) ───
+export default function ExpedientesPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-screen text-slate-500">
+        <div className="w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    }>
+      <ExpedientesPageInner />
+    </Suspense>
   );
 }

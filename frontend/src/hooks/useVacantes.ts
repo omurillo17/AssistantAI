@@ -53,7 +53,8 @@ export function useVacantes() {
   // ─── Auth & Init ────────────────────────────────────────
   useEffect(() => {
     document.title = "Gestión de Vacantes | TCi";
-    setIsAdmin(localStorage.getItem("tci_role") === "ADMIN");
+    const role = localStorage.getItem("tci_role");
+    setIsAdmin(role === "ADMIN" || role === "ENCARGADO");
     setMyRecId(localStorage.getItem("tci_reclutador_id"));
     loadData();
     loadNaves();

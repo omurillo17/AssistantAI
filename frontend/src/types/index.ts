@@ -40,6 +40,7 @@ export type Recruiter = {
 };
 
 export type Conversacion = {
+  candidato_id: string;
   telefono: string;
   nombre: string;
   estado: string;
@@ -78,6 +79,10 @@ export type Candidato = {
   tiene_cv?: boolean;
   datos_ine?: Record<string, string> | object | null;
   datos_rfc?: string | null;
+  curp_ine?: string | null;
+  curp_rfc?: string | null;
+  alerta_identidad_estado?: 'PENDIENTE' | 'VALIDADO' | 'RECHAZADO' | null;
+  alerta_identidad_motivo?: string | null;
   cv_manual?: Record<string, string> | object | null;
   ultima_interaccion?: string;
   updated_at?: string;

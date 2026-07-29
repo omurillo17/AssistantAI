@@ -211,9 +211,9 @@ function MensajesInner() {
           </div>
 
           <div className="flex-1 overflow-y-auto">
-            {m.filtradas.map(conv => (
+            {m.filtradas.map((conv, idx) => (
               <TarjetaConversacion
-                key={conv.telefono}
+                key={conv.candidato_id || `${conv.telefono}_${idx}`}
                 conv={conv as any}
                 isActive={conv.telefono === m.activePhone}
                 onClick={() => { m.setActivePhone(conv.telefono); m.loadChat(conv.telefono, true, false); }}
@@ -282,7 +282,7 @@ function MensajesInner() {
                     <span className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 bg-slate-200 text-slate-600 rounded-lg"><Bot size={12} /> Bot</span>
                   )}
 
-                  <button onClick={() => router.push(`/crm`)} className="px-3 py-1.5 hover:bg-black/5 text-slate-600 rounded-lg text-sm font-semibold transition-colors">Ver CRM</button>
+                  <button onClick={() => router.push(`/expedientes?tel=${m.activePhone}`)} className="px-3 py-1.5 hover:bg-black/5 text-slate-600 rounded-lg text-sm font-semibold transition-colors">Ver Perfil</button>
 
                   <button onClick={m.transferir} disabled={!!m.actionLoading} className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-70 text-white rounded-lg transition-colors shadow-sm">
                     {m.actionLoading === "transferir" ? <Loader2 size={12} className="animate-spin" /> : <UserPlus size={12} />} Transferir

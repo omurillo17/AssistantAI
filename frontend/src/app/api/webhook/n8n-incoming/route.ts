@@ -32,7 +32,7 @@ export async function POST(request: Request) {
 
     // 1. Obtener estado actual (buscamos por telefono, asumiendo por ahora la primera empresa o la mas reciente si hay varias)
     // En el futuro, n8n debe enviar el empresa_id
-    let res = await pool.query('SELECT id, estado, tiene_cv, cv_manual as db_cv_manual, fecha_entrevista as db_fecha, privacidad_aceptada, escalado FROM candidatos WHERE telefono = $1 ORDER BY updated_at DESC LIMIT 1', [telefono]);
+    let res = await pool.query('SELECT id, estado, tiene_cv, cv_manual as db_cv_manual, fecha_entrevista as db_fecha, privacidad_aceptada, escalado, vacante_interes, asignado_a FROM candidatos WHERE telefono = $1 ORDER BY updated_at DESC LIMIT 1', [telefono]);
     let currentState = 'NUEVO';
     let context = {
       telefono,
@@ -88,11 +88,32 @@ export async function POST(request: Request) {
     // 4. Upsert Candidato
     const parsedCvManual = typeof cv_manual === 'string' ? JSON.parse(cv_manual) : cv_manual;
     
-    let finalNombre = (nombre && nombre !== 'Candidato') ? nombre : (nombre_wpp || 'Candidato');
-    finalNombre = finalNombre.trim();
+    let finalNombre = (nombre && nombre !== 'Candidato') ? nombre.trim() : '';
+
+    // Intento 1: Extraer del resumen si Gemini detectó el nombre (ej. "Nombre: Oscar")
+    if (!finalNombre || finalNombre === 'Candidato') {
+      if (resumen && typeof resumen === 'string') {
+        const nameMatch = resumen.match(/Nombre:\s*([^.\n|]+)/i);
+        if (nameMatch && nameMatch[1]) {
+          const extracted = nameMatch[1].trim();
+          if (extracted && !['Candidato', 'Desconocido', 'No registrado', 'Pendiente'].includes(extracted) && !/^\+?\d+$/.test(extracted)) {
+            finalNombre = extracted;
+          }
+        }
+      }
+    }
+
+    // Intento 2: Usar nombre_wpp si es un nombre legible
+    if (!finalNombre || finalNombre === 'Candidato') {
+      if (nombre_wpp && nombre_wpp.trim() && nombre_wpp.trim() !== 'Candidato' && !/^[^\w\s]+$/.test(nombre_wpp.trim())) {
+        finalNombre = nombre_wpp.trim();
+      }
+    }
+
     if (!finalNombre || finalNombre === telefono || /^\+?\d+$/.test(finalNombre)) {
       finalNombre = 'Candidato';
     }
+
     let veredicto = null;
     let motivo_analisis = null;
     if (filtros) {
@@ -133,7 +154,16 @@ export async function POST(request: Request) {
         $15, $16, $17, $18, $19
       )
       ON CONFLICT (telefono, empresa_id) DO UPDATE SET 
-        nombre = CASE WHEN candidatos.nombre IS NULL OR candidatos.nombre = '' OR candidatos.nombre = 'Candidato' THEN EXCLUDED.nombre ELSE candidatos.nombre END,
+        nombre = CASE 
+          WHEN EXCLUDED.nombre IS NOT NULL AND EXCLUDED.nombre != 'Candidato' AND EXCLUDED.nombre != '' AND EXCLUDED.nombre !~ '^[^\\w\\s]+$' THEN EXCLUDED.nombre
+          WHEN candidatos.nombre IS NULL OR candidatos.nombre = '' OR candidatos.nombre = 'Candidato' OR candidatos.nombre ~ '^[^\\w\\s]+$' THEN EXCLUDED.nombre 
+          ELSE candidatos.nombre 
+        END,
+        nombre_chat = CASE 
+          WHEN EXCLUDED.nombre_chat IS NOT NULL AND EXCLUDED.nombre_chat != 'Candidato' AND EXCLUDED.nombre_chat != '' AND EXCLUDED.nombre_chat !~ '^[^\\w\\s]+$' THEN EXCLUDED.nombre_chat
+          WHEN candidatos.nombre_chat IS NULL OR candidatos.nombre_chat = '' OR candidatos.nombre_chat = 'Candidato' OR candidatos.nombre_chat ~ '^[^\\w\\s]+$' THEN EXCLUDED.nombre_chat
+          ELSE candidatos.nombre_chat 
+        END,
         estado = EXCLUDED.estado,
         ultima_interaccion = NOW(),
         mensajes_bot_enviados = candidatos.mensajes_bot_enviados + 1,
@@ -143,7 +173,6 @@ export async function POST(request: Request) {
         cv_manual = CASE WHEN EXCLUDED.cv_manual IS NOT NULL THEN EXCLUDED.cv_manual ELSE candidatos.cv_manual END,
         fecha_entrevista = COALESCE(NULLIF(EXCLUDED.fecha_entrevista, ''), candidatos.fecha_entrevista),
         privacidad_aceptada = EXCLUDED.privacidad_aceptada OR candidatos.privacidad_aceptada,
-        nombre_chat = CASE WHEN EXCLUDED.nombre_chat != 'Candidato' THEN EXCLUDED.nombre_chat ELSE COALESCE(candidatos.nombre_chat, NULLIF(EXCLUDED.nombre_chat, '')) END,
         nombre_solicitud = CASE WHEN EXCLUDED.cv_manual IS NOT NULL AND (EXCLUDED.cv_manual->>'nombre') IS NOT NULL THEN (EXCLUDED.cv_manual->>'nombre') ELSE candidatos.nombre_solicitud END,
         edad = CASE WHEN EXCLUDED.cv_manual IS NOT NULL AND (EXCLUDED.cv_manual->>'edad') IS NOT NULL THEN (EXCLUDED.cv_manual->>'edad') ELSE candidatos.edad END,
         correo = CASE WHEN EXCLUDED.cv_manual IS NOT NULL AND (EXCLUDED.cv_manual->>'correo') IS NOT NULL THEN (EXCLUDED.cv_manual->>'correo') ELSE candidatos.correo END,
@@ -179,6 +208,62 @@ export async function POST(request: Request) {
     ]);
 
     const candidatoId = upsertRes.rows[0].id;
+
+    // 4.5 Asignación temprana al reclutador de la vacante elegida
+    // Se dispara solo la primera vez que el candidato elige una vacante real
+    // (antes no tenía una, o estaba en 'General') y todavía no tiene reclutador asignado.
+    const vacanteEntrante = (vacante || '').trim();
+    const vacantePreviaVacia = !res.rowCount || !res.rows[0].vacante_interes || res.rows[0].vacante_interes === 'General';
+    const yaAsignado = !!(res.rowCount && res.rows[0].asignado_a);
+
+    if (vacanteEntrante && vacanteEntrante !== 'General' && vacantePreviaVacia && !yaAsignado) {
+      try {
+        const equipoRes = await pool.query(
+          `SELECT r.id AS reclutador_id, r.nombre AS reclutador_nombre, v.nombre AS vacante_nombre, v.naves
+           FROM reclutadores r
+           JOIN vacantes_def v ON v.reclutador_id = r.id AND v.activa = true
+           WHERE r.activo = true AND ($1::uuid IS NULL OR r.empresa_id = $1)`,
+          [empresaId]
+        );
+
+        const cleanStr = (s: string) => s ? s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim() : '';
+        const vacanteClean = cleanStr(vacanteEntrante);
+        const naveClean = nave ? String(nave).trim() : null;
+
+        const matches = equipoRes.rows.filter((row) => {
+          if (cleanStr(row.vacante_nombre) !== vacanteClean) return false;
+          if (!naveClean) return true;
+          let navesArr: string[] = [];
+          try { navesArr = typeof row.naves === 'string' ? JSON.parse(row.naves) : (row.naves || []); } catch { navesArr = []; }
+          return navesArr.length === 0 || navesArr.includes(naveClean);
+        });
+
+        let reclutadorAsignado: { reclutador_id: string; reclutador_nombre: string } | null = null;
+        if (matches.length === 1) {
+          reclutadorAsignado = matches[0];
+        } else if (matches.length === 0) {
+          const gerenteRes = await pool.query(
+            `SELECT id AS reclutador_id, nombre AS reclutador_nombre FROM reclutadores WHERE nombre = 'Gerente de Reclutamiento' AND activo = true LIMIT 1`
+          );
+          if (gerenteRes.rowCount) reclutadorAsignado = gerenteRes.rows[0];
+        }
+        // Si hay varios reclutadores para la misma vacante/nave, no forzamos una asignación
+        // individual aquí — el sistema de turnos que ya existe en el agendado de entrevista se encarga.
+
+        if (reclutadorAsignado) {
+          await pool.query(
+            `UPDATE candidatos SET asignado_a = $1 WHERE id = $2 AND (asignado_a IS NULL OR asignado_a = '')`,
+            [reclutadorAsignado.reclutador_nombre, candidatoId]
+          );
+          await pool.query(
+            `INSERT INTO notificaciones (reclutador_id, mensaje) VALUES ($1, $2)`,
+            [reclutadorAsignado.reclutador_id, `🆕 Nuevo candidato en proceso: ${finalNombre} — ${vacanteEntrante}`]
+          );
+        }
+      } catch (asignarErr) {
+        console.error('Error asignando candidato al reclutador de la vacante:', asignarErr);
+      }
+    }
 
     // 5. Insertar historial de mensajes
     // Mensaje del usuario

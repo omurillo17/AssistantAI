@@ -12,14 +12,14 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        400,
-        272
+        880,
+        288
       ],
-      "id": "08d54ff2-3e2f-4b2e-b5c5-00aa47ed9c38",
+      "id": "1ea20326-50b5-4bdc-8f45-8ab856555fd6",
       "name": "ID_TEL",
       "credentials": {
         "postgres": {
-          "id": "FfLyXSYn5xS7Wt3y",
+          "id": "9eErJ1KWRv74SFiT",
           "name": "Postgres account"
         }
       }
@@ -35,14 +35,14 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        368,
-        80
+        848,
+        96
       ],
-      "id": "91611bcb-be7c-4c0f-a8d8-6ed49029c383",
+      "id": "3974498f-3a14-4118-8dc0-7d358d3c6d72",
       "name": "MsjCorto",
       "credentials": {
         "postgres": {
-          "id": "FfLyXSYn5xS7Wt3y",
+          "id": "9eErJ1KWRv74SFiT",
           "name": "Postgres account"
         }
       }
@@ -75,23 +75,23 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        128,
-        160
+        608,
+        176
       ],
-      "id": "8bc316fc-6516-4873-a939-4d7dae9e9435",
+      "id": "c91e0543-bf67-4208-89f3-280da55b4e85",
       "name": "If3"
     },
     {
       "parameters": {
-        "jsCode": "const fs = require('fs');\n\n// 1. Obtenemos el resultado de GetInfo\nconst getInfoResult = $input.first().json;\nconst remitente = getInfoResult.id || \"\";\n\n// FIX WAHA: Rescatamos el LID corrupto y extraemos el número real\nif (remitente && remitente.includes(\"@\")) {\n  getInfoResult.lid = getInfoResult.number;\n  getInfoResult.number = remitente.split(\"@\")[0];\n}\n\n// 2. Lista de reclutadores desde la BD via API\nlet equipo = [];\ntry {\n    let apiBase = 'http://host.docker.internal:3000';\nlet empresaId = '';\ntry { if (typeof process !== 'undefined' && process.env && process.env.TCI_API_BASE) apiBase = process.env.TCI_API_BASE; } catch(e) {}\ntry { if (typeof $env !== 'undefined' && $env && $env.TCI_API_BASE) apiBase = $env.TCI_API_BASE; } catch(e) {}\ntry { if (typeof process !== 'undefined' && process.env && process.env.TCI_EMPRESA_ID) empresaId = process.env.TCI_EMPRESA_ID; } catch(e) {}\ntry { if (typeof $env !== 'undefined' && $env && $env.TCI_EMPRESA_ID) empresaId = $env.TCI_EMPRESA_ID; } catch(e) {}\n    const response = await fetch(apiBase + \"/api/db/reclutador_vacantes\");\n    if (response.ok) { equipo = await response.json(); }\n} catch (error) {\n    console.log(\"Error consultando reclutadores en BD:\", error.message);\n}\n\n// 3. Revisamos si el número coincide\nfor (const reclutador of equipo) {\n    if (reclutador.telefono) {\n        const diezDigitos = reclutador.telefono.trim().slice(-10);\n        if (remitente.includes(diezDigitos)) {\n            return []; // Es reclutador -> Detenemos el flujo\n        }\n    }\n}\n\nreturn [{ json: getInfoResult }];\n"
+        "jsCode": "const fs = require('fs');\n\n// 1. Obtenemos el resultado de GetInfo\nconst getInfoResult = $input.first().json;\nconst remitente = getInfoResult.id || \"\";\n\n// FIX WAHA: Rescatamos el LID corrupto y extraemos el número real\nif (remitente && remitente.includes(\"@\")) {\n  getInfoResult.lid = getInfoResult.number;\n  getInfoResult.number = remitente.split(\"@\")[0];\n}\n\n// 2. Lista de reclutadores desde la BD via API\nlet equipo = [];\ntry {\n    let apiBase = 'http://host.docker.internal:3001';\nlet empresaId = '';\ntry { if (typeof process !== 'undefined' && process.env && process.env.TCI_API_BASE) apiBase = process.env.TCI_API_BASE; } catch(e) {}\ntry { if (typeof $env !== 'undefined' && $env && $env.TCI_API_BASE) apiBase = $env.TCI_API_BASE; } catch(e) {}\ntry { if (typeof process !== 'undefined' && process.env && process.env.TCI_EMPRESA_ID) empresaId = process.env.TCI_EMPRESA_ID; } catch(e) {}\ntry { if (typeof $env !== 'undefined' && $env && $env.TCI_EMPRESA_ID) empresaId = $env.TCI_EMPRESA_ID; } catch(e) {}\n    const response = await fetch(apiBase + \"/api/db/reclutador_vacantes\");\n    if (response.ok) { equipo = await response.json(); }\n} catch (error) {\n    console.log(\"Error consultando reclutadores en BD:\", error.message);\n}\n\n// 3. Revisamos si el número coincide\nfor (const reclutador of equipo) {\n    if (reclutador.telefono) {\n        const diezDigitos = reclutador.telefono.trim().slice(-10);\n        if (remitente.includes(diezDigitos)) {\n            return []; // Es reclutador -> Detenemos el flujo\n        }\n    }\n}\n\nreturn [{ json: getInfoResult }];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -240,
-        160
+        240,
+        176
       ],
-      "id": "c3844f42-95ad-42f9-843d-11c3b418a892",
+      "id": "86abc9a1-a602-49fd-9bb9-c01973ef791f",
       "name": "IgnorarEquipo"
     },
     {
@@ -126,14 +126,14 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        -416,
-        144
+        64,
+        160
       ],
-      "id": "28fdce9f-1b26-4dbd-b93f-efff200c981e",
+      "id": "557a3183-40a0-4700-9444-f55c9d5f2402",
       "name": "GetInfo",
       "credentials": {
         "wahaApi": {
-          "id": "OBarvY73V8DKtYv0",
+          "id": "kzWfdhUZ4FU6jVEa",
           "name": "WAHA account"
         }
       }
@@ -149,14 +149,14 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        -48,
-        160
+        432,
+        176
       ],
-      "id": "45567db3-2677-44da-9272-86cfbfd910a5",
+      "id": "29edd036-9be3-4e87-9852-38f2d2017901",
       "name": "MigrarLID",
       "credentials": {
         "postgres": {
-          "id": "FfLyXSYn5xS7Wt3y",
+          "id": "9eErJ1KWRv74SFiT",
           "name": "Postgres account"
         }
       }
@@ -224,10 +224,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -1264,
-        64
+        -784,
+        80
       ],
-      "id": "d1709fee-604a-4937-9d87-e1ea46159699",
+      "id": "696b3b4b-7f58-414c-9628-3edfc9074a3e",
       "name": "¿Es Mensaje?"
     },
     {
@@ -241,14 +241,14 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        -1040,
-        48
+        -560,
+        64
       ],
-      "id": "46449c79-5e8c-4d62-8356-3b2d3472b454",
+      "id": "7f22c657-ea23-4991-9a10-d9459e79d0ac",
       "name": "DeduplicarMensaje",
       "credentials": {
         "postgres": {
-          "id": "FfLyXSYn5xS7Wt3y",
+          "id": "9eErJ1KWRv74SFiT",
           "name": "Postgres account"
         }
       }
@@ -265,14 +265,14 @@
       "type": "@devlikeapro/n8n-nodes-waha.WAHA",
       "typeVersion": 202502,
       "position": [
-        -368,
-        -48
+        112,
+        -32
       ],
-      "id": "5c0cd9c2-7ec1-4f95-a1ba-a3b5c81894e9",
+      "id": "23b5cb77-ad27-4e41-aa60-7c4e4a93eb1d",
       "name": "Borrado",
       "credentials": {
         "wahaApi": {
-          "id": "OBarvY73V8DKtYv0",
+          "id": "kzWfdhUZ4FU6jVEa",
           "name": "WAHA account"
         }
       }
@@ -286,14 +286,14 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        -592,
-        -48
+        -112,
+        -32
       ],
-      "id": "f4a6da40-39e4-430b-90a6-50556fa6419b",
+      "id": "9f2c0b81-da15-4932-af11-72f969c25ca8",
       "name": "Execute a SQL query",
       "credentials": {
         "postgres": {
-          "id": "FfLyXSYn5xS7Wt3y",
+          "id": "9eErJ1KWRv74SFiT",
           "name": "Postgres account"
         }
       }
@@ -326,10 +326,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -816,
-        48
+        -336,
+        64
       ],
-      "id": "c6a7fdaa-c432-4d5f-a587-d9e67ee05d48",
+      "id": "d73cf29f-297b-4ec5-97cc-7b5e74defd8d",
       "name": "If2"
     },
     {
@@ -360,10 +360,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -592,
-        144
+        -112,
+        160
       ],
-      "id": "0606ea44-0d4b-49aa-b38f-142341e53b45",
+      "id": "6002a538-6fcb-4982-a70b-02660a58814e",
       "name": "¿Es Duplicado?"
     },
     {
@@ -393,54 +393,11 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        1648,
-        48
+        1904,
+        64
       ],
-      "id": "ed3c0e0e-4d4b-4f76-a3ed-8054c9938a9a",
+      "id": "c758550d-7fcd-4c0c-9f95-043d7a7951c0",
       "name": "¿Tiene3Faltas?"
-    },
-    {
-      "parameters": {
-        "documentId": {
-          "__rl": true,
-          "value": "1fK89aef01qpdVsmkVyWs-kaKyR3r6vKBtkMbiRmLx54",
-          "mode": "list",
-          "cachedResultName": "Candidatos",
-          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1fK89aef01qpdVsmkVyWs-kaKyR3r6vKBtkMbiRmLx54/edit?usp=drivesdk"
-        },
-        "sheetName": {
-          "__rl": true,
-          "value": 286836876,
-          "mode": "list",
-          "cachedResultName": "Faltistas",
-          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1fK89aef01qpdVsmkVyWs-kaKyR3r6vKBtkMbiRmLx54/edit#gid=286836876"
-        },
-        "filtersUI": {
-          "values": [
-            {
-              "lookupColumn": "Telefono",
-              "lookupValue": "={{ $('IgnorarEquipo').first().json.number }}"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.googleSheets",
-      "typeVersion": 4.7,
-      "position": [
-        1424,
-        48
-      ],
-      "id": "b0f9db11-4182-4621-98a4-3dd6a1505f62",
-      "name": "Faltas",
-      "alwaysOutputData": true,
-      "retryOnFail": true,
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "iF9ddFN2XS1egKEm",
-          "name": "Google Sheets account"
-        }
-      }
     },
     {
       "parameters": {
@@ -449,10 +406,10 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        560,
-        80
+        1040,
+        96
       ],
-      "id": "5ca612b4-6f02-4bc8-90ca-47b7fb8afd79",
+      "id": "cdc2139a-d7ce-4871-b3f8-d3abce8eeae9",
       "name": "Wait2",
       "webhookId": "856945bb-7fdd-48e0-bf79-5508cad9be31"
     },
@@ -483,10 +440,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        976,
-        48
+        1456,
+        64
       ],
-      "id": "e8c6ce1a-5603-44c3-b178-f5e6062a6c15",
+      "id": "83caa659-d734-486b-bbba-39873fc6cade",
       "name": "If4"
     },
     {
@@ -500,15 +457,15 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        752,
-        48
+        1232,
+        64
       ],
-      "id": "92f915f8-c4c0-4054-9e8a-c227d321b2fa",
+      "id": "1d502fe4-408c-4765-8c3a-17656154f54f",
       "name": "ChecarMensajes",
       "alwaysOutputData": true,
       "credentials": {
         "postgres": {
-          "id": "FfLyXSYn5xS7Wt3y",
+          "id": "9eErJ1KWRv74SFiT",
           "name": "Postgres account"
         }
       }
@@ -525,14 +482,14 @@
       "type": "@devlikeapro/n8n-nodes-waha.WAHA",
       "typeVersion": 202502,
       "position": [
-        1872,
-        -48
+        2128,
+        -32
       ],
-      "id": "7549fc53-baf5-437f-9fb0-ee8bab7b23d0",
+      "id": "82751ada-b053-43ba-b18f-dd863bad5757",
       "name": "Aviso",
       "credentials": {
         "wahaApi": {
-          "id": "OBarvY73V8DKtYv0",
+          "id": "kzWfdhUZ4FU6jVEa",
           "name": "WAHA account"
         }
       }
@@ -548,15 +505,15 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        1200,
-        48
+        1680,
+        64
       ],
-      "id": "6fb4266d-84c0-45c8-b025-e28d982a377e",
+      "id": "83642c95-279e-434d-876a-9d57c82c9a9f",
       "name": "ObtenerDatosCandidato",
       "alwaysOutputData": true,
       "credentials": {
         "postgres": {
-          "id": "FfLyXSYn5xS7Wt3y",
+          "id": "9eErJ1KWRv74SFiT",
           "name": "Postgres account"
         }
       }
@@ -570,10 +527,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        -1472,
-        64
+        -992,
+        80
       ],
-      "id": "ad7953b7-3ab0-4f99-9b58-001f408651c4",
+      "id": "508133a8-1431-4e95-a1fe-44f4c4ee9432",
       "name": "Webhook",
       "webhookId": "6244dc40-7039-4e3a-8454-ac48d9975532"
     },
@@ -604,24 +561,18 @@
         "includeOtherFields": true,
         "options": {}
       },
-      "id": "1a682bed-3f44-48ae-a014-0af068a8cd79",
+      "id": "7b651cd7-19cc-45fc-ba25-f26babeae0ef",
       "name": "PrepararDatosAnalizador",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1872,
-        208
+        2128,
+        224
       ]
     },
     {
       "parameters": {
-        "workflowId": {
-          "__rl": true,
-          "value": "JpbqOo4nQSOOO0bM",
-          "mode": "list",
-          "cachedResultUrl": "/workflow/JpbqOo4nQSOOO0bM",
-          "cachedResultName": "2_Sofia - Analizador CV-Audio"
-        },
+        "workflowId": "4w8SDEaCOgmgWrEw",
         "workflowInputs": {
           "mappingMode": "autoMapInputData",
           "value": {},
@@ -662,13 +613,13 @@
           "waitForSubWorkflow": false
         }
       },
-      "id": "ccd3f878-74b9-4a53-abaf-450a94c25f23",
+      "id": "1c4d0d0b-126e-49d9-aeda-3573f9d3cd87",
       "name": "Ejecutar Subflujo: Analizador CV-Audio",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.2,
       "position": [
-        2096,
-        208
+        2352,
+        224
       ]
     }
   ],
@@ -814,17 +765,6 @@
         ]
       ]
     },
-    "Faltas": {
-      "main": [
-        [
-          {
-            "node": "¿Tiene3Faltas?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Wait2": {
       "main": [
         [
@@ -862,7 +802,7 @@
       "main": [
         [
           {
-            "node": "Faltas",
+            "node": "¿Tiene3Faltas?",
             "type": "main",
             "index": 0
           }
@@ -898,11 +838,12 @@
     "binaryMode": "separate",
     "availableInMCP": false
   },
-  "versionId": "d0e42764-1041-4c52-a5de-2753d845552c",
+  "versionId": "54890b48-4835-4033-9191-a483299e591b",
   "meta": {
-    "instanceId": "e485a5a7ac8114c62636ecba6367db69dad6bc18fb5dd48f890b21271541f05c"
+    "templateCredsSetupCompleted": true,
+    "instanceId": "dee31bcf1d2327582c0e4156e13b587f5779996960582a36461518ee5fc3826e"
   },
   "nodeGroups": [],
-  "id": "sdldKPXzO06FId4g",
+  "id": "YJkpZVIrkMuEmSzs",
   "tags": []
 }

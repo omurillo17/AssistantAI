@@ -6,6 +6,7 @@ interface SaasGrupoModalProps {
   onClose: () => void;
   onSuccess: () => void;
   empresa: any;
+  grupo?: any;
   showToast: (msg: string, isError?: boolean) => void;
 }
 
@@ -14,6 +15,7 @@ export default function SaasGrupoModal({
   onClose,
   onSuccess,
   empresa,
+  grupo,
   showToast,
 }: SaasGrupoModalProps) {
   const [grupoNombre, setGrupoNombre] = useState("");
@@ -21,13 +23,18 @@ export default function SaasGrupoModal({
   const [savingGrupo, setSavingGrupo] = useState(false);
 
   useEffect(() => {
-    if (!isOpen) {
+    if (isOpen && grupo) {
+      setGrupoNombre(grupo.nombre || "");
+      setGrupoNaves(grupo.naves_asignadas || []);
+    } else if (!isOpen) {
       setGrupoNombre("");
       setGrupoNaves([]);
     }
-  }, [isOpen]);
+  }, [isOpen, grupo]);
 
   if (!isOpen || !empresa) return null;
+
+  const isEditing = !!grupo?.id;
 
   const handleSaveGrupo = async () => {
     if (!grupoNombre) return showToast("El nombre del grupo es obligatorio", true);
@@ -35,9 +42,10 @@ export default function SaasGrupoModal({
 
     try {
       const res = await fetch("/api/db/grupos", {
-        method: "POST",
+        method: isEditing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          id: grupo?.id,
           nombre: grupoNombre.toUpperCase(),
           empresa_id: empresa.id,
           naves_asignadas: grupoNaves,
@@ -45,7 +53,7 @@ export default function SaasGrupoModal({
       });
 
       if (res.ok) {
-        showToast("Grupo creado correctamente");
+        showToast(isEditing ? "Grupo actualizado correctamente" : "Grupo creado correctamente");
         onSuccess();
         onClose();
         setGrupoNombre("");
@@ -64,7 +72,7 @@ export default function SaasGrupoModal({
     <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-          <h2 className="text-xl font-bold text-slate-800">Nuevo Grupo de Naves</h2>
+          <h2 className="text-xl font-bold text-slate-800">{isEditing ? "Editar Grupo de Naves" : "Nuevo Grupo de Naves"}</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1 bg-white rounded-md shadow-sm border border-slate-200"><X size={20} /></button>
         </div>
         <div className="p-6 space-y-4">
@@ -103,7 +111,7 @@ export default function SaasGrupoModal({
         <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
           <button onClick={onClose} className="px-5 py-2.5 font-bold text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-xl transition-colors">Cancelar</button>
           <button onClick={handleSaveGrupo} disabled={savingGrupo} className="px-5 py-2.5 font-bold text-white bg-violet-600 hover:bg-violet-700 rounded-xl shadow-md transition-all disabled:opacity-60">
-            {savingGrupo ? "Guardando..." : "Crear Grupo"}
+            {savingGrupo ? "Guardando..." : (isEditing ? "Actualizar Grupo" : "Crear Grupo")}
           </button>
         </div>
       </div>

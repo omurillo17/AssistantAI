@@ -33,7 +33,7 @@
       "id": "4738daa9-230f-49f2-897a-93aad91c672c",
       "credentials": {
         "postgres": {
-          "id": "FfLyXSYn5xS7Wt3y",
+          "id": "9eErJ1KWRv74SFiT",
           "name": "Postgres account"
         }
       }
@@ -73,7 +73,7 @@
       "id": "4e5b3bbd-2e4c-4ef2-86f2-a1a6da71f16e",
       "credentials": {
         "postgres": {
-          "id": "FfLyXSYn5xS7Wt3y",
+          "id": "9eErJ1KWRv74SFiT",
           "name": "Postgres account"
         }
       }
@@ -112,7 +112,7 @@
       "id": "f601fa31-a12f-4058-9baf-e2590219d41d",
       "credentials": {
         "postgres": {
-          "id": "FfLyXSYn5xS7Wt3y",
+          "id": "9eErJ1KWRv74SFiT",
           "name": "Postgres account"
         }
       }
@@ -192,7 +192,7 @@
       ],
       "credentials": {
         "postgres": {
-          "id": "FfLyXSYn5xS7Wt3y",
+          "id": "9eErJ1KWRv74SFiT",
           "name": "Postgres account"
         }
       }
@@ -570,7 +570,7 @@
       ],
       "credentials": {
         "postgres": {
-          "id": "FfLyXSYn5xS7Wt3y",
+          "id": "9eErJ1KWRv74SFiT",
           "name": "Postgres account"
         }
       }

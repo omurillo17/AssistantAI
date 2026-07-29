@@ -12,7 +12,7 @@ services:
       - postgres_data_final:/var/lib/postgresql/data
       - ./virgo_data/scripts/database_setup.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
-      - "5432:5432"
+      - "5433:5432"
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -h localhost -U ${DB_POSTGRESDB_USER} -d ${DB_POSTGRESDB_DATABASE}" ]
       interval: 5s
@@ -42,8 +42,9 @@ services:
       - NODE_FUNCTION_ALLOW_EXTERNAL=*
       - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
-      - TCI_API_BASE=${TCI_API_BASE:-http://host.docker.internal:3000}
+      - TCI_API_BASE=${TCI_API_BASE:-http://host.docker.internal:3001}
       - TCI_EMPRESA_ID=${TCI_EMPRESA_ID:-}
+      - N8N_API_KEY=${N8N_API_KEY:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

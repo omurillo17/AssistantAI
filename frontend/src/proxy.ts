@@ -19,6 +19,9 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/api/auth/login") || // Endpoint de Login
     pathname.startsWith("/api/webhook") || // Webhooks de n8n no requieren JWT
     pathname.startsWith("/api/upload-cv") || // Endpoints de subida de archivos de n8n no requieren JWT
+    pathname.startsWith("/api/prompt-context") || // Consumido por n8n server-to-server, protegido por x-api-key propio
+    pathname.startsWith("/api/cron") || // Disparado por n8n (Schedule Trigger), protegido por x-api-key propio
+    pathname.startsWith("/api/waha-status") || // Chequeo de estado de WAHA
     pathname === "/favicon.ico"
   ) {
     return NextResponse.next();

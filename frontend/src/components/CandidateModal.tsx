@@ -295,6 +295,23 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                   );
                 })()}
               </div>
+
+              {candidato.alerta_identidad_estado && (
+                <div className={`mt-3 p-3 rounded-xl border text-xs flex items-start gap-2 ${
+                  candidato.alerta_identidad_estado === 'PENDIENTE'
+                    ? 'bg-red-50 border-red-200 text-red-600'
+                    : candidato.alerta_identidad_estado === 'RECHAZADO'
+                      ? 'bg-amber-50 border-amber-200 text-amber-700'
+                      : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                }`}>
+                  <span className="font-bold shrink-0">
+                    {candidato.alerta_identidad_estado === 'PENDIENTE' && '⚠️ Pendiente de validar:'}
+                    {candidato.alerta_identidad_estado === 'RECHAZADO' && '🚫 No validado:'}
+                    {candidato.alerta_identidad_estado === 'VALIDADO' && '✅ Validado por reclutador:'}
+                  </span>
+                  <span>{candidato.alerta_identidad_motivo || 'Discrepancia de CURP entre INE y RFC.'}</span>
+                </div>
+              )}
             </div>
 
             {/* INFO EXTRA */}

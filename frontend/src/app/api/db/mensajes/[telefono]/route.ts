@@ -3,10 +3,7 @@ import { NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 
 import { pool } from '@/lib/db';
-
-const WAHA_BASE = process.env.WAHA_BASE_URL || 'http://localhost:3000';
-const WAHA_API_KEY = process.env.WAHA_API_KEY || 'virgo_secret_key';
-const WAHA_SESSION = process.env.WAHA_SESSION || 'default';
+import { enviarMensajeCandidato } from '@/lib/waha';
 
 // ─── GET /api/db/mensajes/[telefono] ──────────────────────
 // Devuelve historial de conversation_history para ese candidato
@@ -90,83 +87,21 @@ export async function POST(
       return NextResponse.json({ error: 'El mensaje no puede estar vacío' }, { status: 400 });
     }
 
-    const chatId = telefono.includes('@') ? telefono : `${telefono}@c.us`;
-
-    // 1. Buscar candidato_id
-    const candRes = await pool.query(
-      `SELECT id FROM candidatos WHERE telefono = $1 ORDER BY updated_at DESC LIMIT 1`,
-      [telefono]
-    );
-    const candidato_id = candRes.rows[0]?.id || null;
-
-    if (!candidato_id) {
-        return NextResponse.json({ error: 'Candidato no encontrado en la base de datos' }, { status: 404 });
-    }
-
-    // 2. Guardar en conversation_history (Para que UI lo vea instantáneo)
-    const savedMsg = await pool.query(
-      `INSERT INTO conversation_history (telefono, candidato_id, role, content, message_type, timestamp)
-       VALUES ($1, $2, 'assistant', $3, 'text', NOW())
-       RETURNING id, role, content, message_type, timestamp`,
-      [telefono, candidato_id, texto.trim()]
-    );
-
-    // 3. Actualizar mensajes_bandeja
-    await pool.query(
-      `INSERT INTO mensajes_bandeja (candidato_id, telefono, ultimo_mensaje, ultimo_mensaje_rol, asignado_a, mensajes_no_leidos, activo)
-       VALUES ($1, $2, $3, 'assistant', $4, 0, TRUE)
-       ON CONFLICT (candidato_id) DO UPDATE SET
-         ultimo_mensaje = $3,
-         ultimo_mensaje_rol = 'assistant',
-         ultimo_mensaje_at = NOW(),
-         asignado_a = COALESCE($4, mensajes_bandeja.asignado_a),
-         updated_at = NOW()`,
-      [candidato_id, telefono, texto.trim(), asignado_a || null]
-    );
-
-    // 4. Guardar en cola_mensajes (Outbox Pattern)
-    const colaRes = await pool.query(
-      `INSERT INTO cola_mensajes (telefono, texto, asignado_a, estado)
-       VALUES ($1, $2, $3, 'PENDIENTE')
-       RETURNING id`,
-      [chatId, texto.trim(), asignado_a || null]
-    );
-    const cola_id = colaRes.rows[0].id;
-
-    // 5. Intentar Enviar via WAHA Inmediatamente (Fallo seguro)
+    let savedMsg;
     try {
-      const wahaRes = await fetch(`${WAHA_BASE}/api/sendText`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Api-Key': WAHA_API_KEY,
-        },
-        body: JSON.stringify({
-          session: WAHA_SESSION,
-          chatId,
-          text: texto.trim(),
-        }),
-      });
-
-      if (!wahaRes.ok) {
-        const errText = await wahaRes.text();
-        console.error('WAHA soft error:', errText);
-        // Dejarlo como pendiente, actualizar detalle error
-        await pool.query(`UPDATE cola_mensajes SET error_detalle = $1 WHERE id = $2`, [errText, cola_id]);
-      } else {
-        // Éxito, marcar como enviado
-        await pool.query(`UPDATE cola_mensajes SET estado = 'ENVIADO', updated_at = NOW() WHERE id = $1`, [cola_id]);
+      savedMsg = await enviarMensajeCandidato(telefono, texto, asignado_a);
+    } catch (sendErr) {
+      const message = sendErr instanceof Error ? sendErr.message : String(sendErr);
+      if (message === 'Candidato no encontrado en la base de datos') {
+        return NextResponse.json({ error: message }, { status: 404 });
       }
-    } catch (fetchErr: any) {
-      console.error('WAHA fetch error:', fetchErr.message);
-      // Falla de red, WAHA apagado. Se queda como pendiente
-      await pool.query(`UPDATE cola_mensajes SET error_detalle = $1 WHERE id = $2`, [fetchErr.message, cola_id]);
+      throw sendErr;
     }
 
     // SIEMPRE retornamos ok: true a la UI para mantener el Optimistic UI
     return NextResponse.json({
       ok: true,
-      mensaje: savedMsg.rows[0],
+      mensaje: savedMsg,
       queued: true
     });
 

@@ -1,5 +1,4 @@
-
-// === 1. CONFIGURACIÓN (INTACTA) ===
+// === 1. CONFIGURACIÓN ===
 const SPECIAL_CODES = {
   NAME_UPDATE: {
     pattern: /NAME_UPDATE\s*\|\s*([^|]+)\s*\|/i,
@@ -44,10 +43,10 @@ const SPECIAL_CODES = {
   }
 };
 
-// === 2. FUNCIONES AUXILIARES (INTACTAS) ===
+// === 2. FUNCIONES AUXILIARES ===
 
 function extractCode(text, codeConfig) {
-  if (!text) return null;
+  if (!text || typeof text !== 'string') return null;
   const match = text.match(codeConfig.pattern);
   if (!match) return null;
 
@@ -68,7 +67,7 @@ function extractCode(text, codeConfig) {
 }
 
 function cleanMessage(text, detectedCodes) {
-  let cleaned = text || "";
+  let cleaned = (typeof text === 'string') ? text : "";
   for (const code of detectedCodes) {
     cleaned = cleaned.replace(code.raw_match, '');
   }
@@ -129,11 +128,9 @@ function generateDatabaseUpdates(detectedCodes, context) {
   return { updates, actions };
 }
 
-// === 3. FUNCIÓN PRINCIPAL (MODIFICADA PARA EXPORTAR) ===
-// Aquí estaba el error: borramos el loop "$input.all()" y usamos module.exports
+// === 3. FUNCIÓN PRINCIPAL EXPORTADA ===
 
 module.exports = function (aiResponse, context) {
-  // 1. Si no hay respuesta, devolvemos vacío rápido
   if (!aiResponse) {
     return {
       message_to_user: "",
@@ -143,31 +140,53 @@ module.exports = function (aiResponse, context) {
     };
   }
 
-  // 2. Detectar códigos
+  let textToParse = "";
+  let jsonObj = null;
+
+  if (typeof aiResponse === 'object' && aiResponse !== null) {
+    jsonObj = aiResponse;
+    textToParse = JSON.stringify(aiResponse);
+  } else if (typeof aiResponse === 'string') {
+    // Limpiar bloques Markdown ```json ... ``` que regresa Gemini
+    const cleanStr = aiResponse
+      .replace(/```json/gi, '')
+      .replace(/```/g, '')
+      .trim();
+    textToParse = cleanStr;
+    if (cleanStr.startsWith('{') && cleanStr.endsWith('}')) {
+      try {
+        jsonObj = JSON.parse(cleanStr);
+      } catch (e) { }
+    }
+  } else {
+    textToParse = String(aiResponse);
+  }
+
   const detectedCodes = [];
   for (const [codeName, codeConfig] of Object.entries(SPECIAL_CODES)) {
-    const extracted = extractCode(aiResponse, codeConfig);
+    const extracted = extractCode(textToParse, codeConfig);
     if (extracted) {
       detectedCodes.push(extracted);
     }
   }
 
-  // 3. Limpiar mensaje
-  const cleanedMessage = cleanMessage(aiResponse, detectedCodes);
+  let cleanedMessage = cleanMessage(textToParse, detectedCodes);
+  if (jsonObj && jsonObj.mensaje_al_usuario) {
+    cleanedMessage = jsonObj.mensaje_al_usuario;
+  }
 
-  // 4. Generar actualizaciones
   const { updates, actions } = generateDatabaseUpdates(detectedCodes, context);
 
-  // 5. Retornar OBJETO FINAL (Mapeado para que tus nodos siguientes funcionen)
+  if (jsonObj && jsonObj.memoria_update) {
+    updates.resumen_ia = jsonObj.memoria_update;
+    actions.push({ type: 'database_update', table: 'candidatos', field: 'resumen_ia', value: jsonObj.memoria_update });
+  }
+
   return {
-    // Campos originales de tu lógica
     message_to_user: cleanedMessage,
     detected_codes: detectedCodes.map(c => ({ code: c.code, action: c.action, value: c.value })),
     database_updates: updates,
     pending_actions: actions,
-
-    // --- CAMPOS DE COMPATIBILIDAD (Para que el resto del flujo no se rompa) ---
-    // El nodo "Leer" anterior generaba estas variables, así que las mantenemos:
     text_para_whatsapp: cleanedMessage,
     nombre_detectado: updates.nombre,
     vacante_detectada: updates.vacante_interes,
@@ -177,9 +196,7 @@ module.exports = function (aiResponse, context) {
     es_cv_manual: !!updates.cv_manual,
     datos_cv_manual: updates.cv_manual ? JSON.parse(updates.cv_manual) : null,
     resumen_generado: updates.resumen_ia,
-
-    // Metadata
-    has_special_codes: detectedCodes.length > 0,
+    has_special_codes: detectedCodes.length > 0 || (jsonObj && !!jsonObj.memoria_update),
     processed_at: new Date().toISOString(),
     _original_response: aiResponse
   };

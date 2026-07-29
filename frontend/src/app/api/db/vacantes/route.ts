@@ -8,7 +8,8 @@ export async function GET(request: Request) {
   let rol = "USER";
   let reclutador_id: string | null = null;
   let jwt_empresa_id: string | null = null;
-  
+  let jwt_grupo_id: string | null = null;
+
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get("tci_session")?.value;
@@ -20,6 +21,7 @@ export async function GET(request: Request) {
     rol = payload.rol as string;
     reclutador_id = payload.reclutador_id as string;
     jwt_empresa_id = payload.empresa_id as string;
+    jwt_grupo_id = payload.grupo_id as string | null;
   } catch (err) {
     return NextResponse.json({ error: "Token inválido o expirado" }, { status: 401 });
   }
@@ -47,6 +49,14 @@ export async function GET(request: Request) {
     if (rol === "RECLUTADOR" && reclutador_id) {
       whereClause += whereClause ? ` AND r.id = $${paramIndex}` : `WHERE r.id = $${paramIndex}`;
       params.push(reclutador_id);
+      paramIndex++;
+    }
+
+    // Un ENCARGADO solo debe ver a los reclutadores de su propio grupo
+    // (la relación reclutador-grupo vive en usuarios.grupo_id, vía usuarios.reclutador_id)
+    if (rol === "ENCARGADO") {
+      whereClause += whereClause ? ` AND u.grupo_id = $${paramIndex}` : `WHERE u.grupo_id = $${paramIndex}`;
+      params.push(jwt_grupo_id);
       paramIndex++;
     }
 
@@ -120,7 +130,8 @@ export async function POST(request: Request) {
   let rol = "USER";
   let jwt_reclutador_id: string | null = null;
   let jwt_empresa_id: string | null = null;
-  
+  let jwt_grupo_id: string | null = null;
+
   try {
     const cookieStore = await cookies();
     const token = cookieStore.get("tci_session")?.value;
@@ -132,6 +143,7 @@ export async function POST(request: Request) {
     rol = payload.rol as string;
     jwt_reclutador_id = payload.reclutador_id as string;
     jwt_empresa_id = payload.empresa_id as string;
+    jwt_grupo_id = payload.grupo_id as string | null;
   } catch (err) {
     return NextResponse.json({ error: "Token inválido o expirado" }, { status: 401 });
   }
@@ -167,10 +179,23 @@ export async function POST(request: Request) {
       data = data.filter((r: any) => r.reclutador_id === jwt_reclutador_id);
     }
 
+    // Un ENCARGADO solo puede tocar reclutadores de su propio grupo
+    let allowedReclutadorIds: string[] = [];
+    if (rol === "ENCARGADO") {
+      const allowedRes = await client.query(
+        `SELECT r.id FROM reclutadores r
+         JOIN usuarios u ON u.reclutador_id = r.id
+         WHERE u.grupo_id = $1 AND r.empresa_id = $2`,
+        [jwt_grupo_id, jwt_empresa_id]
+      );
+      allowedReclutadorIds = allowedRes.rows.map((row: any) => row.id);
+      data = data.filter((r: any) => allowedReclutadorIds.includes(r.reclutador_id));
+    }
+
     await client.query('BEGIN');
 
     // Transfer chats and candidates if requested
-    if (rol === "ADMIN" && transfer_map.length > 0) {
+    if ((rol === "ADMIN" || rol === "ENCARGADO") && transfer_map.length > 0) {
       for (const t of transfer_map) {
         if (t.from && t.to) {
           await client.query(`UPDATE mensajes_bandeja SET asignado_a = $1 WHERE asignado_a = $2`, [t.to, t.from]);
@@ -195,6 +220,13 @@ export async function POST(request: Request) {
          } else {
             await client.query(`DELETE FROM reclutadores`);
          }
+      }
+    } else if (rol === "ENCARGADO" && allowedReclutadorIds.length > 0) {
+      // Scoped únicamente a los reclutadores del grupo del encargado
+      if (incomingRecruiters.length > 0) {
+        await client.query(`DELETE FROM reclutadores WHERE id = ANY($1) AND id != ALL($2)`, [allowedReclutadorIds, incomingRecruiters]);
+      } else {
+        await client.query(`DELETE FROM reclutadores WHERE id = ANY($1)`, [allowedReclutadorIds]);
       }
     }
 
@@ -266,6 +298,12 @@ export async function POST(request: Request) {
         await client.query(`DELETE FROM vacantes_def WHERE reclutador_id = $1 AND id != ALL($2)`, [jwt_reclutador_id, incomingVacancies]);
       } else {
         await client.query(`DELETE FROM vacantes_def WHERE reclutador_id = $1`, [jwt_reclutador_id]);
+      }
+    } else if (rol === "ENCARGADO" && allowedReclutadorIds.length > 0) {
+      if (incomingVacancies.length > 0) {
+        await client.query(`DELETE FROM vacantes_def WHERE reclutador_id = ANY($1) AND id != ALL($2)`, [allowedReclutadorIds, incomingVacancies]);
+      } else {
+        await client.query(`DELETE FROM vacantes_def WHERE reclutador_id = ANY($1)`, [allowedReclutadorIds]);
       }
     }
 

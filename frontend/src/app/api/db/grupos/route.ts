@@ -67,8 +67,8 @@ export async function POST(request: Request) {
     const finalNaves = naves_asignadas || naves || [];
 
     const res = await pool.query(
-      `INSERT INTO grupos_reclutamiento (empresa_id, nombre, naves_asignadas) VALUES ($1, $2, $3) RETURNING *`,
-      [empresa_id, nombre, finalNaves]
+      `INSERT INTO grupos_reclutamiento (empresa_id, nombre, naves_asignadas) VALUES ($1, $2, $3::jsonb) RETURNING *`,
+      [empresa_id, nombre, JSON.stringify(finalNaves)]
     );
 
     return NextResponse.json({ success: true, grupo: res.rows[0] });
@@ -95,8 +95,8 @@ export async function PATCH(request: Request) {
     const finalNaves = naves_asignadas || naves || [];
 
     const res = await pool.query(
-      `UPDATE grupos_reclutamiento SET nombre = $1, naves_asignadas = $2 WHERE id = $3 RETURNING *`,
-      [nombre, finalNaves, id]
+      `UPDATE grupos_reclutamiento SET nombre = $1, naves_asignadas = $2::jsonb WHERE id = $3 RETURNING *`,
+      [nombre, JSON.stringify(finalNaves), id]
     );
 
     return NextResponse.json({ success: true, grupo: res.rows[0] });

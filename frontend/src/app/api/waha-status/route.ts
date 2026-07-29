@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+// Force reload WAHA API key
 export const dynamic = 'force-dynamic';
 
 export async function GET() {

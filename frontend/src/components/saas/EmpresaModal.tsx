@@ -43,12 +43,12 @@ export default function EmpresaModal({
       const isEditing = !!empresa?.id;
       const url = "/api/db/empresas";
       const method = isEditing ? "PATCH" : "POST";
-      
+
       const payload = {
         id: empresa?.id,
         nombre: nombre.toUpperCase(),
         telefono_whatsapp: telefonoWhatsapp.toUpperCase(),
-        prompt_ia: promptIa.toUpperCase(),
+        prompt_ia: promptIa,
       };
 
       const res = await fetch(url, {
@@ -57,7 +57,7 @@ export default function EmpresaModal({
         body: JSON.stringify(payload),
       });
       const data = await res.json();
-      
+
       if (data.success) {
         showToast(isEditing ? "Empresa actualizada" : "Empresa creada");
         onSuccess();
@@ -87,8 +87,8 @@ export default function EmpresaModal({
         <div className="p-6 space-y-4">
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-1.5">Nombre de la Empresa</label>
-            <input 
-              type="text" 
+            <input
+              type="text"
               className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium uppercase"
               placeholder="EJ. GRUPO INDUSTRIAL M"
               value={nombre}
@@ -97,8 +97,8 @@ export default function EmpresaModal({
           </div>
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-1.5">WhatsApp Principal (Opcional)</label>
-            <input 
-              type="text" 
+            <input
+              type="text"
               className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium uppercase"
               placeholder="EJ. 5213322114455"
               value={telefonoWhatsapp}
@@ -107,11 +107,11 @@ export default function EmpresaModal({
           </div>
           <div>
             <label className="block text-sm font-bold text-slate-700 mb-1.5">System Prompt de la Empresa (Opcional)</label>
-            <textarea 
-              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-mono text-sm resize-none h-32 uppercase"
-              placeholder="SOBREESCRIBE EL PROMPT GLOBAL DE VIRGO PARA ESTA EMPRESA EN ESPECÍFICO..."
+            <textarea
+              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-mono text-sm resize-none h-32"
+              placeholder="Sobreescribe el prompt global de Virgo para esta empresa en específico..."
               value={promptIa}
-              onChange={(e) => setPromptIa(e.target.value.toUpperCase())}
+              onChange={(e) => setPromptIa(e.target.value)}
             />
           </div>
         </div>

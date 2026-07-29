@@ -47,6 +47,7 @@ export default function SaasAdminPage() {
   const [selectedEmpresaForNave, setSelectedEmpresaForNave] = useState<string>("");
   const [selectedEmpresaForAdmin, setSelectedEmpresaForAdmin] = useState<Empresa | null>(null);
   const [selectedEmpresaForGrupo, setSelectedEmpresaForGrupo] = useState<Empresa | null>(null);
+  const [editingGrupo, setEditingGrupo] = useState<any>(null);
 
   // UI State
   const [expandedEmpresa, setExpandedEmpresa] = useState<string | null>(null);
@@ -54,8 +55,8 @@ export default function SaasAdminPage() {
 
   useEffect(() => {
     document.title = "SaaS Admin | TCi";
-    const username = localStorage.getItem("tci_username");
-    if (username === "omurillo17" || username === "root") {
+    const role = localStorage.getItem("tci_role");
+    if (role === "ROOT") {
       setIsRoot(true);
       fetchData();
     } else {
@@ -92,6 +93,47 @@ export default function SaasAdminPage() {
       const res = await fetch(`/api/db/grupos?id=${grupoId}`, { method: "DELETE" });
       if (res.ok) { showToast("Grupo eliminado"); fetchGrupos(); }
     } catch (e) { showToast("Error", true); }
+  };
+
+  const handleChangeNaveGrupo = async (naveId: string, empresaId: string, nuevoGrupoId: string) => {
+    const gruposEmpresa = grupos.filter((g) => g.empresa_id === empresaId);
+    const grupoOrigen = gruposEmpresa.find((g) => (g.naves_asignadas || []).includes(naveId));
+
+    if ((grupoOrigen?.id || "") === nuevoGrupoId) return;
+
+    try {
+      if (grupoOrigen) {
+        await fetch("/api/db/grupos", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: grupoOrigen.id,
+            nombre: grupoOrigen.nombre,
+            naves_asignadas: (grupoOrigen.naves_asignadas || []).filter((id: string) => id !== naveId),
+          }),
+        });
+      }
+
+      if (nuevoGrupoId) {
+        const grupoDestino = gruposEmpresa.find((g) => g.id === nuevoGrupoId);
+        if (grupoDestino) {
+          await fetch("/api/db/grupos", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: grupoDestino.id,
+              nombre: grupoDestino.nombre,
+              naves_asignadas: Array.from(new Set([...(grupoDestino.naves_asignadas || []), naveId])),
+            }),
+          });
+        }
+      }
+
+      showToast("Grupo de la nave actualizado");
+      fetchGrupos();
+    } catch (e) {
+      showToast("Error al actualizar el grupo de la nave", true);
+    }
   };
 
   const fetchEmpresasLigadas = async () => {
@@ -157,7 +199,7 @@ export default function SaasAdminPage() {
     }
   };
 
-  if (isRoot === null || loading && empresas.length === 0) {
+  if (isRoot === null) {
     return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-500 font-medium">Cargando Plataforma SaaS...</div>;
   }
 
@@ -174,6 +216,10 @@ export default function SaasAdminPage() {
         </div>
       </div>
     );
+  }
+
+  if (loading && empresas.length === 0) {
+    return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-500 font-medium">Cargando Plataforma SaaS...</div>;
   }
 
   return (
@@ -260,7 +306,7 @@ export default function SaasAdminPage() {
                 const navesEnGrupo = new Set(empGrupos.flatMap((g: any) => g.naves_asignadas || []));
                 const navesSinGrupo = (emp.naves || []).filter(n => !navesEnGrupo.has(n.id));
 
-                const NaveCard = ({ nave }: { nave: Nave }) => (
+                const NaveCard = ({ nave, grupoActualId }: { nave: Nave; grupoActualId: string }) => (
                   <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow group relative overflow-hidden">
                     <div className="absolute top-0 left-0 w-1 h-full bg-indigo-400"></div>
                     <div className="flex justify-between items-start mb-3">
@@ -272,13 +318,23 @@ export default function SaasAdminPage() {
                       </div>
                     </div>
                     {nave.ubicacion_maps ? (
-                      <a href={nave.ubicacion_maps} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-sm text-indigo-600 font-medium hover:underline bg-indigo-50 px-2.5 py-1 rounded-md">
+                      <a href={nave.ubicacion_maps} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-sm text-indigo-600 font-medium hover:underline bg-indigo-50 px-2.5 py-1 rounded-md mb-3">
                         <MapPin size={14} /> Ver en Maps
                       </a>
                     ) : (
-                      <span className="inline-flex items-center gap-1.5 text-sm text-slate-400 font-medium bg-slate-50 px-2.5 py-1 rounded-md">
+                      <span className="inline-flex items-center gap-1.5 text-sm text-slate-400 font-medium bg-slate-50 px-2.5 py-1 rounded-md mb-3">
                         <MapPin size={14} /> Sin ubicación
                       </span>
+                    )}
+                    {empGrupos.length > 0 && (
+                      <select
+                        value={grupoActualId}
+                        onChange={(e) => handleChangeNaveGrupo(nave.id, emp.id, e.target.value)}
+                        className="w-full text-xs font-semibold p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-violet-500 text-slate-600 cursor-pointer"
+                      >
+                        <option value="">Sin grupo asignado</option>
+                        {empGrupos.map((g: any) => <option key={g.id} value={g.id}>{g.nombre}</option>)}
+                      </select>
                     )}
                   </div>
                 );
@@ -289,7 +345,7 @@ export default function SaasAdminPage() {
                     <div className="mb-5 flex items-center justify-between">
                       <div className="text-sm font-bold text-slate-400 uppercase tracking-wider">Sub-Empresas (Naves) por Grupo</div>
                       <button
-                        onClick={(e) => { e.stopPropagation(); setSelectedEmpresaForGrupo(emp); setShowGrupoModal(true); }}
+                        onClick={(e) => { e.stopPropagation(); setSelectedEmpresaForGrupo(emp); setEditingGrupo(null); setShowGrupoModal(true); }}
                         className="px-3 py-1.5 bg-violet-50 text-violet-700 hover:bg-violet-100 font-semibold rounded-lg text-xs transition-colors flex items-center gap-1.5"
                       >
                         <Plus size={14} /> Nuevo Grupo
@@ -316,13 +372,14 @@ export default function SaasAdminPage() {
                                   <span className="text-xs text-slate-400">({navesDelGrupo.length} naves)</span>
                                 </div>
                                 <div className="flex-1 h-px bg-slate-200"></div>
+                                <button onClick={() => { setSelectedEmpresaForGrupo(emp); setEditingGrupo(grupo); setShowGrupoModal(true); }} className="p-1 text-slate-300 hover:text-violet-500 transition-colors"><Edit size={13} /></button>
                                 <button onClick={() => handleDeleteGrupo(grupo.id)} className="p-1 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={13} /></button>
                               </div>
                               {navesDelGrupo.length === 0 ? (
                                 <p className="text-xs text-slate-400 italic ml-5">Sin naves asignadas a este grupo.</p>
                               ) : (
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 ml-5">
-                                  {navesDelGrupo.map(nave => <NaveCard key={nave.id} nave={nave} />)}
+                                  {navesDelGrupo.map(nave => <NaveCard key={nave.id} nave={nave} grupoActualId={grupo.id} />)}
                                 </div>
                               )}
                             </div>
@@ -341,7 +398,7 @@ export default function SaasAdminPage() {
                               <div className="flex-1 h-px bg-slate-200"></div>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 ml-5">
-                              {navesSinGrupo.map(nave => <NaveCard key={nave.id} nave={nave} />)}
+                              {navesSinGrupo.map(nave => <NaveCard key={nave.id} nave={nave} grupoActualId="" />)}
                             </div>
                           </div>
                         )}
@@ -414,9 +471,10 @@ export default function SaasAdminPage() {
 
       <SaasGrupoModal
         isOpen={showGrupoModal}
-        onClose={() => { setShowGrupoModal(false); setSelectedEmpresaForGrupo(null); }}
+        onClose={() => { setShowGrupoModal(false); setSelectedEmpresaForGrupo(null); setEditingGrupo(null); }}
         onSuccess={fetchGrupos}
         empresa={selectedEmpresaForGrupo}
+        grupo={editingGrupo}
         showToast={showToast}
       />
 

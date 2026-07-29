@@ -4,6 +4,7 @@ import "./globals.css";
 import { Sidebar } from "@/components/Sidebar";
 import { TopNavbar } from "@/components/TopNavbar";
 import { WahaStatusBanner } from "@/components/WahaStatusBanner";
+import { IdentityAlertModal } from "@/components/IdentityAlertModal";
 const outfit = Outfit({
   variable: "--font-outfit",
   subsets: ["latin"],
@@ -23,6 +24,7 @@ export default function RootLayout({
     <html lang="es" className={`${outfit.variable} h-full antialiased`}>
       <body className="min-h-full flex font-sans bg-background text-foreground overflow-hidden">
         <Sidebar />
+        <IdentityAlertModal />
         <div className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto relative">
           <WahaStatusBanner />
           <TopNavbar />

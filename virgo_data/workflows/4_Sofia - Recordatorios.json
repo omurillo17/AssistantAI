@@ -253,7 +253,7 @@
       "name": "CambiarEstado",
       "credentials": {
         "postgres": {
-          "id": "FfLyXSYn5xS7Wt3y",
+          "id": "9eErJ1KWRv74SFiT",
           "name": "Postgres account"
         }
       }
@@ -308,7 +308,7 @@
       "name": "Recuerda",
       "credentials": {
         "postgres": {
-          "id": "FfLyXSYn5xS7Wt3y",
+          "id": "9eErJ1KWRv74SFiT",
           "name": "Postgres account"
         }
       }

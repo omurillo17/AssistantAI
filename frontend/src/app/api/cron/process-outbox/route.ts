@@ -6,7 +6,24 @@ const WAHA_BASE = process.env.WAHA_BASE_URL || 'http://localhost:3000';
 const WAHA_API_KEY = process.env.WAHA_API_KEY || 'virgo_secret_key';
 const WAHA_SESSION = process.env.WAHA_SESSION || 'default';
 
-export async function GET() {
+/**
+ * GET /api/cron/process-outbox
+ *
+ * Reintenta el envio de mensajes atorados en cola_mensajes (outbox pattern).
+ * Pensado para ser disparado periodicamente por un Schedule Trigger de n8n
+ * (workflow "5_Sofia - Mantenimiento y Errores"), asi los mensajes que no
+ * se pudieron enviar por una caida de WAHA/luz se reintentan solos al volver.
+ *
+ * Acceso publico con API key (header x-api-key) para consumo desde n8n,
+ * mismo patron que /api/prompt-context.
+ */
+export async function GET(request: Request) {
+  const apiKey = request.headers.get('x-api-key');
+  const expectedKey = process.env.N8N_API_KEY;
+  if (expectedKey && apiKey !== expectedKey) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  }
+
   try {
     // 1. Obtener mensajes pendientes (máximo 50 por lote para no saturar)
     // Solo intentar los que tienen reintentos < 5

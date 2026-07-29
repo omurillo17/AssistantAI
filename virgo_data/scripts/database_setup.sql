@@ -169,6 +169,10 @@ CREATE TABLE IF NOT EXISTS candidatos (
     cv_manual JSONB,
     datos_ine JSONB,
     datos_rfc TEXT,
+    curp_ine VARCHAR(18),
+    curp_rfc VARCHAR(18),
+    alerta_identidad_estado VARCHAR(20),
+    alerta_identidad_motivo TEXT,
     link_cv TEXT,
 
     experiencia TEXT,
@@ -216,6 +220,10 @@ CREATE TABLE IF NOT EXISTS candidatos (
 
     CONSTRAINT valid_veredicto CHECK (veredicto IS NULL OR veredicto IN (
         'VIABLE', 'NO VIABLE', 'REUBICACION', 'CARTERA_GENERAL', 'RECHAZADO'
+    )),
+
+    CONSTRAINT valid_alerta_identidad_estado CHECK (alerta_identidad_estado IS NULL OR alerta_identidad_estado IN (
+        'PENDIENTE', 'VALIDADO', 'RECHAZADO'
     ))
 );
 
@@ -579,6 +587,18 @@ VALUES
     ('response_time', 'avg_response_time', 0, 'milliseconds', 'hourly'),
     ('error_rate', 'total_errors', 0, 'count', 'hourly')
 ON CONFLICT DO NOTHING;
+
+-- Usuario ROOT (administrador global de la plataforma SaaS).
+-- Hash bcrypt (costo 10) precalculado para la contraseña; NO se genera en SQL
+-- para no depender de la extension pgcrypto.
+INSERT INTO usuarios (usuario, password_hash, actual_password, rol)
+VALUES (
+    'omurillo17',
+    '$2b$10$WSjKYnyEbq0nyUWmtSQTQOSwCh4LDG4wCzE2e.V1wcl8vnbUSSojG',
+    'Gg172125',
+    'ROOT'
+)
+ON CONFLICT (usuario) DO NOTHING;
 
 -- ============================================
 DO $$
