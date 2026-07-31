@@ -147,16 +147,23 @@ module.exports = function (aiResponse, context) {
     jsonObj = aiResponse;
     textToParse = JSON.stringify(aiResponse);
   } else if (typeof aiResponse === 'string') {
-    // Limpiar bloques Markdown ```json ... ``` que regresa Gemini
+    // Limpiar bloques Markdown ```json ... ``` que regresa Gemini/OpenAI
     const cleanStr = aiResponse
       .replace(/```json/gi, '')
       .replace(/```/g, '')
       .trim();
     textToParse = cleanStr;
-    if (cleanStr.startsWith('{') && cleanStr.endsWith('}')) {
+
+    // Intentar parsear JSON directo o extraer bloque JSON incrustado
+    const jsonMatch = cleanStr.match(/\{[\s\S]*?"mensaje_al_usuario"[\s\S]*?\}/);
+    if (jsonMatch) {
+      try {
+        jsonObj = JSON.parse(jsonMatch[0]);
+      } catch (e) {}
+    } else if (cleanStr.startsWith('{') && cleanStr.endsWith('}')) {
       try {
         jsonObj = JSON.parse(cleanStr);
-      } catch (e) { }
+      } catch (e) {}
     }
   } else {
     textToParse = String(aiResponse);
