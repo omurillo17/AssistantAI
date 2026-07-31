@@ -9,7 +9,10 @@ function getGlobalPromptBase(): string {
   const candidatePaths = [
     path.join(process.cwd(), '..', 'virgo_data', 'prompts', 'chat_prompt.md'),
     path.join(process.cwd(), 'virgo_data', 'prompts', 'chat_prompt.md'),
+    path.join(process.cwd(), '..', 'virgo_data', 'workflows', 'chat_prompt.md'),
+    path.join(process.cwd(), 'virgo_data', 'workflows', 'chat_prompt.md'),
     '/home/node/virgo_files/prompts/chat_prompt.md',
+    '/home/node/virgo_files/workflows/chat_prompt.md',
   ];
 
   for (const p of candidatePaths) {

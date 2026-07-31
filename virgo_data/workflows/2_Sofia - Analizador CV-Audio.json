@@ -8,10 +8,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -1136,
-        352
+        -944,
+        -64
       ],
-      "id": "b03762ab-464b-4176-8f3f-fdcdfd10cbb5",
+      "id": "d043e53c-e69a-4258-9605-3c0215c1cc72",
       "name": "Vacantes"
     },
     {
@@ -31,10 +31,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        208,
-        448
+        400,
+        32
       ],
-      "id": "7e623aed-4550-4167-b8f7-49afd127bbd5",
+      "id": "86cab3c2-3806-49cc-9b03-8e61fab868bb",
       "name": "AvisoMeme"
     },
     {
@@ -49,10 +49,10 @@
       "type": "@devlikeapro/n8n-nodes-waha.WAHA",
       "typeVersion": 202502,
       "position": [
-        -1136,
-        144
+        -944,
+        -272
       ],
-      "id": "802d9a72-a966-4dd9-89fe-9c631c6eb4a5",
+      "id": "14ae2f16-b82c-4b86-9c4f-1977bd7ea623",
       "name": "PedirPDF",
       "credentials": {
         "wahaApi": {
@@ -77,10 +77,10 @@
       "type": "@n8n/n8n-nodes-langchain.googleGemini",
       "typeVersion": 1.1,
       "position": [
-        -912,
-        352
+        -720,
+        -64
       ],
-      "id": "f9c8e575-25c2-4b1d-bd33-5b3de49dfe20",
+      "id": "952479bb-edc4-46f4-ae70-2ebcb0b91dee",
       "name": "Analyze document",
       "retryOnFail": true,
       "waitBetweenTries": 3000,
@@ -118,10 +118,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -1360,
-        256
+        -1168,
+        -160
       ],
-      "id": "1bf685da-2a77-4356-94e3-991d5b871c91",
+      "id": "b425ee9e-d6dc-446d-98e6-9c8600c10b10",
       "name": "¿Es Word?"
     },
     {
@@ -151,10 +151,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -1584,
-        192
+        -1392,
+        -224
       ],
-      "id": "79ffda3c-59bd-4b8c-a51e-78f6f8178140",
+      "id": "39c71bff-5d8e-4f90-b815-fb3b6867b02a",
       "name": "¿Es Audio?"
     },
     {
@@ -181,10 +181,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.3,
       "position": [
-        -1808,
-        192
+        -1616,
+        -224
       ],
-      "id": "dc21b5ab-3ea3-4c1d-a0fe-fb8f99bdf52f",
+      "id": "f1c4f9d0-4e85-4fbf-9a52-b455d9650c66",
       "name": "DescargarMedia"
     },
     {
@@ -194,24 +194,15 @@
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({\n  telefono: $('Recibido desde Inicio').first().json._contacto.number,\n  nombre: $('SepararJSON').first().json.nombre || 'Candidato',\n  vacante: ($('SepararJSON').first().json.vacante_anuncio && $('SepararJSON').first().json.vacante_anuncio !== 'General' ? $('SepararJSON').first().json.vacante_anuncio : ($('Recibido desde Inicio').first().json._candidato ? $('Recibido desde Inicio').first().json._candidato.vacante_interes : '')) || '',\n  tipo_origen: $('SepararJSON').first().json.tipo_origen || 'CV',\n  experiencia: $('SepararJSON').first().json.experiencia || $('SepararJSON').first().json.resumen_excel || '',\n  mensaje_usuario: $('SepararJSON').first().json.mensaje_usuario || '',\n  datos_documento: $('SepararJSON').first().json.cv_manual ? JSON.stringify($('SepararJSON').first().json.cv_manual) : null,\n  veredicto: $('SepararJSON').first().json.veredicto || null,\n  motivo: $('SepararJSON').first().json.motivo || null,\n  link_cv: ($('SubirCV').first() ? $('SubirCV').first().json.url : null) || null,\n  nombre_chat: ($('Recibido desde Inicio').first().json._webhook.body.payload._data ? $('Recibido desde Inicio').first().json._webhook.body.payload._data.notifyName : '') || '',\n  edad: $('SepararJSON').first().json.edad_calculada || null,\n  correo: $('SepararJSON').first().json.correo || null,\n  filtros_tecnicos: null,\n  identidad_bloqueada: $('SepararJSON').first().json.identidad_bloqueada ? 'true' : 'false',\n  identidad_motivo: $('SepararJSON').first().json.identidad_motivo || '',\n  curp_ine: $('SepararJSON').first().json.curp_ine || null,\n  curp_rfc: $('SepararJSON').first().json.curp_rfc || null,\n  nombre_reclutador: $('DefinirAgenda').first().json.nombre_reclutador || null,\n  telefono_reclutador: $('DefinirAgenda').first().json.telefono_reclutador || null\n}) }}",
-        "options": {},
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "x-api-key",
-              "value": "={{ $env.N8N_API_KEY }}"
-            }
-          ]
-        }
+        "options": {}
       },
-      "id": "704e738e-4a68-42de-b32b-b556405458ae",
+      "id": "db0367d9-5b30-49c1-a49f-b6931f77e41b",
       "name": "Actualizar_Expediente",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        1000,
-        180
+        1152,
+        -256
       ]
     },
     {
@@ -241,10 +232,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        850,
-        288
+        960,
+        -144
       ],
-      "id": "b7a1c2d3-0001-4a1b-9c1d-000000000002",
+      "id": "c7be0d5b-4da0-4973-beca-efe9c9059118",
       "name": "¿Hay Documento Analizado?"
     },
     {
@@ -275,23 +266,23 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -240,
-        352
+        -48,
+        -64
       ],
-      "id": "b2a85105-4235-4c3c-95ee-8d66658d626d",
+      "id": "85d76626-001e-47b3-8eac-94ebe35836e1",
       "name": "If"
     },
     {
       "parameters": {
-        "jsCode": "// 1. DATOS DEL CANDIDATO\nconst dbData = $('Recibido desde Inicio').first().json._candidato || {};\nconst naveActual = String(dbData.nave_interes || '').trim();\nconst vacanteInput = String(dbData.vacante_interes || 'General').trim();\n\n// 2. CARGAR RECLUTADOR_VACANTES Y ENCARGADOS POR NAVE desde la BD via API\nlet equipo = [];\nlet encargados = [];\ntry {\n    let apiBase = 'http://host.docker.internal:3001';\n    let empresaId = '';\n    try { if (typeof process !== 'undefined' && process.env && process.env.TCI_API_BASE) apiBase = process.env.TCI_API_BASE; } catch(e) {}\n    try { if (typeof $env !== 'undefined' && $env && $env.TCI_API_BASE) apiBase = $env.TCI_API_BASE; } catch(e) {}\n    try { if (typeof process !== 'undefined' && process.env && process.env.TCI_EMPRESA_ID) empresaId = process.env.TCI_EMPRESA_ID; } catch(e) {}\n    try { if (typeof $env !== 'undefined' && $env && $env.TCI_EMPRESA_ID) empresaId = $env.TCI_EMPRESA_ID; } catch(e) {}\n    const apiUrl = empresaId\n        ? apiBase + \"/api/db/reclutador_vacantes?empresa_id=\" + empresaId\n        : apiBase + \"/api/db/reclutador_vacantes\";\n    const resp = await fetch(apiUrl);\n    if (resp.ok) { equipo = await resp.json(); }\n\n    const encUrl = empresaId\n        ? apiBase + \"/api/db/encargados-por-nave?empresa_id=\" + empresaId\n        : apiBase + \"/api/db/encargados-por-nave\";\n    const encResp = await fetch(encUrl);\n    if (encResp.ok) { encargados = await encResp.json(); }\n} catch (e) {\n    equipo = [{\n        nombre: \"Gerente de Reclutamiento\",\n        emoji: \"🚨\",\n        telefono: \"5213323379399\",\n        calendar_id: \"talreclutamiento01@gmail.com\",\n        naves: [],\n        vacantes: []\n    }];\n}\n\nconst cleanStr = (s) => s ? String(s).normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toUpperCase().trim() : '';\n\n// 2.1 Buscar si la NAVE del candidato tiene un ENCARGADO especifico asignado\nconst naveCleanGlobal = cleanStr(naveActual);\nconst encargadoNave = naveCleanGlobal ? encargados.find(en => Array.isArray(en.naves) && en.naves.some(n => {\n    const nClean = cleanStr(n);\n    return nClean === naveCleanGlobal || nClean.includes(naveCleanGlobal) || naveCleanGlobal.includes(nClean);\n})) : null;\n\nconst gerenteGlobal = equipo.find(r => r.nombre === 'Gerente de Reclutamiento') || equipo[equipo.length - 1] || {\n    nombre: \"Gerente de Reclutamiento\",\n    telefono: \"5213323379399\",\n    calendar_id: \"talreclutamiento01@gmail.com\"\n};\n\n// Si hay un encargado para esta nave, ese es el respaldo; si no, cae al gerente global\nconst gerente = encargadoNave ? {\n    nombre: encargadoNave.encargado_nombre || gerenteGlobal.nombre,\n    telefono: encargadoNave.encargado_telefono || gerenteGlobal.telefono,\n    calendar_id: encargadoNave.encargado_calendar || gerenteGlobal.calendar_id\n} : gerenteGlobal;\n\nconst defaultCalendar = (gerente.calendar_id && String(gerente.calendar_id).trim()) || \"talreclutamiento01@gmail.com\";\n\nconst targetClean = cleanStr(vacanteInput);\n\nif (!targetClean || targetClean === 'GENERAL') {\n    return {\n        json: {\n            nombre_reclutador: \"Equipo de Reclutamiento\",\n            telefono_reclutador: gerente.telefono || \"5213323379399\",\n            calendar_id: defaultCalendar,\n            vacante_detectada: vacanteInput,\n            nave_candidato: naveActual,\n            grupo_turno: null,\n            turno_total: 1,\n            candidatos_turno: null\n        }\n    };\n}\n\n// 3. BÚSQUEDA DE MATCHES POR ID DE VACANTE (Y FALLBACK POR NOMBRE)\nconst matches = equipo.filter(r =>\n    r.nombre !== gerente.nombre &&\n    Array.isArray(r.vacantes) &&\n    r.vacantes.length > 0 &&\n    r.vacantes.some(v => {\n        // Coincidencia PRINCIPAL por ID de la vacante (v.id === vacanteInput)\n        const matchId = String(v.id || '').trim() === String(vacanteInput).trim() ||\n                        cleanStr(v.id) === targetClean;\n\n        // Coincidencia SECUNDARIA por Nombre de la vacante\n        const matchNombre = cleanStr(v.nombre) === targetClean ||\n                            (cleanStr(v.nombre) && targetClean && (cleanStr(v.nombre).includes(targetClean) || targetClean.includes(cleanStr(v.nombre))));\n\n        const matchVacante = matchId || matchNombre;\n        if (!matchVacante) return false;\n\n        // Coincidencia por Nave (si v.naves está vacío [], aplica para todas las naves)\n        const navesVacante = v.naves || (v.nave ? [v.nave] : []);\n        if (navesVacante.length === 0 || !naveActual) return true;\n\n        const naveClean = cleanStr(naveActual);\n        return navesVacante.some(n => {\n            const nClean = cleanStr(n);\n            return String(n).trim() === naveActual || nClean === naveClean || nClean.includes(naveClean) || naveClean.includes(nClean);\n        });\n    })\n);\n\n// 4. FALLBACK: Si no hay matches -> Gerente\nconst candidatos = matches.length > 0 ? matches : [gerente];\n\n// 5. SI SOLO HAY 1 RECLUTADOR: Salida directa\nif (candidatos.length === 1) {\n    const cand = candidatos[0];\n    return {\n        json: {\n            nombre_reclutador: cand.nombre || \"Equipo de Reclutamiento\",\n            telefono_reclutador: cand.telefono || \"5213323379399\",\n            calendar_id: (cand.calendar_id && String(cand.calendar_id).trim()) || defaultCalendar,\n            vacante_detectada: vacanteInput,\n            nave_candidato: naveActual,\n            grupo_turno: null,\n            turno_total: 1,\n            candidatos_turno: null\n        }\n    };\n}\n\n// 6. MÚLTIPLES RECLUTADORES: Preparar turno rotativo\nconst grupoKey = candidatos\n    .map(r => r.nombre)\n    .sort()\n    .join('|')\n    .substring(0, 100);\n\nreturn {\n    json: {\n        vacante_detectada: vacanteInput,\n        nave_candidato: naveActual,\n        grupo_turno: grupoKey,\n        turno_total: candidatos.length,\n        candidatos_turno: JSON.stringify(\n            candidatos.map(r => ({\n                nombre: r.nombre || \"Reclutador\",\n                telefono: r.telefono || \"5213323379399\",\n                calendar_id: (r.calendar_id && String(r.calendar_id).trim()) || defaultCalendar,\n                emoji: r.emoji || '📅'\n            }))\n        )\n    }\n};"
+        "jsCode": "// 1. DATOS DEL CANDIDATO\nconst dbData = $('Recibido desde Inicio').first().json._candidato || {};\nconst naveActual = String(dbData.nave_interes || '').trim() || '1';\nconst vacante = String(dbData.vacante_interes || 'General').trim();\n\n// 2. CARGAR RECLUTADOR_VACANTES desde la BD via API\nlet equipo = [];\ntry {\n    let apiBase = 'http://host.docker.internal:3001';\n    let empresaId = '';\n    try { if (typeof process !== 'undefined' && process.env && process.env.TCI_API_BASE) apiBase = process.env.TCI_API_BASE; } catch(e) {}\n    try { if (typeof $env !== 'undefined' && $env && $env.TCI_API_BASE) apiBase = $env.TCI_API_BASE; } catch(e) {}\n    try { if (typeof process !== 'undefined' && process.env && process.env.TCI_EMPRESA_ID) empresaId = process.env.TCI_EMPRESA_ID; } catch(e) {}\n    try { if (typeof $env !== 'undefined' && $env && $env.TCI_EMPRESA_ID) empresaId = $env.TCI_EMPRESA_ID; } catch(e) {}\n    const apiUrl = empresaId\n        ? apiBase + \"/api/db/reclutador_vacantes?empresa_id=\" + empresaId\n        : apiBase + \"/api/db/reclutador_vacantes\";\n    const resp = await fetch(apiUrl);\n    if (resp.ok) { equipo = await resp.json(); }\n} catch (e) {\n    equipo = [{\n        nombre: \"Gerente de Reclutamiento\",\n        emoji: \"🚨\",\n        telefono: \"5213323379399\",\n        calendar_id: \"talreclutamiento01@gmail.com\",\n        naves: [\"1\",\"2\",\"3\"],\n        vacantes: []\n    }];\n}\n\nconst gerente = equipo.find(r => r.nombre === 'Gerente de Reclutamiento') || equipo[equipo.length - 1] || {\n    nombre: \"Gerente de Reclutamiento\",\n    telefono: \"5213323379399\",\n    calendar_id: \"talreclutamiento01@gmail.com\"\n};\n\nconst defaultCalendar = (gerente.calendar_id && String(gerente.calendar_id).trim()) || \"talreclutamiento01@gmail.com\";\n\n// 3. BUSCAR MATCHES: soporta comparación por ID de vacante, nombre de vacante y por nave/ID de nave\nconst cleanStr = (s) => s ? String(s).normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toUpperCase().trim() : '';\nconst vacanteClean = cleanStr(vacante);\nconst vacanteDesconocida = !vacanteClean || vacanteClean === 'GENERAL';\n\nif (vacanteDesconocida) {\n    return {\n        json: {\n            nombre_reclutador: \"Equipo de Reclutamiento\",\n            telefono_reclutador: gerente.telefono || \"5213323379399\",\n            calendar_id: defaultCalendar,\n            vacante_detectada: vacante,\n            nave_candidato: naveActual,\n            grupo_turno: null,\n            turno_total: 1,\n            candidatos_turno: null\n        }\n    };\n}\n\nconst matches = equipo.filter(r =>\n    r.nombre !== gerente.nombre &&\n    Array.isArray(r.vacantes) &&\n    r.vacantes.length > 0 &&\n    r.vacantes.some(v => {\n        const vNombreClean = cleanStr(v.nombre);\n        const vIdClean = cleanStr(v.id);\n        const matchVacante = (vIdClean && vIdClean === vacanteClean) ||\n                             (vNombreClean && vNombreClean === vacanteClean) ||\n                             (vNombreClean && vacanteClean && (vNombreClean.includes(vacanteClean) || vacanteClean.includes(vNombreClean)));\n\n        if (!matchVacante) return false;\n        const navesVacante = v.naves || (v.nave ? [v.nave] : []);\n        if (navesVacante.length === 0) return true;\n\n        const naveClean = cleanStr(naveActual);\n        return navesVacante.some(n => {\n            const nClean = cleanStr(n);\n            return nClean === naveClean || nClean.includes(naveClean) || naveClean.includes(nClean);\n        });\n    })\n);\n\n// 4. FALLBACK: si nadie tiene la vacante específica → Gerente\nconst candidatos = matches.length > 0 ? matches : [gerente];\n\n// 5. SI SOLO HAY 1 RECLUTADOR: salida directa\nif (candidatos.length === 1) {\n    const cand = candidatos[0];\n    return {\n        json: {\n            nombre_reclutador: cand.nombre || \"Equipo de Reclutamiento\",\n            telefono_reclutador: cand.telefono || \"5213323379399\",\n            calendar_id: (cand.calendar_id && String(cand.calendar_id).trim()) || defaultCalendar,\n            vacante_detectada: vacante,\n            nave_candidato: naveActual,\n            grupo_turno: null,\n            turno_total: 1,\n            candidatos_turno: null\n        }\n    };\n}\n\n// 6. MÚLTIPLES RECLUTADORES: preparar turno rotativo\nconst grupoKey = candidatos\n    .map(r => r.nombre)\n    .sort()\n    .join('|')\n    .substring(0, 100);\n\nreturn {\n    json: {\n        vacante_detectada: vacante,\n        nave_candidato: naveActual,\n        grupo_turno: grupoKey,\n        turno_total: candidatos.length,\n        candidatos_turno: JSON.stringify(\n            candidatos.map(r => ({\n                nombre: r.nombre || \"Reclutador\",\n                telefono: r.telefono || \"5213323379399\",\n                calendar_id: (r.calendar_id && String(r.calendar_id).trim()) || defaultCalendar,\n                emoji: r.emoji || '📅'\n            }))\n        )\n    }\n};\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        656,
-        288
+        784,
+        -144
       ],
-      "id": "7aa3c51f-55a6-4ca5-8e52-3b3e81a3572a",
+      "id": "67fb5c78-2d63-4302-b9e4-df7e7b4a7ce2",
       "name": "DefinirAgenda"
     },
     {
@@ -354,10 +345,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        -464,
-        352
+        -272,
+        -64
       ],
-      "id": "f6f0a6fe-0f50-4597-9b02-deb6b6b05854",
+      "id": "9306d4b0-954e-4ac7-9a64-243a9b8159c0",
       "name": "DatosListos"
     },
     {
@@ -367,10 +358,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -688,
-        352
+        -496,
+        -64
       ],
-      "id": "f0db6d4d-e532-4860-b6fa-bd1f267489b7",
+      "id": "5d407667-5d47-442a-a87d-5d2677724bf1",
       "name": "SepararJSON"
     },
     {
@@ -388,10 +379,10 @@
       "type": "@n8n/n8n-nodes-langchain.googleGemini",
       "typeVersion": 1.1,
       "position": [
-        208,
-        0
+        400,
+        -416
       ],
-      "id": "505b9689-ae57-4a2b-9bbd-c032fae805a0",
+      "id": "f95dc8cb-ffbc-408e-b6f9-031eabad17f6",
       "name": "TranscribirAudio",
       "credentials": {
         "googlePalmApi": {
@@ -407,10 +398,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        432,
-        288
+        624,
+        -144
       ],
-      "id": "962ad310-793c-4986-b502-c3348b65d7c8",
+      "id": "e3eaba09-9b41-4140-830a-827fd46c544b",
       "name": "CargarPrompt"
     },
     {
@@ -424,10 +415,10 @@
       "type": "@devlikeapro/n8n-nodes-waha.WAHA",
       "typeVersion": 202502,
       "position": [
-        -2032,
-        192
+        -1840,
+        -224
       ],
-      "id": "a6873424-756c-4b37-b6da-69c08ec40a3c",
+      "id": "fffca8af-eb91-4221-a1f7-e7886dc28423",
       "name": "Escribiendo...1",
       "credentials": {
         "wahaApi": {
@@ -447,10 +438,10 @@
       "type": "@devlikeapro/n8n-nodes-waha.WAHA",
       "typeVersion": 202502,
       "position": [
-        208,
-        640
+        400,
+        224
       ],
-      "id": "d200c1a6-4283-44b8-8902-80c814cae75b",
+      "id": "386850ac-b763-40ad-8e20-74c080b1e272",
       "name": "Escribiendo...",
       "credentials": {
         "wahaApi": {
@@ -461,42 +452,36 @@
     },
     {
       "parameters": {
-        "url": "http://host.docker.internal:3001/api/upload-cv",
         "method": "POST",
-        "options": {},
+        "url": "http://host.docker.internal:3001/api/upload-cv",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": []
+        },
         "sendBody": true,
         "contentType": "multipart-form-data",
-        "sendHeaders": true,
         "bodyParameters": {
           "parameters": [
             {
               "name": "telefono",
-              "value": "={{ $('Recibido desde Inicio').first().json._contacto.number }}",
-              "parameterType": "form-data-value"
+              "value": "={{ $('Recibido desde Inicio').first().json._contacto.number }}"
             },
             {
+              "parameterType": "formBinaryData",
               "name": "data",
-              "inputDataFieldName": "data",
-              "parameterType": "formBinary"
+              "inputDataFieldName": "=data"
             }
           ]
         },
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "x-api-key",
-              "value": "={{ $env.N8N_API_KEY }}"
-            }
-          ]
-        }
+        "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        -16,
-        256
+        176,
+        -160
       ],
-      "id": "ae3e748a-60c4-4824-8758-ea80a2e44dcd",
+      "id": "6938d5c8-d168-4320-a90d-0b42c0130c87",
       "name": "SubirCV"
     },
     {
@@ -506,10 +491,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -16,
-        0
+        176,
+        -416
       ],
-      "id": "c4206c3a-5099-493a-96c8-fd891f1a29a9",
+      "id": "a969b0ec-440e-4638-82d6-e18e595d8559",
       "name": "CambiarFormato"
     },
     {
@@ -539,10 +524,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -2272,
-        288
+        -2080,
+        -128
       ],
-      "id": "2c5e13b0-cfba-4adc-8099-54f6dd3d41a2",
+      "id": "5c521cbd-a331-4f47-a01d-cb45efde0bc0",
       "name": "¿Texto o Media?"
     },
     {
@@ -584,18 +569,24 @@
         "includeOtherFields": true,
         "options": {}
       },
-      "id": "565074e7-95d2-400c-903b-11a1be4af0b7",
+      "id": "ee95020d-6884-449f-8047-e5d2985e7b88",
       "name": "PrepararDatosFlujoChat",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        880,
-        448
+        1392,
+        -128
       ]
     },
     {
       "parameters": {
-        "workflowId": "p1xPtpsqEDr0Ie57",
+        "workflowId": {
+          "__rl": true,
+          "value": "p1xPtpsqEDr0Ie57",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/p1xPtpsqEDr0Ie57",
+          "cachedResultName": "3_Sofia - Flujo de Chat"
+        },
         "workflowInputs": {
           "mappingMode": "autoMapInputData",
           "value": {},
@@ -652,13 +643,13 @@
         },
         "options": {}
       },
-      "id": "fe1c195b-c8e1-4f9d-b953-d2b4fd80602f",
+      "id": "2a14fca4-ac20-4d86-9c58-34a4678d9e20",
       "name": "Ejecutar Subflujo: Flujo de Chat",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.2,
       "position": [
-        1104,
-        448
+        1600,
+        -128
       ]
     },
     {
@@ -666,13 +657,13 @@
         "inputSource": "jsonExample",
         "jsonExample": "{\n  \"_webhook\": \"{...payload original del Webhook...}\",\n  \"_contacto\": \"{...salida de IgnorarEquipo...}\",\n  \"_candidato\": \"{...salida de ObtenerDatosCandidato...}\"\n}"
       },
-      "id": "6a70074d-1850-43ad-9900-b85010244034",
+      "id": "544296d6-ce71-4069-a885-3b7d8244dbc8",
       "name": "Recibido desde Inicio",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.1,
       "position": [
-        -2464,
-        288
+        -2272,
+        -128
       ]
     }
   ],
@@ -951,7 +942,7 @@
     "binaryMode": "separate",
     "availableInMCP": false
   },
-  "versionId": "e7ef58ac-0d9f-4e80-b686-2d1d9ce1342b",
+  "versionId": "46a54211-59fc-4ac9-b302-a2b217361e83",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "dee31bcf1d2327582c0e4156e13b587f5779996960582a36461518ee5fc3826e"

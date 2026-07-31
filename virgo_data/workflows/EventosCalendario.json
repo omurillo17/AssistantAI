@@ -4,7 +4,7 @@
     {
       "parameters": {
         "inputSource": "jsonExample",
-        "jsonExample": "{\n  \"start\": \"2026-07-08T10:00:00.000Z\",\n  \"end\": \"2026-07-08T11:00:00.000Z\",\n  \"resumen_ia\": \"Resumen corto\",\n  \"calendar_id\": \"tu_correo@gmail.com\",\n  \"telefono\": \"5213323379399\",\n  \"nombre\": \"Candidato\",\n  \"nave_interes\": \"Nave X\",\n  \"ine_nombre\": \"Nombre INE\",\n  \"ine_curp\": \"CURP123\"\n}\n"
+        "jsonExample": "{\n  \"start\": \"2026-07-08T10:00:00.000Z\",\n  \"end\": \"2026-07-08T11:00:00.000Z\",\n  \"resumen_ia\": \"Resumen corto\",\n  \"calendar_id\": \"tu_correo@gmail.com\",\n  \"telefono\": \"5213323379399\",\n  \"nombre\": \"Candidato\",\n  \"nave_interes\": \"Nave X\",\n  \"vacante_interes\": \"Vacante X\",\n  \"ine_nombre\": \"Nombre INE\",\n  \"ine_curp\": \"CURP123\"\n}\n"
       },
       "id": "b9f4a1b1-0e91-4764-a75b-edfa4172aac9",
       "typeVersion": 1.1,
@@ -25,8 +25,8 @@
         "start": "={{ $json.start }}",
         "end": "={{ $json.end }}",
         "additionalFields": {
-          "description": "={{ `Candidato: ${$json.nombre || 'Desconocido'}\\nTel: ${$json.telefono || 'Desconocido'}\\nNave/Sucursal: ${$json.nave_interes || 'Pendiente'}\\n\\n--- DATOS VERIFICADOS (INE) ---\\nNombre: ${$json.ine_nombre || 'No validado'}\\nCURP: ${$json.ine_curp || 'No validado'}\\n\\n--- NOTAS DE IA ---\\n${$json.notas_ia}` }}",
-          "summary": "={{ `Nave ${$json.nave_interes || 'Pendiente'} - ${$json.resumen_ia}` }}"
+          "description": "={{ `Candidato: ${$json.nombre || 'Desconocido'}\\nTel: ${$json.telefono || 'Desconocido'}\\nVacante: ${$json.vacante_interes || 'General'}\\nNave/Sucursal: ${$json.nave_interes || 'Pendiente'}\\n\\n--- DATOS VERIFICADOS (INE) ---\\nNombre: ${$json.ine_nombre || 'No validado'}\\nCURP: ${$json.ine_curp || 'No validado'}\\n\\n--- NOTAS DE IA ---\\n${$json.notas_ia}` }}",
+          "summary": "={{ `${$json.nombre || 'Candidato'} - ${$json.vacante_interes || 'Vacante General'}` }}"
         }
       },
       "id": "ff8c20c9-d3c5-43c7-be44-06d23f3c8b87",
@@ -39,7 +39,7 @@
       ],
       "credentials": {
         "googleCalendarOAuth2Api": {
-          "id": "UdvlrdeY3pl15MOk",
+          "id": "j28g9WdB9Ug4Yh18",
           "name": "Google Calendar account"
         }
       }
@@ -88,7 +88,7 @@
       ],
       "credentials": {
         "googleCalendarOAuth2Api": {
-          "id": "UdvlrdeY3pl15MOk",
+          "id": "j28g9WdB9Ug4Yh18",
           "name": "Google Calendar account"
         }
       }
@@ -210,9 +210,9 @@
     "binaryMode": "separate",
     "availableInMCP": false
   },
-  "versionId": "8c3f105e-a8fa-414c-85cf-ad44d6603ad1",
+  "versionId": "d04be88a-0b55-4761-aeae-5cbfdeaa7fea",
   "meta": {
-    "instanceId": "e485a5a7ac8114c62636ecba6367db69dad6bc18fb5dd48f890b21271541f05c"
+    "instanceId": "dee31bcf1d2327582c0e4156e13b587f5779996960582a36461518ee5fc3826e"
   },
   "nodeGroups": [],
   "id": "G1Ow8lsap2BQkeJB",

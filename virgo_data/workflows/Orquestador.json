@@ -11,10 +11,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
       "position": [
-        -336,
-        -832
+        -256,
+        -400
       ],
-      "id": "31d3b8b2-5859-4e36-97a8-6566958c55ba",
+      "id": "bad63302-4e24-4a71-8ba0-4727263e1f9f",
       "webhookId": "1280a3a7-f456-4f69-9720-8cb498ef9f81"
     },
     {
@@ -27,10 +27,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
       "position": [
-        -112,
-        -832
+        -32,
+        -400
       ],
-      "id": "4738daa9-230f-49f2-897a-93aad91c672c",
+      "id": "bdb41c79-e89b-44c9-9e3a-76f4d010f62b",
       "credentials": {
         "postgres": {
           "id": "9eErJ1KWRv74SFiT",
@@ -49,10 +49,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
       "position": [
-        -336,
-        -608
+        -256,
+        -176
       ],
-      "id": "dcebf791-5d72-4e68-90ba-8c78f574ba63",
+      "id": "0c2d4d99-55d1-4edc-b0ea-4e01f73ee473",
       "webhookId": "5c6df70a-53e7-401f-a131-b79a3f4e5eb5"
     },
     {
@@ -67,10 +67,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
       "position": [
-        -112,
-        -608
+        -32,
+        -176
       ],
-      "id": "4e5b3bbd-2e4c-4ef2-86f2-a1a6da71f16e",
+      "id": "48b2503f-fc78-4dba-acca-f6950d449551",
       "credentials": {
         "postgres": {
           "id": "9eErJ1KWRv74SFiT",
@@ -88,10 +88,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
       "position": [
-        -336,
-        -1040
+        -256,
+        -608
       ],
-      "id": "41d32a26-2e0b-49d6-80f8-0a43962cda4d",
+      "id": "1e609362-f22c-435b-8bea-0d48d5c9b4b4",
       "webhookId": "49e0fca6-724e-446a-bbea-70902fba22cf"
     },
     {
@@ -106,10 +106,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
       "position": [
-        -112,
-        -1040
+        -32,
+        -608
       ],
-      "id": "f601fa31-a12f-4058-9baf-e2590219d41d",
+      "id": "a7ad17ad-37d8-40ec-80f6-e4e913bc7894",
       "credentials": {
         "postgres": {
           "id": "9eErJ1KWRv74SFiT",
@@ -124,13 +124,13 @@
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "a2954930-fd97-4fd4-865d-b9b199012c8b",
+      "id": "9a598e97-29a9-4330-9eff-f4b98ba877b5",
       "name": "Webhook CRM Cancelar",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        -512,
-        -16
+        -432,
+        416
       ],
       "webhookId": "crm-cancelar-cita"
     },
@@ -138,13 +138,13 @@
       "parameters": {
         "jsCode": "// Normalizar el body del webhook (n8n puede meter los datos en .body o directamente)\nconst raw = $input.first().json;\nconst body = raw.body || raw;\n\nconst event_id = body.event_id || '';\nconst calendar_id = body.calendar_id || '';\nconst telefono = body.telefono || '';\n\nif (!telefono) {\n  throw new Error('Falta el campo telefono');\n}\n\nreturn [{ json: { event_id, calendar_id, telefono } }];"
       },
-      "id": "82bb1ded-5900-4b8d-982b-89edef092db0",
+      "id": "c558d24b-211b-478d-9cc1-4d6735b554ae",
       "name": "Normalizar Datos",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -288,
-        -16
+        -208,
+        416
       ]
     },
     {
@@ -158,17 +158,17 @@
         "eventId": "={{ $json.event_id }}",
         "options": {}
       },
-      "id": "11531407-9bce-418b-b3ec-3f23d71090ff",
+      "id": "d5628414-831e-48a3-97f6-bc83c4257443",
       "name": "Borrar de Google Calendar",
       "type": "n8n-nodes-base.googleCalendar",
       "typeVersion": 1,
       "position": [
-        -64,
-        -16
+        16,
+        416
       ],
       "credentials": {
         "googleCalendarOAuth2Api": {
-          "id": "UdvlrdeY3pl15MOk",
+          "id": "j28g9WdB9Ug4Yh18",
           "name": "Google Calendar account"
         }
       },
@@ -182,13 +182,13 @@
           "queryReplacement": "={{ [ $('Normalizar Datos').first().json.telefono ] }}"
         }
       },
-      "id": "731f6d0f-d86b-4877-8f9a-f93f2de381d2",
+      "id": "07ec4de7-277a-4baf-9f75-f281491b364c",
       "name": "Postgres: Cancelar Cita",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.3,
       "position": [
-        160,
-        -16
+        240,
+        416
       ],
       "credentials": {
         "postgres": {
@@ -203,13 +203,13 @@
         "responseBody": "={{ JSON.stringify({ success: true, message: 'Cita cancelada correctamente', telefono: $('Normalizar Datos').first().json.telefono }) }}",
         "options": {}
       },
-      "id": "4d10c7b3-d520-485d-a9f9-22740d870fca",
+      "id": "778a2b44-1142-42c0-8334-cc4f638dde89",
       "name": "Respond to Webhook",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        384,
-        -16
+        464,
+        416
       ]
     },
     {
@@ -218,13 +218,13 @@
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "ae9a425e-6072-4303-890a-ee1a2cfb4a75",
+      "id": "ff9b6631-6b05-428b-a2f4-d1e062f7c8bd",
       "name": "Webhook GCal",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        -512,
-        496
+        -432,
+        928
       ],
       "webhookId": "google-calendar"
     },
@@ -234,13 +234,13 @@
         "query": "SELECT DISTINCT calendar_id FROM reclutadores WHERE calendar_id IS NOT NULL AND calendar_id != '' AND calendar_id LIKE '%@%';",
         "options": {}
       },
-      "id": "get-reclutadores-calendars",
+      "id": "c8300955-3916-4162-b282-79eeb284c12f",
       "name": "Obtener Correos Reclutadores",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
       "position": [
-        -288,
-        496
+        -208,
+        928
       ],
       "credentials": {
         "postgres": {
@@ -264,17 +264,17 @@
           "query": ""
         }
       },
-      "id": "gcal-dinamico-node",
+      "id": "a9143049-ff24-4630-acaf-7c6b9d3b5a23",
       "name": "GCal Dinamico",
       "type": "n8n-nodes-base.googleCalendar",
       "typeVersion": 1,
       "position": [
-        0,
-        496
+        80,
+        928
       ],
       "credentials": {
         "googleCalendarOAuth2Api": {
-          "id": "UdvlrdeY3pl15MOk",
+          "id": "j28g9WdB9Ug4Yh18",
           "name": "Google Calendar account"
         }
       },
@@ -284,13 +284,13 @@
       "parameters": {
         "jsCode": "const items = $input.all();\nreturn items.map(item => {\n  const calId = item.pairedItem?.json?.calendar_id || item.json?.organizer?.email || item.json?.creator?.email || '';\n  return {\n    json: {\n      ...item.json,\n      calendarId: calId\n    }\n  };\n});"
       },
-      "id": "inyectar-calendar-id-node",
+      "id": "afad4210-0fe5-41c4-a1d0-bfdb5b916ca1",
       "name": "Inyectar Calendar ID",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        300,
-        496
+        384,
+        928
       ]
     },
     {
@@ -298,13 +298,13 @@
         "respondWith": "allIncomingItems",
         "options": {}
       },
-      "id": "4d5b8023-4424-4f43-870e-e665d7276505",
+      "id": "45e8925e-859b-4112-8fc5-84986d4d8155",
       "name": "Respond to Webhook1",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        608,
-        496
+        688,
+        928
       ]
     },
     {
@@ -312,13 +312,13 @@
         "respondWith": "allIncomingItems",
         "options": {}
       },
-      "id": "00b88136-605c-486c-8ca9-5b4cc8776df4",
+      "id": "2c4e30ac-7281-4c07-82ca-5b3f53d93d3a",
       "name": "Respond Webhook GET Candidatos1",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
       "position": [
-        112,
-        -832
+        192,
+        -400
       ]
     },
     {
@@ -326,13 +326,13 @@
         "respondWith": "allIncomingItems",
         "options": {}
       },
-      "id": "4a2205ae-00f0-496c-b488-7ffa56035dca",
+      "id": "bf0868cc-d666-41ae-871d-48d9fe22b15f",
       "name": "Respond Webhook POST Update1",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
       "position": [
-        112,
-        -608
+        192,
+        -176
       ]
     },
     {
@@ -340,16 +340,15 @@
         "respondWith": "allIncomingItems",
         "options": {}
       },
-      "id": "d23bba4c-47b9-4adf-b834-187072b6ae55",
+      "id": "09cb4c21-a0c6-4d17-880c-97aaa329ad9a",
       "name": "Respond Webhook GET History1",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
       "position": [
-        112,
-        -1040
+        192,
+        -608
       ]
     },
-
     {
       "parameters": {
         "httpMethod": "POST",
@@ -357,13 +356,13 @@
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "0c414ca2-5a3c-411f-b117-67637ebce67a",
+      "id": "7874a5a1-25ba-4746-b8a0-e53957508e2d",
       "name": "Webhook CRM Reagendar",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        -512,
-        -208
+        -432,
+        224
       ],
       "webhookId": "crm-reagendar-cita"
     },
@@ -371,13 +370,13 @@
       "parameters": {
         "jsCode": "const raw = $input.first().json;\nconst body = raw.body || raw;\nif (!body.telefono) throw new Error('Falta telefono');\nreturn [{ json: body }];"
       },
-      "id": "6c6ae56a-cfae-4223-9b52-8556a3bc5d57",
+      "id": "3afd133d-b789-4857-8dfc-3220e1a18414",
       "name": "Normalizar Datos Reagendar",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -288,
-        -208
+        -208,
+        224
       ]
     },
     {
@@ -394,17 +393,17 @@
           "start": "={{ $json.start }}"
         }
       },
-      "id": "61a19bc6-17dc-4c6f-be58-ba1848c156e7",
+      "id": "85cc618a-99eb-45f3-a819-dbf6963050b4",
       "name": "Reagendar en Google Calendar",
       "type": "n8n-nodes-base.googleCalendar",
       "typeVersion": 1.1,
       "position": [
-        -64,
-        -208
+        16,
+        224
       ],
       "credentials": {
         "googleCalendarOAuth2Api": {
-          "id": "UdvlrdeY3pl15MOk",
+          "id": "j28g9WdB9Ug4Yh18",
           "name": "Google Calendar account"
         }
       }
@@ -417,13 +416,13 @@
           "queryReplacement": "={{ [$('Normalizar Datos Reagendar').first().json.start, $('Normalizar Datos Reagendar').first().json.telefono] }}"
         }
       },
-      "id": "6d21eaea-04d6-49c1-bb33-03d85af9059b",
+      "id": "0407881b-871e-4fe3-b4e1-5ee6e647d52a",
       "name": "Postgres: Reagendar Cita",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.3,
       "position": [
-        160,
-        -208
+        240,
+        224
       ],
       "credentials": {
         "postgres": {
@@ -441,17 +440,17 @@
         "text": "={{ `Hola! Tu entrevista ha sido REAGENDADA para el ${$('Normalizar Datos Reagendar').first().json.start.split('T')[0]} a las ${$('Normalizar Datos Reagendar').first().json.start.split('T')[1].substring(0,5)}.` }}",
         "requestOptions": {}
       },
-      "id": "6272a9fa-3810-4acd-a157-fdc9ad42617e",
+      "id": "5331b641-e7c6-4f59-94fa-9c804421eacd",
       "name": "Notificar Reagendo WAHA",
       "type": "@devlikeapro/n8n-nodes-waha.WAHA",
       "typeVersion": 202502,
       "position": [
-        384,
-        -208
+        464,
+        224
       ],
       "credentials": {
         "wahaApi": {
-          "id": "OBarvY73V8DKtYv0",
+          "id": "kzWfdhUZ4FU6jVEa",
           "name": "WAHA account"
         }
       }
@@ -462,13 +461,13 @@
         "responseBody": "={{ JSON.stringify({ success: true }) }}",
         "options": {}
       },
-      "id": "ecb81266-c70e-4fdc-a0d3-d8690456ca1c",
+      "id": "45b84923-431f-4e9c-a9a0-5be943ffbda8",
       "name": "Respond Reagendar",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        608,
-        -208
+        688,
+        224
       ]
     },
     {
@@ -478,13 +477,13 @@
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "054beca2-fa73-4d81-a66a-c387b1646998",
+      "id": "103de09f-1c72-4a6b-b523-20806688f450",
       "name": "Webhook CRM Bloquear",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        -416,
-        -400
+        -336,
+        32
       ],
       "webhookId": "crm-crear-bloqueo"
     },
@@ -492,13 +491,13 @@
       "parameters": {
         "jsCode": "const raw = $input.first().json;\nconst body = raw.body || raw;\nreturn [{ json: body }];"
       },
-      "id": "a5bf9033-7a37-4ae8-9aea-b04ab3450148",
+      "id": "80ee3acd-bb68-4d8e-ab94-0df3e8c2a683",
       "name": "Normalizar Datos Bloquear",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -192,
-        -400
+        -112,
+        32
       ]
     },
     {
@@ -515,17 +514,17 @@
           "summary": "={{ $json.summary }}"
         }
       },
-      "id": "8ef8c6da-426b-4d4e-9311-33b2d727d940",
+      "id": "7989c5b7-0793-411c-b018-0525a724be92",
       "name": "Bloquear en Google Calendar",
       "type": "n8n-nodes-base.googleCalendar",
       "typeVersion": 1.1,
       "position": [
-        32,
-        -400
+        112,
+        32
       ],
       "credentials": {
         "googleCalendarOAuth2Api": {
-          "id": "UdvlrdeY3pl15MOk",
+          "id": "j28g9WdB9Ug4Yh18",
           "name": "Google Calendar account"
         }
       }
@@ -536,13 +535,13 @@
         "responseBody": "={{ JSON.stringify({ success: true }) }}",
         "options": {}
       },
-      "id": "086ba2f7-f93a-44d5-a1fe-8186ff23499d",
+      "id": "c4c49236-839e-42a1-9cce-b1a9481035af",
       "name": "Respond Bloquear",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        256,
-        -400
+        336,
+        32
       ]
     }
   ],
@@ -702,7 +701,6 @@
         ]
       ]
     },
-
     "Webhook CRM Reagendar": {
       "main": [
         [
@@ -797,10 +795,10 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "a0933a19-9667-462f-bb49-c2c9d0513b62",
+  "versionId": "8463e30e-7aed-4265-b521-7bd78fac754a",
   "meta": {
     "templateCredsSetupCompleted": true,
-    "instanceId": "e485a5a7ac8114c62636ecba6367db69dad6bc18fb5dd48f890b21271541f05c"
+    "instanceId": "dee31bcf1d2327582c0e4156e13b587f5779996960582a36461518ee5fc3826e"
   },
   "nodeGroups": [],
   "id": "nBouznqgVxf2O9d9",

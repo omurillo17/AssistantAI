@@ -14,14 +14,14 @@
       "type": "@devlikeapro/n8n-nodes-waha.WAHA",
       "typeVersion": 202502,
       "position": [
-        32,
-        144
+        624,
+        -48
       ],
-      "id": "764c8d81-e0b4-4c4a-befa-7a03d7355cdf",
+      "id": "cebb20ec-d804-4479-b9e9-fd240d342c4f",
       "name": "NotificarCandidato",
       "credentials": {
         "wahaApi": {
-          "id": "OBarvY73V8DKtYv0",
+          "id": "kzWfdhUZ4FU6jVEa",
           "name": "WAHA account"
         }
       }
@@ -54,10 +54,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -192,
-        144
+        400,
+        -48
       ],
-      "id": "68efaf29-4182-4323-b6bf-45c235b1d45f",
+      "id": "4e3ad82e-2ccc-401c-afd9-d8a7859e3d53",
       "name": "¿HayTelCandidato?"
     },
     {
@@ -72,14 +72,14 @@
       "type": "@devlikeapro/n8n-nodes-waha.WAHA",
       "typeVersion": 202502,
       "position": [
-        -192,
-        -48
+        400,
+        -240
       ],
-      "id": "a234c8d0-3113-41f0-9dcf-21304a85c6d8",
+      "id": "3fa2feb3-2e68-4d92-851e-570f48b4e41b",
       "name": "NotificarReclutador",
       "credentials": {
         "wahaApi": {
-          "id": "OBarvY73V8DKtYv0",
+          "id": "kzWfdhUZ4FU6jVEa",
           "name": "WAHA account"
         }
       }
@@ -91,10 +91,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -416,
-        48
+        176,
+        -144
       ],
-      "id": "23b702e1-c63b-4c40-90d7-6a6df64b07ea",
+      "id": "39ce77c2-28cf-4668-80ce-3688c36137f1",
       "name": "PrepararAvisoDinamico"
     },
     {
@@ -125,10 +125,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -640,
-        48
+        -48,
+        -144
       ],
-      "id": "c99bf1cc-5ac6-4c40-8a72-5557ee12573e",
+      "id": "04001f08-2a6d-4511-b792-355a814845f2",
       "name": "¿TieneEventos?"
     },
     {
@@ -147,15 +147,15 @@
       "type": "n8n-nodes-base.googleCalendar",
       "typeVersion": 1.3,
       "position": [
-        -864,
-        48
+        -272,
+        -144
       ],
-      "id": "b65554dc-383c-473f-89e3-dc419bfaeb79",
+      "id": "83b0caec-c32c-4b00-bf4d-551af42029e9",
       "name": "BuscarEventosDinamico",
       "alwaysOutputData": true,
       "credentials": {
         "googleCalendarOAuth2Api": {
-          "id": "UdvlrdeY3pl15MOk",
+          "id": "j28g9WdB9Ug4Yh18",
           "name": "Google Calendar account"
         }
       }
@@ -166,13 +166,13 @@
         "query": "SELECT nombre AS nombre_reclutador, calendar_id, telefono AS telefono_reclutador, '📅' AS emoji, (CURRENT_DATE + INTERVAL '1 day')::text AS time_min, (CURRENT_DATE + INTERVAL '1 day 23 hours 59 minutes')::text AS time_max FROM reclutadores WHERE calendar_id IS NOT NULL AND calendar_id != '' AND calendar_id LIKE '%@%';",
         "options": {}
       },
-      "id": "7338a162-14b6-4c6f-aace-a8576c035958",
+      "id": "50a96105-2099-48d0-b719-515645e644e8",
       "name": "CargarReclutadores",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
       "position": [
-        -1088,
-        48
+        -496,
+        -144
       ],
       "credentials": {
         "postgres": {
@@ -194,10 +194,10 @@
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.3,
       "position": [
-        -1312,
-        48
+        -720,
+        -144
       ],
-      "id": "f971ddef-1a6e-4bc1-9e35-7489585335b6",
+      "id": "c05f5471-8b79-4b2e-8080-0d1244e46d36",
       "name": "RecordatorioEntrevista"
     },
     {
@@ -213,10 +213,10 @@
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.3,
       "position": [
-        -1312,
-        368
+        -720,
+        176
       ],
-      "id": "9c079b00-f041-4391-890c-f92e7a8445a0",
+      "id": "6d7f57ae-0323-45a0-9256-9801f7c66870",
       "name": "Vigilante"
     },
     {
@@ -231,14 +231,14 @@
       "type": "@devlikeapro/n8n-nodes-waha.WAHA",
       "typeVersion": 202502,
       "position": [
-        -640,
-        368
+        -48,
+        176
       ],
-      "id": "ff848aed-8832-41ef-b96c-4a4a4497133b",
+      "id": "48c8614c-50e1-49c3-b106-6da06a54f42a",
       "name": "RecordarProceso",
       "credentials": {
         "wahaApi": {
-          "id": "OBarvY73V8DKtYv0",
+          "id": "kzWfdhUZ4FU6jVEa",
           "name": "WAHA account"
         }
       }
@@ -254,10 +254,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        -416,
-        368
+        176,
+        176
       ],
-      "id": "74ae71dd-68a4-4793-853e-7b3be20e5289",
+      "id": "1b5360b6-97fe-40b4-aca2-d764fab56a32",
       "name": "CambiarEstado",
       "credentials": {
         "postgres": {
@@ -294,10 +294,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -864,
-        368
+        -272,
+        176
       ],
-      "id": "2c3dc846-2cbb-4d2c-8edd-d56e17d8bc41",
+      "id": "b29af962-be54-43c2-b24d-01494738e542",
       "name": "If1"
     },
     {
@@ -309,10 +309,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        -1088,
-        368
+        -496,
+        176
       ],
-      "id": "5096a0b1-73d3-49fd-80f0-ec2d80db68b6",
+      "id": "366c49b3-db35-48c9-8766-3fe5c1c3ed9e",
       "name": "Recuerda",
       "credentials": {
         "postgres": {
@@ -446,9 +446,10 @@
     "binaryMode": "separate",
     "availableInMCP": false
   },
-  "versionId": "71ed1c28-7ff4-4a6b-81d2-c8ff684e810b",
+  "versionId": "fabec2f2-707b-43a5-8736-9af1a9f50a61",
   "meta": {
-    "instanceId": "e485a5a7ac8114c62636ecba6367db69dad6bc18fb5dd48f890b21271541f05c"
+    "instanceId": "dee31bcf1d2327582c0e4156e13b587f5779996960582a36461518ee5fc3826e",
+    "templateCredsSetupCompleted": true
   },
   "nodeGroups": [],
   "id": "zuPhe8mJDC8foVEg",
