@@ -159,5 +159,3 @@ Horario:
 - Lunes a viernes 
 7:55 am a 6:00pm  (1:30 de comida)
 Sábados de 7:55  am a 1:30pm
-
----

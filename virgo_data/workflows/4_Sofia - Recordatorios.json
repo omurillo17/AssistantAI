@@ -162,16 +162,24 @@
     },
     {
       "parameters": {
-        "jsCode": "const fs = require('fs');\n\n// 1. Leer el equipo desde el JSON externo\nconst rutaArchivo = '/home/node/virgo_files/functions/config_reclutadores.json';\nlet equipo = [];\n\ntry {\n    const rawData = fs.readFileSync(rutaArchivo, 'utf8');\n    equipo = JSON.parse(rawData);\n} catch (error) {\n    console.log('Error leyendo config_reclutadores.json: ' + error.message);\n    equipo = [{\n        nombre: 'Admin',\n        emoji: '🛡️',\n        telefono: '5213323379399',\n        calendar_id: 'sistemasdulvirgo@gmail.com'\n    }];\n}\n\n// 2. Limpiar espacios y filtrar solo los que tienen calendar_id válido\nequipo = equipo\n    .map(r => ({\n        ...r,\n        telefono: (r.telefono || '').trim(),       // FIX 1: quitar espacios\n        calendar_id: (r.calendar_id || '').trim()  // FIX 1: quitar espacios\n    }))\n    .filter(r => r.calendar_id.includes('@'));\n\n// 3. FIX 2: Eliminar calendar_ids duplicados\n//    Si dos reclutadores comparten calendario, solo se consulta una vez\n//    pero se notifica a ambos reclutadores\nconst calendariosVistos = {};\nconst equipoSinDuplicados = [];\n\nfor (const reclutador of equipo) {\n    if (!calendariosVistos[reclutador.calendar_id]) {\n        // Primer reclutador con este calendario\n        calendariosVistos[reclutador.calendar_id] = [reclutador];\n        equipoSinDuplicados.push(reclutador);\n    } else {\n        // Calendario ya existe: agregar este reclutador como \"extra\"\n        // para que también reciba notificación\n        calendariosVistos[reclutador.calendar_id].push(reclutador);\n    }\n}\n\n// 4. Calcular rango de mañana\nconst manana = new Date();\nmanana.setDate(manana.getDate() + 1);\n\nconst inicioManana = new Date(manana);\ninicioManana.setHours(0, 0, 0, 0);\n\nconst finManana = new Date(manana);\nfinManana.setHours(23, 59, 59, 999);\n\n// 5. FIX 3: Pasar datos del reclutador explícitamente en cada item\n//    incluyendo reclutadores extra que comparten el mismo calendario\nreturn equipoSinDuplicados.map(reclutador => ({\n    json: {\n        nombre_reclutador: reclutador.nombre,\n        emoji: reclutador.emoji || '📅',\n        telefono_reclutador: reclutador.telefono,\n        calendar_id: reclutador.calendar_id,\n        time_min: inicioManana.toISOString(),\n        time_max: finManana.toISOString(),\n        // Lista de todos los reclutadores que comparten este calendario\n        // (para notificar a cada uno)\n        reclutadores_extra: calendariosVistos[reclutador.calendar_id]\n            .slice(1) // el primero ya es el principal\n            .map(r => ({\n                nombre: r.nombre,\n                emoji: r.emoji || '📅',\n                telefono: r.telefono\n            }))\n    }\n}));"
+        "operation": "executeQuery",
+        "query": "SELECT nombre AS nombre_reclutador, calendar_id, telefono AS telefono_reclutador, '📅' AS emoji, (CURRENT_DATE + INTERVAL '1 day')::text AS time_min, (CURRENT_DATE + INTERVAL '1 day 23 hours 59 minutes')::text AS time_max FROM reclutadores WHERE calendar_id IS NOT NULL AND calendar_id != '' AND calendar_id LIKE '%@%';",
+        "options": {}
       },
-      "type": "n8n-nodes-base.code",
+      "id": "7338a162-14b6-4c6f-aace-a8576c035958",
+      "name": "CargarReclutadores",
+      "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
       "position": [
         -1088,
         48
       ],
-      "id": "7338a162-14b6-4c6f-aace-a8576c035958",
-      "name": "CargarReclutadores"
+      "credentials": {
+        "postgres": {
+          "id": "9eErJ1KWRv74SFiT",
+          "name": "Postgres account"
+        }
+      }
     },
     {
       "parameters": {

@@ -230,10 +230,31 @@
     },
     {
       "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT DISTINCT calendar_id FROM reclutadores WHERE calendar_id IS NOT NULL AND calendar_id != '' AND calendar_id LIKE '%@%';",
+        "options": {}
+      },
+      "id": "get-reclutadores-calendars",
+      "name": "Obtener Correos Reclutadores",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [
+        -288,
+        496
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "9eErJ1KWRv74SFiT",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
         "operation": "getAll",
         "calendar": {
           "__rl": true,
-          "value": "talreclutamiento01@gmail.com",
+          "value": "={{ $json.calendar_id }}",
           "mode": "id"
         },
         "returnAll": true,
@@ -243,13 +264,13 @@
           "query": ""
         }
       },
-      "id": "a25e46a7-26d4-4524-9d6a-5868aa85ca02",
-      "name": "GCal Elibeth",
+      "id": "gcal-dinamico-node",
+      "name": "GCal Dinamico",
       "type": "n8n-nodes-base.googleCalendar",
       "typeVersion": 1,
       "position": [
-        -288,
-        208
+        0,
+        496
       ],
       "credentials": {
         "googleCalendarOAuth2Api": {
@@ -261,96 +282,16 @@
     },
     {
       "parameters": {
-        "operation": "getAll",
-        "calendar": {
-          "__rl": true,
-          "value": "reclutamientotcinnovacion@gmail.com",
-          "mode": "id"
-        },
-        "returnAll": true,
-        "options": {
-          "timeMin": "={{ $('Webhook GCal').first().json.query.start }}",
-          "timeMax": "={{ $('Webhook GCal').first().json.query.end }}",
-          "query": ""
-        }
+        "jsCode": "const items = $input.all();\nreturn items.map(item => {\n  const calId = item.pairedItem?.json?.calendar_id || item.json?.organizer?.email || item.json?.creator?.email || '';\n  return {\n    json: {\n      ...item.json,\n      calendarId: calId\n    }\n  };\n});"
       },
-      "id": "16416979-b044-4ddb-a506-10a8a9580ec8",
-      "name": "GCal Patricia",
-      "type": "n8n-nodes-base.googleCalendar",
-      "typeVersion": 1,
+      "id": "inyectar-calendar-id-node",
+      "name": "Inyectar Calendar ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
-        -288,
-        400
-      ],
-      "credentials": {
-        "googleCalendarOAuth2Api": {
-          "id": "UdvlrdeY3pl15MOk",
-          "name": "Google Calendar account"
-        }
-      },
-      "continueOnFail": true
-    },
-    {
-      "parameters": {
-        "operation": "getAll",
-        "calendar": {
-          "__rl": true,
-          "value": "rhumanossdvirgo@gmail.com",
-          "mode": "id"
-        },
-        "returnAll": true,
-        "options": {
-          "timeMin": "={{ $('Webhook GCal').first().json.query.start }}",
-          "timeMax": "={{ $('Webhook GCal').first().json.query.end }}",
-          "query": ""
-        }
-      },
-      "id": "63ab94ed-0c42-45c0-86a1-e9b3416c5770",
-      "name": "GCal Sra Paty",
-      "type": "n8n-nodes-base.googleCalendar",
-      "typeVersion": 1,
-      "position": [
-        -288,
-        592
-      ],
-      "credentials": {
-        "googleCalendarOAuth2Api": {
-          "id": "UdvlrdeY3pl15MOk",
-          "name": "Google Calendar account"
-        }
-      },
-      "continueOnFail": true
-    },
-    {
-      "parameters": {
-        "operation": "getAll",
-        "calendar": {
-          "__rl": true,
-          "value": "jeferhsdvirgo@gmail.com",
-          "mode": "id"
-        },
-        "returnAll": true,
-        "options": {
-          "timeMin": "={{ $('Webhook GCal').first().json.query.start }}",
-          "timeMax": "={{ $('Webhook GCal').first().json.query.end }}",
-          "query": ""
-        }
-      },
-      "id": "867c9878-bfc1-4a95-a64c-d398d4483bb8",
-      "name": "GCal Michelle",
-      "type": "n8n-nodes-base.googleCalendar",
-      "typeVersion": 1,
-      "position": [
-        -288,
-        784
-      ],
-      "credentials": {
-        "googleCalendarOAuth2Api": {
-          "id": "UdvlrdeY3pl15MOk",
-          "name": "Google Calendar account"
-        }
-      },
-      "continueOnFail": true
+        300,
+        496
+      ]
     },
     {
       "parameters": {
@@ -408,91 +349,7 @@
         -1040
       ]
     },
-    {
-      "parameters": {
-        "jsCode": "const items = $input.all();\nitems.forEach(item => {\n  if (item.json) item.json.calendarId = 'talreclutamiento01@gmail.com';\n});\nreturn items;"
-      },
-      "id": "907dd3da-7866-491f-a65b-2266d2649678",
-      "name": "Inject GCal Elibeth",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -64,
-        208
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const items = $input.all();\nitems.forEach(item => {\n  if (item.json) item.json.calendarId = 'reclutamientotcinnovacion@gmail.com';\n});\nreturn items;"
-      },
-      "id": "1e2c82dd-f6ab-4985-bcd6-2cb5f39b1d7c",
-      "name": "Inject GCal Patricia",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -64,
-        400
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const items = $input.all();\nitems.forEach(item => {\n  if (item.json) item.json.calendarId = 'rhumanossdvirgo@gmail.com';\n});\nreturn items;"
-      },
-      "id": "4492456c-c786-47e7-8a02-069c2ad78fcf",
-      "name": "Inject GCal Sra Paty",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -64,
-        592
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const items = $input.all();\nitems.forEach(item => {\n  if (item.json) item.json.calendarId = 'jeferhsdvirgo@gmail.com';\n});\nreturn items;"
-      },
-      "id": "c4fdfcf4-2c74-4aec-a6bf-ffb5356f099e",
-      "name": "Inject GCal Michelle",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -64,
-        784
-      ]
-    },
-    {
-      "parameters": {},
-      "id": "f427cfce-0432-4464-a7df-89f2812540a4",
-      "name": "Merge AB",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 2.1,
-      "position": [
-        160,
-        304
-      ]
-    },
-    {
-      "parameters": {},
-      "id": "a06e3cd6-2f86-4063-9ead-709e3c5bc737",
-      "name": "Merge CD",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 2.1,
-      "position": [
-        160,
-        688
-      ]
-    },
-    {
-      "parameters": {},
-      "id": "c56dc245-2457-417e-8271-bcd512acd92d",
-      "name": "Merge ABCD",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 2.1,
-      "position": [
-        384,
-        496
-      ]
-    },
+
     {
       "parameters": {
         "httpMethod": "POST",
@@ -772,66 +629,40 @@
       "main": [
         [
           {
-            "node": "GCal Elibeth",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "GCal Patricia",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "GCal Sra Paty",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "GCal Michelle",
+            "node": "Obtener Correos Reclutadores",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "GCal Elibeth": {
+    "Obtener Correos Reclutadores": {
       "main": [
         [
           {
-            "node": "Inject GCal Elibeth",
+            "node": "GCal Dinamico",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "GCal Patricia": {
+    "GCal Dinamico": {
       "main": [
         [
           {
-            "node": "Inject GCal Patricia",
+            "node": "Inyectar Calendar ID",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "GCal Sra Paty": {
+    "Inyectar Calendar ID": {
       "main": [
         [
           {
-            "node": "Inject GCal Sra Paty",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "GCal Michelle": {
-      "main": [
-        [
-          {
-            "node": "Inject GCal Michelle",
+            "node": "Respond to Webhook1",
             "type": "main",
             "index": 0
           }
@@ -871,83 +702,7 @@
         ]
       ]
     },
-    "Merge AB": {
-      "main": [
-        [
-          {
-            "node": "Merge ABCD",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Merge CD": {
-      "main": [
-        [
-          {
-            "node": "Merge ABCD",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "Merge ABCD": {
-      "main": [
-        [
-          {
-            "node": "Respond to Webhook1",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Inject GCal Elibeth": {
-      "main": [
-        [
-          {
-            "node": "Merge AB",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Inject GCal Patricia": {
-      "main": [
-        [
-          {
-            "node": "Merge AB",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
-    "Inject GCal Sra Paty": {
-      "main": [
-        [
-          {
-            "node": "Merge CD",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Inject GCal Michelle": {
-      "main": [
-        [
-          {
-            "node": "Merge CD",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
-    },
+
     "Webhook CRM Reagendar": {
       "main": [
         [

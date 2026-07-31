@@ -134,7 +134,6 @@ CREATE TABLE IF NOT EXISTS usuarios (
     id SERIAL PRIMARY KEY,
     usuario VARCHAR(100) UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
-    actual_password TEXT,
     rol VARCHAR(50) DEFAULT 'USER',
     reclutador_id VARCHAR(100) REFERENCES reclutadores(id) ON DELETE SET NULL,
     grupo_id UUID REFERENCES grupos_reclutamiento(id) ON DELETE SET NULL,
@@ -591,14 +590,17 @@ ON CONFLICT DO NOTHING;
 -- Usuario ROOT (administrador global de la plataforma SaaS).
 -- Hash bcrypt (costo 10) precalculado para la contraseña; NO se genera en SQL
 -- para no depender de la extension pgcrypto.
-INSERT INTO usuarios (usuario, password_hash, actual_password, rol)
+INSERT INTO usuarios (usuario, password_hash, rol)
 VALUES (
     'omurillo17',
     '$2b$10$WSjKYnyEbq0nyUWmtSQTQOSwCh4LDG4wCzE2e.V1wcl8vnbUSSojG',
-    'Gg172125',
     'ROOT'
 )
 ON CONFLICT (usuario) DO NOTHING;
+
+-- Migracion: eliminar la columna de contraseñas en texto plano si existe
+-- (las contraseñas solo se guardan como hash bcrypt en password_hash).
+ALTER TABLE usuarios DROP COLUMN IF EXISTS actual_password;
 
 -- ============================================
 DO $$
