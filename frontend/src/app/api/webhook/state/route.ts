@@ -2,14 +2,19 @@ import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { candidatoMachine } from '@/lib/stateMachine';
 import { createActor } from 'xstate';
+import { verifyWebhookApiKey } from '@/lib/auth';
 
 // Webhook endpoint que recibe el update de estado desde n8n
 export async function POST(request: Request) {
+  if (!verifyWebhookApiKey(request)) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  }
+
   try {
     const body = await request.json();
     const { telefono, event, eventPayload } = body;
 
-    if (!telefono || !event) {
+    if (!telefono || typeof event !== 'string' || !event) {
       return NextResponse.json({ error: 'Falta telefono o event' }, { status: 400 });
     }
 
@@ -22,9 +27,20 @@ export async function POST(request: Request) {
 
     const candidato = res.rows[0];
 
-    // 2. Inicializar la máquina de estados con el estado actual
+    // 2. Inicializar la máquina de estados con el estado actual del candidato
+    // (resolveState es la forma correcta en XState v5 de partir de un estado guardado)
     const actor = createActor(candidatoMachine, {
-      state: candidato.estado, // Asume que el valor en DB coincide con el ID del estado en la máquina
+      snapshot: candidatoMachine.resolveState({
+        value: candidato.estado,
+        context: {
+          telefono,
+          tiene_cv: candidato.tiene_cv || false,
+          cv_manual: !!candidato.cv_manual,
+          fecha_entrevista: candidato.fecha_entrevista || null,
+          privacidad_aceptada: candidato.privacidad_aceptada || false,
+          escalado: candidato.escalado || false,
+        },
+      }),
     });
     actor.start();
 

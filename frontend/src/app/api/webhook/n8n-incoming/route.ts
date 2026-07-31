@@ -2,8 +2,13 @@ import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { candidatoMachine } from '@/lib/stateMachine';
 import { createActor } from 'xstate';
+import { verifyWebhookApiKey } from '@/lib/auth';
 
 export async function POST(request: Request) {
+  if (!verifyWebhookApiKey(request)) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  }
+
   try {
     const data = await request.json();
     const {
@@ -32,7 +37,7 @@ export async function POST(request: Request) {
 
     // 1. Obtener estado actual (buscamos por telefono, asumiendo por ahora la primera empresa o la mas reciente si hay varias)
     // En el futuro, n8n debe enviar el empresa_id
-    let res = await pool.query('SELECT id, estado, tiene_cv, cv_manual as db_cv_manual, fecha_entrevista as db_fecha, privacidad_aceptada, escalado, vacante_interes, asignado_a FROM candidatos WHERE telefono = $1 ORDER BY updated_at DESC LIMIT 1', [telefono]);
+    const res = await pool.query('SELECT id, estado, tiene_cv, cv_manual as db_cv_manual, fecha_entrevista as db_fecha, privacidad_aceptada, escalado, vacante_interes, asignado_a FROM candidatos WHERE telefono = $1 ORDER BY updated_at DESC LIMIT 1', [telefono]);
     let currentState = 'NUEVO';
     let context = {
       telefono,
@@ -42,11 +47,11 @@ export async function POST(request: Request) {
       privacidad_aceptada: false,
       escalado: false,
     };
-    
+
     // Verificación de Rechazo Global (Cross-Company/Nave)
     const resRechazados = await pool.query(`SELECT nave_interes FROM candidatos WHERE telefono = $1 AND estado = 'RECHAZADO' LIMIT 1`, [telefono]);
-    let fueRechazadoGlobalmente = resRechazados.rowCount ? (resRechazados.rowCount > 0) : false;
-    let naveRechazo = fueRechazadoGlobalmente ? resRechazados.rows[0].nave_interes : null;
+    const fueRechazadoGlobalmente = resRechazados.rowCount ? (resRechazados.rowCount > 0) : false;
+    const naveRechazo = fueRechazadoGlobalmente ? resRechazados.rows[0].nave_interes : null;
 
     if (res.rowCount && res.rowCount > 0) {
       currentState = res.rows[0].estado;
@@ -62,7 +67,7 @@ export async function POST(request: Request) {
 
     // 2. Determinar el evento basado en la información entrante (emulando lo que hacía el CASE WHEN)
     let event: any = { type: 'INTERES' }; // default fallback
-    
+
     if (privacidad === 'true' && currentState === 'NUEVO') {
       event = { type: 'INTERES' };
     }
@@ -86,8 +91,11 @@ export async function POST(request: Request) {
     const newState = actor.getSnapshot();
 
     // 4. Upsert Candidato
-    const parsedCvManual = typeof cv_manual === 'string' ? JSON.parse(cv_manual) : cv_manual;
-    
+    let parsedCvManual = cv_manual;
+    if (typeof cv_manual === 'string') {
+      try { parsedCvManual = JSON.parse(cv_manual); } catch { parsedCvManual = null; }
+    }
+
     let finalNombre = (nombre && nombre !== 'Candidato') ? nombre.trim() : '';
 
     // Intento 1: Extraer del resumen si Gemini detectó el nombre (ej. "Nombre: Oscar")
@@ -114,6 +122,20 @@ export async function POST(request: Request) {
       finalNombre = 'Candidato';
     }
 
+    // Extraer Vacante desde Resumen si viene como 'General' o vacía
+    let finalVacante = (vacante && vacante.trim() !== 'General') ? vacante.trim() : '';
+    if (!finalVacante || finalVacante === 'General') {
+      if (resumen && typeof resumen === 'string') {
+        const vacMatch = resumen.match(/Vacante:\s*([^.\n|]+)/i);
+        if (vacMatch && vacMatch[1]) {
+          const extractedVac = vacMatch[1].trim();
+          if (extractedVac && !['General', 'Ninguna', 'Pendiente', 'Desconocida', 'X'].includes(extractedVac)) {
+            finalVacante = extractedVac;
+          }
+        }
+      }
+    }
+
     let veredicto = null;
     let motivo_analisis = null;
     if (filtros) {
@@ -130,11 +152,11 @@ export async function POST(request: Request) {
     }
 
     // Determinar si escalar por rechazo previo
-    let esEscalado = newState.value === 'ESCALADO' || context.escalado;
+    let esEscalado = newState.value === 'ESCALADO';
     let motivoEscalamiento = null;
     if (fueRechazadoGlobalmente && currentState === 'NUEVO') {
-       esEscalado = true;
-       motivoEscalamiento = `ALERTA GLOBAL: Este candidato fue RECHAZADO previamente en la nave: ${naveRechazo || 'Desconocida'}.`;
+      esEscalado = true;
+      motivoEscalamiento = `ALERTA GLOBAL: Este candidato fue RECHAZADO previamente en la nave: ${naveRechazo || 'Desconocida'}.`;
     }
 
     // Buscamos una empresa_id default para no romper el UNIQUE constraint
@@ -167,7 +189,7 @@ export async function POST(request: Request) {
         estado = EXCLUDED.estado,
         ultima_interaccion = NOW(),
         mensajes_bot_enviados = candidatos.mensajes_bot_enviados + 1,
-        vacante_interes = COALESCE(NULLIF(EXCLUDED.vacante_interes, ''), candidatos.vacante_interes),
+        vacante_interes = COALESCE(NULLIF(TRIM(EXCLUDED.vacante_interes), ''), NULLIF(TRIM(candidatos.vacante_interes), '')),
         resumen_ia = COALESCE(NULLIF(EXCLUDED.resumen_ia, ''), candidatos.resumen_ia),
         filtros_tecnicos = COALESCE(NULLIF(EXCLUDED.filtros_tecnicos, ''), candidatos.filtros_tecnicos),
         cv_manual = CASE WHEN EXCLUDED.cv_manual IS NOT NULL THEN EXCLUDED.cv_manual ELSE candidatos.cv_manual END,
@@ -177,22 +199,22 @@ export async function POST(request: Request) {
         edad = CASE WHEN EXCLUDED.cv_manual IS NOT NULL AND (EXCLUDED.cv_manual->>'edad') IS NOT NULL THEN (EXCLUDED.cv_manual->>'edad') ELSE candidatos.edad END,
         correo = CASE WHEN EXCLUDED.cv_manual IS NOT NULL AND (EXCLUDED.cv_manual->>'correo') IS NOT NULL THEN (EXCLUDED.cv_manual->>'correo') ELSE candidatos.correo END,
         experiencia = CASE WHEN EXCLUDED.cv_manual IS NOT NULL AND (EXCLUDED.cv_manual->>'experiencia') IS NOT NULL THEN (EXCLUDED.cv_manual->>'experiencia') ELSE candidatos.experiencia END,
-        nave_interes = COALESCE(NULLIF(EXCLUDED.nave_interes, ''), candidatos.nave_interes),
-        escalado = EXCLUDED.escalado OR candidatos.escalado,
+        nave_interes = COALESCE(NULLIF(TRIM(EXCLUDED.nave_interes), ''), NULLIF(TRIM(candidatos.nave_interes), '')),
+        escalado = EXCLUDED.escalado,
         escalation_reason = COALESCE(NULLIF(EXCLUDED.escalation_reason, ''), candidatos.escalation_reason),
         veredicto = COALESCE(NULLIF(EXCLUDED.veredicto, ''), candidatos.veredicto),
         motivo_analisis = COALESCE(NULLIF(EXCLUDED.motivo_analisis, ''), candidatos.motivo_analisis)
       RETURNING id
     `;
-    
+
     const upsertRes = await pool.query(upsertQuery, [
-      telefono, 
-      newState.value, 
-      vacante, 
-      resumen, 
-      filtros, 
-      parsedCvManual ? JSON.stringify(parsedCvManual) : null, 
-      fecha_entrevista, 
+      telefono,
+      newState.value,
+      finalVacante,
+      resumen,
+      filtros,
+      parsedCvManual ? JSON.stringify(parsedCvManual) : null,
+      fecha_entrevista,
       privacidad === 'true' || newState.context.privacidad_aceptada,
       finalNombre,
       parsedCvManual?.nombre || null,
@@ -267,12 +289,12 @@ export async function POST(request: Request) {
 
     // 5. Insertar historial de mensajes
     // Mensaje del usuario
-    await pool.query(`INSERT INTO conversation_history (telefono, role, content, message_type, media_url) VALUES ($1, 'user', $2, $3, $4)`, 
+    await pool.query(`INSERT INTO conversation_history (telefono, role, content, message_type, media_url) VALUES ($1, 'user', $2, $3, $4)`,
       [telefono, mensaje_candidato, message_type, media_url]
     );
     // Respuesta IA
     if (mensaje_ia) {
-      await pool.query(`INSERT INTO conversation_history (telefono, role, content, message_type) VALUES ($1, 'assistant', $2, 'text')`, 
+      await pool.query(`INSERT INTO conversation_history (telefono, role, content, message_type) VALUES ($1, 'assistant', $2, 'text')`,
         [telefono, mensaje_ia]
       );
     }
@@ -291,6 +313,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, estado: newState.value });
   } catch (err) {
     console.error('Error procesando webhook de n8n:', err);
-    return NextResponse.json({ error: 'Error procesando webhook', details: err instanceof Error ? err.message : String(err) }, { status: 500 });
+    return NextResponse.json({ error: 'Error procesando webhook' }, { status: 500 });
   }
 }

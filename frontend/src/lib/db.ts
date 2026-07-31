@@ -1,9 +1,8 @@
 import { Pool, types } from 'pg';
+import { ENV } from '@/lib/env';
 
 types.setTypeParser(1114, str => new Date(str + "Z"));
 
-const connectionString = process.env.DATABASE_URL || 'postgres://omurillo17:Gg172125@127.0.0.1:5433/db_assistantai';
-
 export const pool = new Pool({
-  connectionString,
+  connectionString: ENV.DATABASE_URL,
 });

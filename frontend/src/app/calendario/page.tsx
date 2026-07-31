@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Calendar, dateFnsLocalizer, View, Views } from "react-big-calendar";
 import { format, parse, startOfWeek, getDay, addMonths, subMonths, addWeeks, subWeeks, addDays, subDays, startOfMonth } from "date-fns";
 import { es } from "date-fns/locale";
-import { MessageSquare, ChevronDown, ChevronRight, XCircle, ChevronLeft, RefreshCw, Calendar as CalendarIcon, LayoutList } from "lucide-react";
+import { MessageSquare, ChevronDown, ChevronRight, XCircle, ChevronLeft, RefreshCw, Calendar as CalendarIcon, LayoutList, Users } from "lucide-react";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 
 const locales = { es };
@@ -19,6 +19,13 @@ const localizer = dateFnsLocalizer({
 
 const N8N_BASE_URL = "/api/n8n";
 const CANCEL_PASSWORD = "virgo2024"; // contraseña para confirmar cancelación
+
+const normalizeStr = (str: string) =>
+  String(str || "")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .trim();
 
 import type { Candidato, ChatMessage } from "@/types";
 
@@ -121,6 +128,9 @@ export default function CalendarioPage() {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{ msg: string; isError: boolean } | null>(null);
   const [myCalId, setMyCalId] = useState("");
+  const [navesList, setNavesList] = useState<{ id: string; nombre: string }[]>([]);
+  const [misNaveIds, setMisNaveIds] = useState<Set<string>>(new Set());
+  const [selectedNave, setSelectedNave] = useState<string>("TODOS");
 
   // Panel lateral
   const [expandedRecruiters, setExpandedRecruiters] = useState<Record<string, boolean>>({});
@@ -172,6 +182,24 @@ export default function CalendarioPage() {
       const data = await res.json();
       setCandidatos(Array.isArray(data) ? data : data.data || []);
 
+      // Cargar Naves de la empresa
+      try {
+        const resE = await fetch("/api/db/empresas");
+        if (resE.ok) {
+          const eData = await resE.json();
+          const empList = eData.empresas || [];
+          const allNaves: { id: string; nombre: string }[] = [];
+          empList.forEach((e: any) => {
+            (e.naves || []).forEach((n: any) => {
+              allNaves.push({ id: n.id, nombre: n.nombre || "" });
+            });
+          });
+          setNavesList(allNaves);
+        }
+      } catch (err) {
+        console.error("Error cargando naves:", err);
+      }
+
       try {
         const startStr = subMonths(new Date(), 2).toISOString();
         const endStr = addMonths(new Date(), 3).toISOString();
@@ -194,6 +222,8 @@ export default function CalendarioPage() {
           let myCalIdLocal = "";
           const myRecruiterId = localStorage.getItem("tci_reclutador_id");
 
+          const misNaves = new Set<string>();
+
           recs.forEach((r: any, i: number) => {
             const calId = (r.calendar_id || "").toLowerCase();
             if (calId) {
@@ -204,11 +234,18 @@ export default function CalendarioPage() {
                 myCalIdLocal = calId;
               }
             }
+            if (r.reclutador_id == myRecruiterId) {
+              // vacantes_def.naves guarda IDs de nave (no nombres), ver VacancyModal.tsx
+              (r.vacantes || []).forEach((v: any) => {
+                (v.naves || []).forEach((navId: string) => misNaves.add(navId));
+              });
+            }
           });
           setRecruiterColors(colorMap);
           setRecruiterNames(nameMap);
           setRecruiterIdToEmail(idToEmailMap);
           if (myCalIdLocal) setMyCalId(myCalIdLocal);
+          setMisNaveIds(misNaves);
         }
       } catch {}
 
@@ -273,7 +310,9 @@ export default function CalendarioPage() {
       const vacanteMatch = desc.match(/Vacante:\s*(.+)/i);
       if (vacanteMatch) vacante = vacanteMatch[1].trim();
 
-      const creatorEmail = ge.calendarId || ge.creator?.email || ge.organizer?.email || (typeof ge.creator === 'string' ? ge.creator : '') || "desconocido";
+      const creatorEmail = String(
+        ge.calendarId || ge.creator?.email || ge.organizer?.email || (typeof ge.creator === 'string' ? ge.creator : '') || "desconocido"
+      ).toLowerCase();
 
       return {
         id: ge.id || Math.random().toString(),
@@ -302,25 +341,88 @@ export default function CalendarioPage() {
       }
     });
 
-    let allEvents = [...dbEvents, ...Array.from(uniqueGcalEventsMap.values())];
-    
+    let allEvents: CalendarEvent[] = [...dbEvents, ...Array.from(uniqueGcalEventsMap.values())];
+
     // Filter by role if not ADMIN or ENCARGADO
-    const role = typeof window !== 'undefined' ? localStorage.getItem("tci_role") : "USER";
+    const role = typeof window !== "undefined" ? localStorage.getItem("tci_role") : "USER";
     if (role !== "ADMIN" && role !== "ENCARGADO" && role !== "ROOT") {
-      const myRecruiterId = typeof window !== 'undefined' ? localStorage.getItem("tci_reclutador_id") : null;
-      allEvents = allEvents.filter(ev => {
+      const myRecruiterId = typeof window !== "undefined" ? localStorage.getItem("tci_reclutador_id") : null;
+      allEvents = allEvents.filter((ev) => {
         const evEmail = (ev.resource.creator_email || "").toLowerCase();
-        
-        // Si tiene un correo/calendar_id, comprobar por correo. Si no, comprobar por asignado_a
         const matchesEmail = myCalId && evEmail === myCalId;
         const matchesId = myRecruiterId && ev.resource.asignado_a === myRecruiterId;
-        
         return matchesEmail || matchesId;
       });
     }
 
+    // Filter by selectedNave if not 'TODOS'
+    if (selectedNave !== "TODOS") {
+      const naveTarget = navesList.find((n) => n.id === selectedNave);
+      const targetClean = normalizeStr(naveTarget?.nombre || "");
+      const targetDigits = targetClean.match(/\d+/g) || [];
+      const targetWords = targetClean
+        .replace(/sucursal\s*/gi, "")
+        .replace(/nave\s*/gi, "")
+        .split(/[\s:-]+/)
+        .filter((w) => w.length > 2);
+
+      allEvents = allEvents.filter((ev: CalendarEvent) => {
+        const resObj = ev.resource as any;
+
+        // 1. Coincidencia por ID directo de Nave
+        if (resObj.nave_id && resObj.nave_id === selectedNave) return true;
+
+        // 2. Coincidencia por candidato en DB (por teléfono)
+        const rawTelStr = String(resObj.telefono || resObj.summary || ev.title || "");
+        const eventTel = rawTelStr.replace(/\D/g, "");
+        if (eventTel.length >= 8) {
+          const candMatch = candidatos.find((c) => {
+            const cTel = String(c.telefono || "").replace(/\D/g, "");
+            return cTel.length >= 8 && cTel.slice(-10) === eventTel.slice(-10);
+          });
+          if (candMatch) {
+            const candObj = candMatch as any;
+            if (candObj.nave_id && candObj.nave_id === selectedNave) return true;
+            const candNaveClean = normalizeStr(candMatch.nave_interes || "");
+            if (candNaveClean) {
+              if (candNaveClean.includes(targetClean) || targetClean.includes(candNaveClean)) return true;
+              if (targetWords.length > 0 && targetWords.some((w) => candNaveClean.includes(w))) return true;
+            }
+          }
+        }
+
+        // 3. Coincidencia por texto del evento (nave_interes, nave, titulo, descripcion)
+        const fullText = normalizeStr(
+          `${resObj.nave_interes || ""} ${resObj.nave || ""} ${ev.title || ""} ${resObj.resumen_ia || ""}`
+        );
+
+        if (fullText) {
+          if (fullText.includes(targetClean)) return true;
+          const matchesWord = targetWords.length > 0 && targetWords.some((w) => fullText.includes(w));
+          const matchesDigit = targetDigits.length > 0 && targetDigits.some((d) => fullText.includes(d));
+          if (matchesWord && (targetDigits.length === 0 || matchesDigit)) return true;
+        }
+
+        return false;
+      });
+    }
+
     return allEvents;
-  }, [candidatos, googleEvents, myCalId]);
+  }, [candidatos, googleEvents, myCalId, selectedNave, navesList]);
+
+  // Naves que el usuario actual puede usar para filtrar (segun su rol)
+  const naveOptions = useMemo(() => {
+    if (typeof window === "undefined") return [];
+    const role = localStorage.getItem("tci_role");
+    if (role === "ADMIN" || role === "ROOT") return navesList;
+    if (role === "ENCARGADO") {
+      let asignadas: string[] = [];
+      try { asignadas = JSON.parse(localStorage.getItem("tci_naves_asignadas") || "[]"); } catch {}
+      return navesList.filter((n) => asignadas.includes(n.id));
+    }
+    // RECLUTADOR: solo las naves de sus propias vacantes
+    return navesList.filter((n) => misNaveIds.has(n.id));
+  }, [navesList, misNaveIds]);
 
   const formatVisualDate = (d: Date) => format(d, "dd/MM/yyyy HH:mm");
 
@@ -498,12 +600,34 @@ export default function CalendarioPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-slate-50 text-slate-800">
       {/* HEADER */}
-      <div className="flex flex-col md:flex-row justify-end items-start md:items-center gap-4 px-8 pt-6 pb-4 bg-white border-b border-slate-100 shadow-sm">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 px-8 pt-6 pb-4 bg-white border-b border-slate-100 shadow-sm">
         <div className="flex items-center gap-3">
           <span className="bg-indigo-100 text-indigo-700 text-xs font-bold px-2.5 py-1 rounded-full">
             {totalProximas} próximas
           </span>
+          
+          {/* FILTRO DE NAVE/SUCURSAL */}
+          {naveOptions.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider hidden sm:inline-flex items-center gap-1">
+                <Users size={14} className="text-indigo-600" /> Nave:
+              </span>
+              <select
+                value={selectedNave}
+                onChange={(e) => setSelectedNave(e.target.value)}
+                className="px-3.5 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 text-xs font-bold focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer shadow-xs"
+              >
+                <option value="TODOS">Todas mis Naves</option>
+                {naveOptions.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.nombre}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
+
         <button
           onClick={loadData}
           className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg shadow-sm transition-all text-sm"

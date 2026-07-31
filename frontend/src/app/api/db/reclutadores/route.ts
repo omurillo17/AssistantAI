@@ -13,7 +13,7 @@ export async function GET(request: Request) {
     const cookieStore = await cookies();
     const token = cookieStore.get("tci_session")?.value;
     if (token) {
-      const secret = new TextEncoder().encode(ENV.JWT_SECRET || 'secret-key-default');
+      const secret = new TextEncoder().encode(ENV.JWT_SECRET);
       const { payload } = await jwtVerify(token, secret);
       userRole = (payload.rol as string) || "USER";
       userEmpresaId = (payload.empresa_id as string) || null;

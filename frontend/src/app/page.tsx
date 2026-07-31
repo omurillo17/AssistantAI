@@ -131,14 +131,6 @@ export default function Home() {
               <p className="text-sm text-slate-500">Gestión de accesos y contraseñas del portal web.</p>
             </Link>
 
-            <Link href="/configuracion" className="bg-white p-5 rounded-lg border-t-4 border-secondary shadow-sm hover:shadow text-slate-700 transition-all">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="text-2xl">⚙️</div>
-                <h3 className="font-bold text-lg">Configuración IA</h3>
-              </div>
-              <p className="text-sm text-slate-500">Gestión de Prompts y personalidad del bot.</p>
-            </Link>
-
             {role === "ROOT" && (
               <Link href="/saas" className="bg-white p-5 rounded-lg border-t-4 border-amber-500 shadow-sm hover:shadow text-slate-700 transition-all">
                 <div className="flex items-center gap-3 mb-2">

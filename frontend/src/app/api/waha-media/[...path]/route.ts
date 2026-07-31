@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { WAHA_BASE, WAHA_API_KEY } from "@/lib/waha";
 
 export async function GET(
   req: NextRequest,
@@ -7,18 +8,13 @@ export async function GET(
   try {
     const p = await params;
     const path = p.path.join("/");
-    // Reconstruimos la URL hacia WAHA
-    // Asumimos que WAHA está en localhost:3000 o si hay variable de entorno
-    const wahaBase = process.env.WAHA_URL || "http://localhost:3000";
-    const targetUrl = `${wahaBase}/${path}${req.nextUrl.search}`;
-
-    console.log("Fetching media from WAHA:", targetUrl);
+    const targetUrl = `${WAHA_BASE}/${path}${req.nextUrl.search}`;
 
     // Fetch the media from WAHA API with the required X-Api-Key header
     const response = await fetch(targetUrl, {
       method: "GET",
       headers: {
-        "X-Api-Key": process.env.WAHA_API_KEY || "virgo_secret_key",
+        "X-Api-Key": WAHA_API_KEY,
         "Accept": "*/*",
       },
     });

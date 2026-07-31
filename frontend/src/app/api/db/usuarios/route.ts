@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { z } from "zod";
-import { jwtVerify } from "jose";
 
 import { pool } from '@/lib/db';
+import { getSession } from '@/lib/auth';
 
 import crypto from 'crypto';
 
@@ -19,16 +19,14 @@ const userSchema = z.object({
 
 export async function GET(request: Request) {
   try {
-    const token = request.headers.get('cookie')?.split('; ').find(row => row.startsWith('tci_session='))?.split('=')[1];
-    if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    const payload = await getSession(request);
+    if (!payload) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-    const secretKey = new TextEncoder().encode(process.env.JWT_SECRET || "fallback_secret_do_not_use_in_prod");
-    const { payload } = await jwtVerify(token, secretKey);
     const userRole = payload.rol as string;
     const userEmpresaId = payload.empresa_id as string | null;
 
     let query = `
-      SELECT u.id, u.usuario, u.rol, u.actual_password, u.created_at, u.grupo_id, u.empresa_id,
+      SELECT u.id, u.usuario, u.rol, u.created_at, u.grupo_id, u.empresa_id,
              r.calendar_id as correo, r.telefono
       FROM usuarios u
       LEFT JOIN reclutadores r ON u.reclutador_id = r.id
@@ -59,11 +57,9 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const token = request.headers.get('cookie')?.split('; ').find(row => row.startsWith('tci_session='))?.split('=')[1];
-    if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    const payload = await getSession(request);
+    if (!payload) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-    const secretKey = new TextEncoder().encode(process.env.JWT_SECRET || "fallback_secret_do_not_use_in_prod");
-    const { payload } = await jwtVerify(token, secretKey);
     const creatorRole = payload.rol as string;
     const creatorEmpresaId = payload.empresa_id as string | null;
 
@@ -128,9 +124,10 @@ export async function POST(request: Request) {
       );
     }
 
+    // Nunca se guarda la contraseña en texto plano; solo el hash bcrypt.
     const res = await pool.query(
-      `INSERT INTO usuarios (usuario, password_hash, rol, actual_password, reclutador_id, grupo_id, empresa_id) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, usuario, rol`,
-      [normalizedUser, hash, rol, password, reclutador_id, grupo_id || null, empresa_id]
+      `INSERT INTO usuarios (usuario, password_hash, rol, reclutador_id, grupo_id, empresa_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, usuario, rol`,
+      [normalizedUser, hash, rol, reclutador_id, grupo_id || null, empresa_id]
     );
 
     return NextResponse.json(res.rows[0]);
@@ -154,11 +151,9 @@ export async function PATCH(request: Request) {
     }
 
     // Obtener el admin actual desde el JWT
-    const token = request.headers.get('cookie')?.split('; ').find(row => row.startsWith('tci_session='))?.split('=')[1];
-    if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    const payload = await getSession(request);
+    if (!payload) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-    const secretKey = new TextEncoder().encode(process.env.JWT_SECRET || "fallback_secret_do_not_use_in_prod");
-    const { payload } = await jwtVerify(token, secretKey);
     const adminUsername = payload.usuario as string;
     const adminRole = payload.rol as string;
     const adminGrupoId = payload.grupo_id as string | null;
@@ -189,10 +184,10 @@ export async function PATCH(request: Request) {
       }
     }
 
-    // Actualizar Contraseña si se provee
+    // Actualizar Contraseña si se provee (solo se guarda el hash bcrypt)
     if (newPassword && newPassword.trim().length > 0) {
       const newHash = await bcrypt.hash(newPassword, 10);
-      await pool.query(`UPDATE usuarios SET password_hash = $1, actual_password = $2 WHERE id = $3`, [newHash, newPassword, targetUserId]);
+      await pool.query(`UPDATE usuarios SET password_hash = $1 WHERE id = $2`, [newHash, targetUserId]);
     }
 
     // Actualizar Rol si se provee y es distinto
@@ -285,6 +280,16 @@ export async function PATCH(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const payload = await getSession(request);
+    if (!payload) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+
+    const requesterRole = payload.rol as string;
+    const requesterGrupoId = (payload.grupo_id as string | null) ?? null;
+
+    if (requesterRole !== 'ADMIN' && requesterRole !== 'ROOT' && requesterRole !== 'ENCARGADO') {
+      return NextResponse.json({ error: "No autorizado para eliminar usuarios" }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     const transferTo = searchParams.get('transferTo');
@@ -292,6 +297,21 @@ export async function DELETE(request: Request) {
 
     if (!id) {
       return NextResponse.json({ error: "Falta el ID del usuario" }, { status: 400 });
+    }
+
+    const targetRes = await pool.query(`SELECT id, rol, grupo_id FROM usuarios WHERE id = $1`, [id]);
+    if (targetRes.rowCount === 0) {
+      return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
+    }
+    const targetUser = targetRes.rows[0];
+
+    // Mismas restricciones que en PATCH: un encargado solo gestiona reclutadores de su grupo
+    if (requesterRole === 'ENCARGADO' && (targetUser.rol !== 'RECLUTADOR' || targetUser.grupo_id !== requesterGrupoId)) {
+      return NextResponse.json({ error: "No tienes permiso para eliminar este usuario" }, { status: 403 });
+    }
+    // Solo ROOT puede eliminar cuentas ROOT
+    if (targetUser.rol === 'ROOT' && requesterRole !== 'ROOT') {
+      return NextResponse.json({ error: "No tienes permiso para eliminar este usuario" }, { status: 403 });
     }
 
     // Transferir chats si se especifica

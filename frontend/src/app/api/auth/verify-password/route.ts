@@ -4,8 +4,15 @@ import bcrypt from "bcryptjs";
 import { pool } from "@/lib/db";
 import { ENV } from "@/lib/env";
 import { cookies } from "next/headers";
+import { rateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
+  // Mismo límite que el login para frenar fuerza bruta con sesión activa
+  const rl = rateLimit(request, 10);
+  if (!rl.success) {
+    return NextResponse.json({ success: false, error: "Demasiados intentos" }, { status: 429 });
+  }
+
   try {
     const { password } = await request.json();
 

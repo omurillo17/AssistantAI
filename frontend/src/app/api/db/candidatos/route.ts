@@ -25,7 +25,7 @@ export async function GET(request: Request) {
     if (!token) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
-    const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'secret-key-default');
+    const secret = new TextEncoder().encode(ENV.JWT_SECRET);
     const { payload } = await jwtVerify(token, secret);
     rol = payload.rol as string;
     reclutador_id = payload.reclutador_id as string;

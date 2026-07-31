@@ -57,10 +57,12 @@ export async function GET(request: Request) {
         });
       }
       if (row.vacante_id) {
-        const navesArr =
-          typeof row.vacante_naves === "string"
-            ? JSON.parse(row.vacante_naves)
-            : row.vacante_naves || [];
+        let navesArr: string[] = [];
+        if (typeof row.vacante_naves === "string") {
+          try { navesArr = JSON.parse(row.vacante_naves); } catch { navesArr = []; }
+        } else {
+          navesArr = row.vacante_naves || [];
+        }
         recMap.get(row.reclutador_id)!.vacantes.push({
           id: row.vacante_id,
           nombre: row.vacante_nombre,
@@ -73,8 +75,8 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json(Array.from(recMap.values()));
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error fetching reclutador_vacantes from DB:", error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: "Error al consultar reclutadores" }, { status: 500 });
   }
 }

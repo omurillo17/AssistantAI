@@ -2,21 +2,26 @@ import { NextResponse } from 'next/server';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import fs from 'fs';
+import { verifyWebhookApiKey } from '@/lib/auth';
+
+const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15 MB
+const ALLOWED_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png', '.webp', '.doc', '.docx'];
 
 export async function POST(request: Request) {
+  if (!verifyWebhookApiKey(request)) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  }
+
   try {
     const { searchParams } = new URL(request.url);
     let telefono = searchParams.get('telefono');
 
-    let file: File | Blob | null = null;
     let buffer: Buffer;
-
     let originalFilename = 'document.pdf';
 
     const contentType = request.headers.get('content-type') || '';
     if (contentType.includes('multipart/form-data')) {
       const formData = await request.formData();
-      console.log("FormData keys:", Array.from(formData.keys()));
 
       const fileData = formData.get('data');
       if (!telefono) telefono = formData.get('telefono') as string;
@@ -33,8 +38,8 @@ export async function POST(request: Request) {
         const cleanStr = fileData.replace(/^data:application\/pdf;base64,/, '');
         buffer = Buffer.from(cleanStr, 'base64');
       } else {
-        file = fileData as unknown as File;
-        originalFilename = (file as any)?.name || 'document.pdf';
+        const file = fileData as File;
+        originalFilename = file.name || 'document.pdf';
         buffer = Buffer.from(await file.arrayBuffer());
       }
     } else {
@@ -47,8 +52,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "El archivo enviado está vacío o corrupto" }, { status: 400 });
     }
 
-    // Sanitize filename
-    const ext = path.extname(originalFilename) || '.pdf';
+    if (buffer.length > MAX_FILE_SIZE) {
+      return NextResponse.json({ error: "El archivo excede el límite máximo de 15 MB" }, { status: 400 });
+    }
+
+    // Solo extensiones de documento permitidas; cualquier otra cosa se guarda como .pdf
+    // para impedir subir contenido ejecutable/HTML servido desde /public.
+    let ext = path.extname(originalFilename).toLowerCase();
+    if (!ALLOWED_EXTENSIONS.includes(ext)) {
+      ext = '.pdf';
+    }
 
     // Fallback if telefono is not provided
     if (!telefono || telefono === 'undefined' || telefono === 'null') {

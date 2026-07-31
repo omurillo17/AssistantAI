@@ -124,7 +124,7 @@ export default function UsuariosPage() {
                 <td className="px-6 py-4 font-semibold text-slate-900">{u.usuario}</td>
                 <td className="px-6 py-4">
                   <span className="font-mono text-sm bg-slate-100/80 text-slate-700 px-2.5 py-1 rounded-lg border border-slate-200/50">
-                    {u.actual_password || '********'}
+                    ********
                   </span>
                 </td>
                 <td className="px-6 py-4">
