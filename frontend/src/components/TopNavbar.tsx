@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, UserCircle, Search, LogOut, Building2, ChevronDown } from "lucide-react";
+import { Bell, UserCircle, Search, LogOut, Building2, ChevronDown, Trash2 } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
 import { useTenant } from "@/hooks/useTenant";
 
@@ -89,15 +89,69 @@ export function TopNavbar() {
   }, []);
 
   const markAllAsRead = async () => {
+    setUnreadCount(0);
+    setNotifications(prev => prev.map(n => ({ ...n, leida: true })));
     try {
       await fetch("/api/db/notificaciones", { method: "PATCH", body: JSON.stringify({}) });
-      fetchNotifs();
     } catch (e) {}
   };
 
+  const deleteNotif = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await fetch(`/api/db/notificaciones?id=${id}`, { method: "DELETE" });
+      setNotifications(prev => {
+        const next = prev.filter(n => n.id !== id);
+        const unread = next.filter(n => !n.leida).length;
+        setUnreadCount(unread);
+        return next;
+      });
+    } catch (err) {
+      console.error("Error deleting notification:", err);
+    }
+  };
+
+  const clearAllNotifs = async () => {
+    try {
+      await fetch("/api/db/notificaciones", { method: "DELETE" });
+      setNotifications([]);
+      setUnreadCount(0);
+    } catch (err) {
+      console.error("Error clearing notifications:", err);
+    }
+  };
+
+  const handleNotifClick = (n: any) => {
+    setIsNotifOpen(false);
+    
+    // Mark single notification as read immediately
+    if (!n.leida) {
+      setNotifications(prev => prev.map(item => item.id === n.id ? { ...item, leida: true } : item));
+      setUnreadCount(prev => Math.max(0, prev - 1));
+      fetch("/api/db/notificaciones", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: n.id }),
+      }).catch(() => {});
+    }
+
+    // Extract phone if available in message (e.g. wa.me/521... or 10-13 digits)
+    const phoneMatch = n.mensaje?.match(/(?:wa\.me\/|tel:|phone:)?(\d{10,13})/i);
+    const telefono = phoneMatch ? phoneMatch[1] : null;
+
+    if (n.mensaje?.toLowerCase().includes("verificación") || n.mensaje?.toLowerCase().includes("identidad") || n.mensaje?.toLowerCase().includes("ocr")) {
+      window.dispatchEvent(new CustomEvent("open-identity-modal", { detail: { telefono } }));
+    }
+
+    if (telefono) {
+      router.push(`/expedientes?telefono=${telefono}`);
+    }
+  };
+
   const toggleNotifs = () => {
-    setIsNotifOpen(!isNotifOpen);
-    if (!isNotifOpen && unreadCount > 0) {
+    const nextState = !isNotifOpen;
+    setIsNotifOpen(nextState);
+    if (nextState && unreadCount > 0) {
       markAllAsRead();
     }
   };
@@ -128,7 +182,6 @@ export function TopNavbar() {
     if (pathname.startsWith("/vacantes")) return "Gestión de Vacantes";
     if (pathname.startsWith("/calendario")) return "Calendario de Entrevistas";
     if (pathname.startsWith("/expedientes")) return "Expediente de Candidato";
-    if (pathname.startsWith("/configuracion")) return "Configuración";
     if (pathname.startsWith("/usuarios")) return "Gestión de Usuarios";
     if (pathname.startsWith("/empresa")) return "Perfil de Empresa";
     if (pathname.startsWith("/reclutadores")) return "Reclutadores";
@@ -239,17 +292,40 @@ export function TopNavbar() {
           </button>
           
           {isNotifOpen && (
-            <div className="absolute right-0 mt-3 w-80 bg-white rounded-lg shadow-xl py-2 z-50 text-slate-800 border border-slate-100 max-h-96 overflow-y-auto">
-              <div className="px-4 py-2 border-b font-bold text-sm">Notificaciones</div>
+            <div className="absolute right-0 mt-3 w-80 sm:w-96 bg-white rounded-xl shadow-xl py-2 z-50 text-slate-800 border border-slate-100 max-h-96 overflow-y-auto">
+              <div className="px-4 py-2 border-b flex items-center justify-between font-bold text-sm">
+                <span>Notificaciones</span>
+                {notifications.length > 0 && (
+                  <button 
+                    onClick={clearAllNotifs}
+                    className="text-xs font-semibold text-slate-400 hover:text-red-600 transition-colors"
+                  >
+                    Limpiar todas
+                  </button>
+                )}
+              </div>
               {notifications.length === 0 ? (
-                <div className="px-4 py-4 text-sm text-slate-500 text-center">No tienes notificaciones</div>
+                <div className="px-4 py-6 text-sm text-slate-400 text-center">No tienes notificaciones</div>
               ) : (
                 notifications.map(n => (
-                  <div key={n.id} className={`px-4 py-3 text-sm border-b last:border-0 ${!n.leida ? 'bg-indigo-50/50' : ''}`}>
-                    <p className="text-slate-700">{n.mensaje}</p>
-                    <span className="text-[10px] text-slate-400 block mt-1">
-                      {new Date(n.created_at).toLocaleString('es-MX')}
-                    </span>
+                  <div 
+                    key={n.id} 
+                    onClick={() => handleNotifClick(n)}
+                    className={`px-4 py-3 text-sm border-b last:border-0 hover:bg-slate-50 transition-colors cursor-pointer flex items-start justify-between gap-3 ${!n.leida ? 'bg-indigo-50/60 font-medium' : ''}`}
+                  >
+                    <div className="flex-1">
+                      <p className="text-slate-700 leading-snug">{n.mensaje}</p>
+                      <span className="text-[10px] text-slate-400 block mt-1.5 font-mono">
+                        {new Date(n.created_at).toLocaleString('es-MX')}
+                      </span>
+                    </div>
+                    <button
+                      onClick={(e) => deleteNotif(n.id, e)}
+                      title="Eliminar notificación"
+                      className="text-slate-300 hover:text-red-500 p-1 rounded transition-colors shrink-0"
+                    >
+                      <Trash2 size={15} />
+                    </button>
                   </div>
                 ))
               )}

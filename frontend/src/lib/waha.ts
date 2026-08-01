@@ -1,8 +1,14 @@
 import { pool } from '@/lib/db';
 
-const WAHA_BASE = process.env.WAHA_BASE_URL || 'http://localhost:3000';
-const WAHA_API_KEY = process.env.WAHA_API_KEY || 'virgo_secret_key';
-const WAHA_SESSION = process.env.WAHA_SESSION || 'default';
+// Configuración única de WAHA para todo el backend.
+// La API key SIEMPRE debe venir del entorno; no hay valor de respaldo.
+export const WAHA_BASE = process.env.WAHA_BASE_URL || process.env.WAHA_URL || 'http://localhost:3000';
+export const WAHA_API_KEY = process.env.WAHA_API_KEY || '';
+export const WAHA_SESSION = process.env.WAHA_SESSION || 'default';
+
+if (!WAHA_API_KEY) {
+  console.warn('[seguridad] WAHA_API_KEY no está configurada; las llamadas a WAHA fallarán si el servicio exige API key.');
+}
 
 // Envía un mensaje de WhatsApp a un candidato via WAHA y lo registra en
 // conversation_history / mensajes_bandeja / cola_mensajes (Outbox pattern).

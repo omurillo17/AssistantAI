@@ -3,6 +3,7 @@ import { pool } from '@/lib/db';
 import { cookies } from "next/headers";
 import { jwtVerify } from "jose";
 import { ENV } from "@/lib/env";
+import { syncPromptContextDisk } from "@/lib/syncPromptContext";
 
 export const dynamic = 'force-dynamic';
 
@@ -37,6 +38,8 @@ export async function POST(request: Request) {
       [empresa_id, nombre, rfc || '', ubicacion_maps || '']
     );
 
+    await syncPromptContextDisk(empresa_id);
+
     return NextResponse.json({ success: true, nave: res.rows[0] });
   } catch (err) {
     console.error('Error creating nave:', err);
@@ -62,6 +65,12 @@ export async function PATCH(request: Request) {
       [nombre, rfc || '', ubicacion_maps || '', id]
     );
 
+    if (res.rows[0]?.empresa_id) {
+      await syncPromptContextDisk(res.rows[0].empresa_id);
+    } else {
+      await syncPromptContextDisk();
+    }
+
     return NextResponse.json({ success: true, nave: res.rows[0] });
   } catch (err) {
     console.error('Error updating nave:', err);
@@ -83,6 +92,8 @@ export async function DELETE(request: Request) {
     }
 
     await pool.query(`DELETE FROM naves WHERE id = $1`, [id]);
+    await syncPromptContextDisk();
+
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error('Error deleting nave:', err);

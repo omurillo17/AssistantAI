@@ -19,11 +19,8 @@ const patchBodySchema = z.object({
   empresa_id: z.string().uuid().optional(),
 });
 
-const WAHA_BASE = process.env.WAHA_BASE_URL || "http://localhost:3000";
-const WAHA_API_KEY = process.env.WAHA_API_KEY || "virgo_secret_key";
-const WAHA_SESSION = process.env.WAHA_SESSION || "default";
-import { jwtVerify } from "jose";
-import { cookies } from "next/headers";
+import { WAHA_BASE, WAHA_API_KEY, WAHA_SESSION } from '@/lib/waha';
+import { getSession } from '@/lib/auth';
 
 // ─── GET /api/db/candidato?telefono=xxx ───────────────────
 export async function GET(request: Request) {
@@ -39,27 +36,16 @@ export async function GET(request: Request) {
 
   const { telefono } = parsed.data;
 
-  let rol = "USER";
-  let reclutador_id: string | null = null;
-  let jwt_empresa_id: string | null = null;
-  
-  try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get("tci_session")?.value;
-    if (!token) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
-    const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'secret-key-default');
-    const { payload } = await jwtVerify(token, secret);
-    rol = payload.rol as string;
-    reclutador_id = payload.reclutador_id as string;
-    jwt_empresa_id = payload.empresa_id as string;
-  } catch (err) {
-    return NextResponse.json({ error: "Token inválido" }, { status: 401 });
+  const payload = await getSession(request);
+  if (!payload) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
+  const rol = (payload.rol as string) || "USER";
+  const reclutador_id = (payload.reclutador_id as string | null) ?? null;
+  const jwt_empresa_id = (payload.empresa_id as string | null) ?? null;
 
   let filter_empresa_id = searchParams.get('empresa_id');
-  let filter_nave_id = searchParams.get('nave_id');
+  const filter_nave_id = searchParams.get('nave_id');
   if (rol !== "ROOT") {
     filter_empresa_id = jwt_empresa_id;
   }
@@ -112,25 +98,15 @@ export async function GET(request: Request) {
 export async function PATCH(request: Request) {
 
   try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get("tci_session")?.value;
-    if (!token) {
+    const payload = await getSession(request);
+    if (!payload) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
-    let jwt_empresa_id: string | null = null;
-    let rol = "USER";
-    try {
-      const secretKey = new TextEncoder().encode(process.env.JWT_SECRET || 'secret-key-default');
-      const { payload } = await jwtVerify(token, secretKey);
-      jwt_empresa_id = payload.empresa_id as string;
-      rol = payload.rol as string;
-    } catch (err) {
-      return NextResponse.json({ error: "Token inválido" }, { status: 401 });
-    }
-    
+    const jwt_empresa_id = (payload.empresa_id as string | null) ?? null;
+
     const { searchParams } = new URL(request.url);
-    let target_empresa = searchParams.get('empresa_id') || jwt_empresa_id;
-    let target_nave = searchParams.get('nave_id');
+    const target_empresa = searchParams.get('empresa_id') || jwt_empresa_id;
+    const target_nave = searchParams.get('nave_id');
     const body = await request.json();
     const parsed = patchBodySchema.safeParse(body);
 
@@ -188,20 +164,19 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: 'No hay campos para actualizar' }, { status: 400 });
     }
 
+    const telefonoIdx = idx++;
     valores.push(telefono);
-    let target_empresa_clause = "";
+    let filtroExtra = "";
     if (target_empresa) {
-        target_empresa_clause += ` AND empresa_id = $${idx + 1}`;
-        valores.push(target_empresa);
-        idx++;
+      filtroExtra += ` AND empresa_id = $${idx++}`;
+      valores.push(target_empresa);
     }
     if (target_nave) {
-        target_empresa_clause += ` AND nave_id = $${idx + 1}`;
-        valores.push(target_nave);
-        idx++;
+      filtroExtra += ` AND nave_id = $${idx++}`;
+      valores.push(target_nave);
     }
     const res = await pool.query(
-      `UPDATE candidatos SET ${campos.join(', ')} WHERE telefono = $${idx - target_empresa_clause.split('AND').length + 1}${target_empresa_clause} RETURNING id, telefono, estado, escalado, escalated_at, updated_at`,
+      `UPDATE candidatos SET ${campos.join(', ')} WHERE telefono = $${telefonoIdx}${filtroExtra} RETURNING id, telefono, estado, escalado, escalated_at, updated_at`,
       valores
     );
 

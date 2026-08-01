@@ -1,12 +1,9 @@
 import { NextResponse } from 'next/server';
+import { WAHA_BASE, WAHA_API_KEY } from '@/lib/waha';
 
-// Force reload WAHA API key
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const WAHA_BASE = process.env.WAHA_BASE_URL || "http://localhost:3000";
-  const WAHA_API_KEY = process.env.WAHA_API_KEY || "virgo_secret_key";
-  
   try {
     const res = await fetch(`${WAHA_BASE}/api/sessions`, {
       method: "GET",
@@ -28,11 +25,8 @@ export async function GET() {
       if (isWorking) {
         return NextResponse.json({ status: "online" });
       } else {
-        return NextResponse.json({ 
-          status: "offline", 
-          reason: "session_not_working",
-          details: sessions 
-        });
+        // No se exponen los detalles de la sesión: este endpoint es público.
+        return NextResponse.json({ status: "offline", reason: "session_not_working" });
       }
     } else {
       return NextResponse.json({ status: "offline", reason: "status_not_ok", code: res.status });

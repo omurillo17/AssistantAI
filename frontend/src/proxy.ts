@@ -5,7 +5,7 @@ import { jwtVerify } from "jose";
 const JWT_SECRET = process.env.JWT_SECRET;
 
 // Rutas exclusivas para ADMIN
-const adminOnlyRoutes = ["/configuracion", "/reclutadores"];
+const adminOnlyRoutes = ["/reclutadores"];
 // Rutas exclusivas para ADMIN y ENCARGADO
 const adminAndEncargadoRoutes = ["/usuarios", "/api/db/usuarios", "/api/db/grupos"];
 
@@ -22,6 +22,8 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/api/prompt-context") || // Consumido por n8n server-to-server, protegido por x-api-key propio
     pathname.startsWith("/api/cron") || // Disparado por n8n (Schedule Trigger), protegido por x-api-key propio
     pathname.startsWith("/api/waha-status") || // Chequeo de estado de WAHA
+    pathname.startsWith("/portal") || // Portal público de candidatos
+    pathname.startsWith("/api/portal") || // API pública del portal de candidatos
     pathname === "/favicon.ico"
   ) {
     return NextResponse.next();
@@ -38,9 +40,18 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
+  // Nunca verificar con un secreto de respaldo: si falta JWT_SECRET, se niega el acceso.
+  if (!JWT_SECRET) {
+    console.error("CRITICAL: JWT_SECRET no está configurado; se rechazan todas las sesiones.");
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Servidor mal configurado" }, { status: 500 });
+    }
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
   try {
     // Verificar el token
-    const secretKey = new TextEncoder().encode(JWT_SECRET || "fallback_secret_do_not_use_in_prod");
+    const secretKey = new TextEncoder().encode(JWT_SECRET);
     const { payload } = await jwtVerify(token, secretKey);
 
     // Check roles

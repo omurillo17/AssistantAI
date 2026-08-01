@@ -25,7 +25,7 @@ export async function GET(request: Request) {
     if (!token) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
-    const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'secret-key-default');
+    const secret = new TextEncoder().encode(ENV.JWT_SECRET);
     const { payload } = await jwtVerify(token, secret);
     rol = payload.rol as string;
     reclutador_id = payload.reclutador_id as string;
@@ -55,7 +55,7 @@ export async function GET(request: Request) {
 
   const { estado, vacante, q } = parsedQuery.data;
   let { limit } = parsedQuery.data;
-  limit = Math.min(limit, 100); // Limit pagination
+  limit = Math.min(limit, 2000); // Limit pagination
 
   try {
     const conditions: string[] = [];
@@ -68,7 +68,7 @@ export async function GET(request: Request) {
     }
 
     if (filter_nave_id) {
-      conditions.push(`nave_id = $${idx++}`);
+      conditions.push(`(nave_id = $${idx++} OR nave_id IS NULL OR nave_interes IS NULL OR nave_interes = '' OR nave_interes = 'Pendiente')`);
       values.push(filter_nave_id);
     }
 
@@ -100,13 +100,14 @@ export async function GET(request: Request) {
 
     const res = await pool.query(
       `SELECT
-        id, telefono, nombre, nombre_chat, nombre_solicitud, nombre_ine,
+        id, telefono, nombre, nombre_chat, nombre_solicitud, nombre_ine, nombre_constancia,
         estado, vacante_interes, nave_interes, veredicto,
         tiene_cv, datos_ine, datos_rfc, cv_manual,
         escalado, escalation_reason,
         fecha_entrevista, ultima_interaccion, updated_at, created_at,
         resumen_ia, motivo_analisis, privacidad_aceptada,
-        nombre_confirmado, edad, correo, link_cv
+        nombre_confirmado, edad, correo, link_cv,
+        curp_ine, curp_rfc, alerta_identidad_estado, alerta_identidad_motivo
        FROM candidatos
        ${where}
        ORDER BY updated_at DESC

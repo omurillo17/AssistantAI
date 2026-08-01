@@ -2,16 +2,17 @@ import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import fs from 'fs';
 import path from 'path';
+import { verifyInternalApiKey } from '@/lib/auth';
 
 // Prompt global de respaldo cuando la empresa no tiene un prompt_ia propio configurado
-const GLOBAL_PROMPT_PATH = path.join(process.cwd(), '..', 'virgo_data', 'prompts', 'chat_prompt.md');
-
 function getGlobalPromptBase(): string {
   const candidatePaths = [
     path.join(process.cwd(), '..', 'virgo_data', 'prompts', 'chat_prompt.md'),
     path.join(process.cwd(), 'virgo_data', 'prompts', 'chat_prompt.md'),
+    path.join(process.cwd(), '..', 'virgo_data', 'workflows', 'chat_prompt.md'),
+    path.join(process.cwd(), 'virgo_data', 'workflows', 'chat_prompt.md'),
     '/home/node/virgo_files/prompts/chat_prompt.md',
-    'c:/Users/PC-801/Desktop/AssistantAI/virgo_data/prompts/chat_prompt.md'
+    '/home/node/virgo_files/workflows/chat_prompt.md',
   ];
 
   for (const p of candidatePaths) {
@@ -41,9 +42,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const empresa_id = searchParams.get('empresa_id');
 
-  const apiKey = request.headers.get('x-api-key');
-  const expectedKey = process.env.N8N_API_KEY;
-  if (expectedKey && apiKey !== expectedKey) {
+  if (!verifyInternalApiKey(request)) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
 
@@ -130,10 +129,12 @@ export async function GET(request: Request) {
         });
       }
       if (row.vacante_id) {
-        const navesArr =
-          typeof row.vacante_naves === 'string'
-            ? JSON.parse(row.vacante_naves)
-            : row.vacante_naves || [];
+        let navesArr: string[] = [];
+        if (typeof row.vacante_naves === 'string') {
+          try { navesArr = JSON.parse(row.vacante_naves); } catch { navesArr = []; }
+        } else {
+          navesArr = row.vacante_naves || [];
+        }
         recMap.get(row.reclutador_id)!.vacantes.push({
           id: row.vacante_id,
           nombre: row.vacante_nombre,
@@ -223,8 +224,8 @@ export async function GET(request: Request) {
       },
     });
 
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error generating prompt-context:', err);
-    return NextResponse.json({ error: 'Error generando contexto', details: String(err), stack: err?.stack || '' }, { status: 500 });
+    return NextResponse.json({ error: 'Error generando contexto' }, { status: 500 });
   }
 }

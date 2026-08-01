@@ -15,21 +15,31 @@ import { getCandidateDisplayName as getNombre } from "@/lib/formatters";
 function KanbanCard({ cand, onClick, onStatusChange }: { cand: Candidato, onClick: () => void, onStatusChange: (t: string, s: string) => void }) {
   const hasCV = cand.tiene_cv || !!cand.cv_manual || !!cand.link_cv;
   const hasINE = !!cand.datos_ine;
+  const needsReview = cand.alerta_identidad_estado === 'PENDIENTE' || cand.estado === 'DOCUMENTOS_NO_COINCIDEN' || (cand.resumen_ia && cand.resumen_ia.toLowerCase().includes('revisión'));
 
   return (
     <div
       onClick={onClick}
-      className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm hover:shadow-md hover:border-indigo-300 transition-all cursor-pointer group flex flex-col relative"
+      className={`bg-white p-3 rounded-xl border transition-all cursor-pointer group flex flex-col relative ${
+        needsReview ? 'border-amber-300 shadow-amber-100 ring-2 ring-amber-400/30' : 'border-slate-200 shadow-sm hover:shadow-md hover:border-indigo-300'
+      }`}
     >
-      <div className="flex justify-between items-start mb-1.5">
+      <div className="flex justify-between items-start mb-1.5 gap-1">
         <div className="font-bold text-slate-800 text-sm leading-tight group-hover:text-indigo-600 transition-colors line-clamp-2">
           {getNombre(cand)}
         </div>
-        {cand.escalado && (
-          <div className="bg-rose-100 text-rose-600 p-1 rounded-full animate-pulse" title="¡Requiere atención humana!">
-            <AlertTriangle size={12} />
-          </div>
-        )}
+        <div className="flex items-center gap-1 shrink-0">
+          {needsReview && (
+            <span className="bg-amber-500 text-white font-extrabold text-[9px] px-1.5 py-0.5 rounded shadow-2xs animate-pulse flex items-center gap-0.5">
+              🚩 REVISAR
+            </span>
+          )}
+          {cand.escalado && (
+            <div className="bg-rose-100 text-rose-600 p-1 rounded-full animate-pulse" title="¡Requiere atención humana!">
+              <AlertTriangle size={12} />
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="text-[10px] text-slate-500 font-mono mb-2">{cand.telefono}</div>
@@ -107,6 +117,11 @@ function ExpedientesPageInner() {
 
   const [selectedCandidate, setSelectedCandidate] = useState<Candidato | null>(null);
 
+  // Lista de Naves y Vacantes desde BD para filtros
+  const [dbNaves, setDbNaves] = useState<{ id: string; nombre: string }[]>([]);
+  const [dbVacantes, setDbVacantes] = useState<string[]>([]);
+  const [rawVacantesData, setRawVacantesData] = useState<any[]>([]);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
@@ -121,14 +136,35 @@ function ExpedientesPageInner() {
       if (storedEmpresaId) queryMensajes += `?empresa_id=${storedEmpresaId}`;
       if (storedNaveId) queryMensajes += (queryMensajes ? `&` : `?`) + `nave_id=${storedNaveId}`;
 
-      const [candRes, msgsRes] = await Promise.all([
+      const [candRes, msgsRes, empRes, vacRes] = await Promise.all([
         fetch(`/api/db/candidatos?limit=2000${queryCand}`),
-        fetch(`/api/db/mensajes${queryMensajes}`)
+        fetch(`/api/db/mensajes${queryMensajes}`),
+        fetch(`/api/db/empresas`),
+        fetch(`/api/db/vacantes`),
       ]);
       const candData = await candRes.json();
       const msgsData = await msgsRes.json();
       setCandidatos(Array.isArray(candData) ? candData : []);
       setMensajes(Array.isArray(msgsData) ? msgsData : []);
+
+      if (empRes.ok) {
+        const empData = await empRes.json();
+        const naves: { id: string; nombre: string }[] = [];
+        (empData.empresas || []).forEach((e: any) => {
+          (e.naves || []).forEach((n: any) => {
+            if (n.nombre) naves.push({ id: n.id, nombre: n.nombre });
+          });
+        });
+        setDbNaves(naves);
+      }
+
+      if (vacRes.ok) {
+        const vacData = await vacRes.json();
+        const vacList = Array.isArray(vacData) ? vacData : vacData.data || [];
+        setRawVacantesData(vacList);
+        const vacNames = vacList.flatMap((r: any) => (r.vacantes || []).map((v: any) => v.nombre || v.name)).filter(Boolean);
+        setDbVacantes(vacNames);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -141,10 +177,10 @@ function ExpedientesPageInner() {
     loadData();
   }, [loadData]);
 
-  // Abrir perfil directamente si llega ?tel= (ej. desde "Ver Perfil" en Bandeja de Mensajes)
+  // Abrir perfil directamente si llega ?tel=
   useEffect(() => {
     if (telParam && !appliedTelRef.current && candidatos.length > 0) {
-      const match = candidatos.find(c => c.telefono === telParam);
+      const match = candidatos.find((c) => c.telefono === telParam);
       if (match) {
         setSelectedCandidate(match);
         appliedTelRef.current = true;
@@ -164,13 +200,12 @@ function ExpedientesPageInner() {
       const res = await fetch(`/api/db/candidato${query}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ telefono, estado: newStatus })
+        body: JSON.stringify({ telefono, estado: newStatus }),
       });
       if (res.ok) {
-        setCandidatos(prev => prev.map(c => c.telefono === telefono ? { ...c, estado: newStatus } : c));
-        // Also update selectedCandidate if it's the one being modified
+        setCandidatos((prev) => prev.map((c) => (c.telefono === telefono ? { ...c, estado: newStatus } : c)));
         if (selectedCandidate?.telefono === telefono) {
-          setSelectedCandidate(prev => prev ? { ...prev, estado: newStatus } : null);
+          setSelectedCandidate((prev) => (prev ? { ...prev, estado: newStatus } : null));
         }
       }
     } catch (e) {
@@ -182,26 +217,119 @@ function ExpedientesPageInner() {
     router.push(`/mensajes?tel=${telefono}`);
   };
 
+  // Helper de normalización
+  const normalizeStr = (str: string) =>
+    String(str || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/_/g, " ")
+      .trim();
+
+  // ─── FILTRADO POR ROL / GRUPO DEL RECLUTADOR ─────────────────────
+  const userRole = typeof window !== "undefined" ? localStorage.getItem("tci_role") || "USER" : "USER";
+  const myRecruiterId = typeof window !== "undefined" ? localStorage.getItem("tci_reclutador_id") : null;
+
+  const allowedNaveIds = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    if (userRole === "ADMIN" || userRole === "ROOT") return null; // Acceso total
+
+    let navesAsignadas: string[] = [];
+    try {
+      navesAsignadas = JSON.parse(localStorage.getItem("tci_naves_asignadas") || "[]");
+    } catch { }
+
+    return new Set(navesAsignadas);
+  }, [userRole]);
+
+  // Naves permitidas para el grupo/reclutador actual
+  const scopedNaves = useMemo(() => {
+    if (!allowedNaveIds) return dbNaves;
+    if (allowedNaveIds.size === 0) return dbNaves;
+    return dbNaves.filter((n) => allowedNaveIds.has(n.id));
+  }, [dbNaves, allowedNaveIds]);
+
+  // Vacantes permitidas para el grupo/reclutador actual
+  const scopedVacantes = useMemo(() => {
+    if (!allowedNaveIds && !myRecruiterId) return dbVacantes;
+    if (userRole === "ADMIN" || userRole === "ROOT") return dbVacantes;
+
+    return rawVacantesData
+      .filter((r: any) => {
+        const isMyRecruiter = myRecruiterId && r.reclutador_id === myRecruiterId;
+        const isMyNave = allowedNaveIds && (r.vacantes || []).some((v: any) => (v.naves || []).some((navId: string) => allowedNaveIds.has(navId)));
+        return isMyRecruiter || isMyNave;
+      })
+      .flatMap((r: any) => (r.vacantes || []).map((v: any) => v.nombre || v.name))
+      .filter(Boolean);
+  }, [dbVacantes, rawVacantesData, allowedNaveIds, myRecruiterId, userRole]);
+
   // ─── UNIQUE LISTS PARA FILTROS ─────────────────────────────────
   const uniqueVacantes = useMemo(() => {
-    return Array.from(new Set(candidatos.map(c => c.vacante_interes?.trim().toUpperCase()).filter(Boolean))).sort();
-  }, [candidatos]);
+    const fromCand = candidatos.map((c) => c.vacante_interes?.trim()).filter(Boolean) as string[];
+    const combined = Array.from(new Set([...scopedVacantes, ...fromCand]));
+    return combined.sort((a, b) => a.localeCompare(b));
+  }, [candidatos, scopedVacantes]);
 
   const uniqueNaves = useMemo(() => {
-    return Array.from(new Set(candidatos.map(c => c.nave_interes?.trim().toUpperCase()).filter(Boolean))).sort();
-  }, [candidatos]);
+    const fromCand = candidatos.map((c) => c.nave_interes?.trim()).filter(Boolean) as string[];
+    const fromDb = scopedNaves.map((n) => n.nombre);
+    const combined = Array.from(new Set([...fromDb, ...fromCand]));
+    return combined.sort((a, b) => a.localeCompare(b));
+  }, [candidatos, scopedNaves]);
 
   // ─── TABLA FILTRADA ───────────────────────────────────────
   const filteredTable = useMemo(() => {
-    return candidatos.filter(c => {
-      const nombre = getNombre(c).toLowerCase();
-      const matchSearch = nombre.includes(searchTerm.toLowerCase()) || c.telefono.includes(searchTerm);
-      const matchStatus = statusFilter === "TODOS" || c.estado === statusFilter;
-      const matchVacante = vacanteFilter === "TODAS" || c.vacante_interes?.trim().toUpperCase() === vacanteFilter;
-      const matchNave = naveFilter === "TODAS" || c.nave_interes?.trim().toUpperCase() === naveFilter;
-      return matchSearch && matchStatus && matchVacante && matchNave;
-    }).sort((a, b) => new Date(b.updated_at!).getTime() - new Date(a.updated_at!).getTime());
-  }, [candidatos, searchTerm, statusFilter, vacanteFilter, naveFilter]);
+    const normSearch = normalizeStr(searchTerm);
+    const normStatus = normalizeStr(statusFilter);
+    const normVacante = normalizeStr(vacanteFilter);
+    const normNave = normalizeStr(naveFilter);
+
+    return candidatos
+      .filter((c) => {
+        const nombre = normalizeStr(getNombre(c));
+        const tel = (c.telefono || "").replace(/\D/g, "");
+        const matchSearch = !normSearch || nombre.includes(normSearch) || tel.includes(normSearch);
+
+        const candStatus = normalizeStr(c.estado || "NUEVO");
+        const matchStatus = statusFilter === "TODOS" || candStatus === normStatus;
+
+        const candVacante = normalizeStr(c.vacante_interes || "");
+        const matchVacante =
+          vacanteFilter === "TODAS" ||
+          candVacante === normVacante ||
+          candVacante.includes(normVacante) ||
+          normVacante.includes(candVacante);
+
+        const candNave = normalizeStr(c.nave_interes || "");
+        const matchNave =
+          naveFilter === "TODAS" ||
+          candNave === normNave ||
+          candNave.includes(normNave) ||
+          normNave.includes(candNave);
+
+        // Control de permisos por Grupo/Reclutador
+        if (allowedNaveIds && allowedNaveIds.size > 0 && userRole !== "ADMIN" && userRole !== "ROOT") {
+          const candNaveId = (c as any).nave_id || "";
+          const isUnassigned = !candNaveId && (!candNave || candNave === "pendiente") && (!candVacante || candVacante === "general");
+          const isMyNaveId = candNaveId && allowedNaveIds.has(candNaveId);
+          const isMyNaveName =
+            candNave &&
+            scopedNaves.some(
+              (n) => normalizeStr(n.nombre).includes(candNave) || candNave.includes(normalizeStr(n.nombre))
+            );
+          const isMyVacante =
+            candVacante &&
+            scopedVacantes.some(
+              (v) => normalizeStr(v).includes(candVacante) || candVacante.includes(normalizeStr(v))
+            );
+          if (!isUnassigned && !isMyNaveId && !isMyNaveName && !isMyVacante) return false;
+        }
+
+        return matchSearch && matchStatus && matchVacante && matchNave;
+      })
+      .sort((a, b) => new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime());
+  }, [candidatos, searchTerm, statusFilter, vacanteFilter, naveFilter, allowedNaveIds, userRole, scopedNaves, scopedVacantes]);
 
   // ─── KANBAN ───────────────────────────────────────────────
   const kanbanData = useMemo(() => {
@@ -329,16 +457,25 @@ function ExpedientesPageInner() {
                       {filteredTable.length === 0 ? (
                         <tr><td colSpan={5} className="p-10 text-center text-slate-400">No hay candidatos con esos filtros.</td></tr>
                       ) : (
-                        filteredTable.map((cand, idx) => (
-                          <tr key={cand.telefono + idx} onClick={() => setSelectedCandidate(cand)} className="border-b border-slate-50 hover:bg-indigo-50/50 cursor-pointer transition-colors group">
-                            <td className="p-4">
-                              <div className="font-bold text-slate-800 group-hover:text-indigo-700">{getNombre(cand)}</div>
-                              {cand.fecha_entrevista && (
-                                <div className="text-xs text-amber-600 mt-0.5 font-semibold">
-                                  📅 {new Date(cand.fecha_entrevista).toLocaleString("es-MX", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                        filteredTable.map((cand, idx) => {
+                          const needsReview = cand.alerta_identidad_estado === 'PENDIENTE' || cand.estado === 'DOCUMENTOS_NO_COINCIDEN' || (cand.resumen_ia && cand.resumen_ia.toLowerCase().includes('revisión'));
+                          return (
+                            <tr key={cand.telefono + idx} onClick={() => setSelectedCandidate(cand)} className={`border-b border-slate-50 hover:bg-indigo-50/50 cursor-pointer transition-colors group ${needsReview ? 'bg-amber-50/40' : ''}`}>
+                              <td className="p-4">
+                                <div className="flex items-center gap-2">
+                                  <div className="font-bold text-slate-800 group-hover:text-indigo-700">{getNombre(cand)}</div>
+                                  {needsReview && (
+                                    <span className="bg-amber-500 text-white font-extrabold text-[9px] px-1.5 py-0.5 rounded shadow-2xs animate-pulse">
+                                      🚩 REVISAR
+                                    </span>
+                                  )}
                                 </div>
-                              )}
-                            </td>
+                                {cand.fecha_entrevista && (
+                                  <div className="text-xs text-amber-600 mt-0.5 font-semibold">
+                                    📅 {new Date(cand.fecha_entrevista).toLocaleString("es-MX", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                                  </div>
+                                )}
+                              </td>
                             <td className="p-4 font-mono text-xs text-slate-500">{cand.telefono}</td>
                             <td className="p-4">
                               <div className="font-semibold text-slate-700 text-xs">{cand.vacante_interes || "—"}</div>
@@ -354,7 +491,8 @@ function ExpedientesPageInner() {
                               <EstadoBadge estado={cand.estado || "NUEVO"} />
                             </td>
                           </tr>
-                        ))
+                        );
+                      })
                       )}
                     </tbody>
                   </table>

@@ -35,7 +35,21 @@ export function IdentityAlertModal() {
   useEffect(() => {
     fetchAlertas();
     const interval = setInterval(fetchAlertas, 10000);
-    return () => clearInterval(interval);
+
+    const handleOpenEvent = (e: any) => {
+      if (e.detail?.telefono) {
+        setCerradas((prev) => prev.filter((t) => t !== e.detail.telefono));
+      } else {
+        setCerradas([]);
+      }
+      fetchAlertas();
+    };
+
+    window.addEventListener("open-identity-modal", handleOpenEvent);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("open-identity-modal", handleOpenEvent);
+    };
   }, []);
 
   if (pathname === "/login") return null;

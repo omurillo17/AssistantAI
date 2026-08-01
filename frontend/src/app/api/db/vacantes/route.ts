@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
 import { jwtVerify } from "jose";
+import { ENV } from "@/lib/env";
 import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
 import { pool } from '@/lib/db';
+import { syncPromptContextDisk } from '@/lib/syncPromptContext';
 
 export async function GET(request: Request) {
   let rol = "USER";
@@ -16,7 +18,7 @@ export async function GET(request: Request) {
     if (!token) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
-    const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'secret-key-default');
+    const secret = new TextEncoder().encode(ENV.JWT_SECRET);
     const { payload } = await jwtVerify(token, secret);
     rol = payload.rol as string;
     reclutador_id = payload.reclutador_id as string;
@@ -138,7 +140,7 @@ export async function POST(request: Request) {
     if (!token) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
-    const secret = new TextEncoder().encode(process.env.JWT_SECRET || 'secret-key-default');
+    const secret = new TextEncoder().encode(ENV.JWT_SECRET);
     const { payload } = await jwtVerify(token, secret);
     rol = payload.rol as string;
     jwt_reclutador_id = payload.reclutador_id as string;
@@ -309,8 +311,8 @@ export async function POST(request: Request) {
 
     await client.query('COMMIT');
     
-    // NOTE: Old TXT generation logic has been REMOVED as requested in Phase 4.
-    // N8N now fetches directly from PostgreSQL or API, making txt files obsolete for SaaS mode.
+    // Auto-sync prompt_context.json file for n8n/AI
+    await syncPromptContextDisk(target_empresa_id || undefined);
 
     return NextResponse.json({ ok: true });
   } catch (err) {

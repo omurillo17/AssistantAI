@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Building2, MapPin, Plus, Trash2, Edit, X, Phone, ChevronDown, Briefcase } from "lucide-react";
-import LigarModal from "@/components/saas/LigarModal";
 import SaasGrupoModal from "@/components/saas/SaasGrupoModal";
 import AdminModal from "@/components/saas/AdminModal";
 import EmpresaModal from "@/components/saas/EmpresaModal";
@@ -30,14 +29,12 @@ export default function SaasAdminPage() {
   const router = useRouter();
   const [isRoot, setIsRoot] = useState<boolean | null>(null);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  const [empresasLigadas, setEmpresasLigadas] = useState<any[]>([]);
   const [grupos, setGrupos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Modals state
   const [showEmpresaModal, setShowEmpresaModal] = useState(false);
   const [showNaveModal, setShowNaveModal] = useState(false);
-  const [showLigarModal, setShowLigarModal] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [showGrupoModal, setShowGrupoModal] = useState(false);
 
@@ -72,7 +69,7 @@ export default function SaasAdminPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      await Promise.all([fetchEmpresas(), fetchEmpresasLigadas(), fetchGrupos()]);
+      await Promise.all([fetchEmpresas(), fetchGrupos()]);
     } finally {
       setLoading(false);
     }
@@ -136,18 +133,6 @@ export default function SaasAdminPage() {
     }
   };
 
-  const fetchEmpresasLigadas = async () => {
-    try {
-      const res = await fetch("/api/db/empresas-ligadas");
-      const data = await res.json();
-      if (data.success) {
-        setEmpresasLigadas(data.relaciones || []);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   const fetchEmpresas = async () => {
     try {
       const res = await fetch("/api/db/empresas");
@@ -183,19 +168,6 @@ export default function SaasAdminPage() {
       }
     } catch (e) {
       showToast("Error al eliminar", true);
-    }
-  };
-
-  const handleDeleteLigar = async (empresaA: string, empresaB: string) => {
-    if (!confirm("¿Estás seguro de desligar estas empresas?")) return;
-    try {
-      const res = await fetch(`/api/db/empresas-ligadas?empresaA=${empresaA}&empresaB=${empresaB}`, { method: "DELETE" });
-      if (res.ok) {
-        showToast("Empresas desligadas");
-        fetchEmpresasLigadas();
-      }
-    } catch (e) {
-      showToast("Error al desligar", true);
     }
   };
 
@@ -412,45 +384,6 @@ export default function SaasAdminPage() {
         })}
       </div>
 
-      {/* Seccion Empresas Ligadas */}
-      <div className="max-w-6xl mx-auto mt-12 mb-6 flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">Empresas Ligadas</h2>
-          <p className="text-slate-500 text-sm mt-1">Conecta empresas para permitir transferencia de candidatos entre sus encargados.</p>
-        </div>
-        <button 
-          onClick={() => setShowLigarModal(true)}
-          className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 px-4 py-2 rounded-lg font-bold transition-colors flex items-center gap-2"
-        >
-          <Plus size={18} /> Ligar Empresas
-        </button>
-      </div>
-
-      <div className="max-w-6xl mx-auto flex flex-col gap-4">
-        {empresasLigadas.length === 0 ? (
-           <div className="text-center py-8 border-2 border-dashed border-slate-200 rounded-xl bg-white">
-             <h3 className="text-slate-500 font-medium">No hay empresas ligadas.</h3>
-           </div>
-        ) : (
-          empresasLigadas.map((rel, idx) => (
-            <div key={idx} className="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between shadow-sm">
-              <div className="flex items-center gap-4">
-                <span className="font-bold text-slate-800 bg-slate-100 px-3 py-1 rounded-lg">{rel.origen_nombre}</span>
-                <span className="text-slate-400">↔</span>
-                <span className="font-bold text-slate-800 bg-slate-100 px-3 py-1 rounded-lg">{rel.destino_nombre}</span>
-              </div>
-              <button 
-                onClick={() => handleDeleteLigar(rel.empresa_origen_id, rel.empresa_destino_id)}
-                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                title="Desligar"
-              >
-                <Trash2 size={18} />
-              </button>
-            </div>
-          ))
-        )}
-      </div>
-
       {/* Modales SaaS Refactorizados */}
       <EmpresaModal
         isOpen={showEmpresaModal}
@@ -483,14 +416,6 @@ export default function SaasAdminPage() {
         onClose={() => { setShowAdminModal(false); setSelectedEmpresaForAdmin(null); }}
         onSuccess={fetchEmpresas}
         empresa={selectedEmpresaForAdmin}
-        showToast={showToast}
-      />
-
-      <LigarModal
-        isOpen={showLigarModal}
-        onClose={() => setShowLigarModal(false)}
-        onSuccess={fetchEmpresasLigadas}
-        empresas={empresas}
         showToast={showToast}
       />
 

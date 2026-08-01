@@ -38,7 +38,6 @@ export function Sidebar() {
     { name: "Mensajes", path: "/mensajes", icon: <MessageSquare size={18} /> },
     { name: "Vacantes", path: "/vacantes", icon: <Briefcase size={18} /> },
     { name: "Calendario", path: "/calendario", icon: <Calendar size={18} /> },
-    { name: "Configuración", path: "/configuracion", icon: <Settings size={18} /> },
   ];
 
   if (userRole === "ROOT" || userRole === "ADMIN" || userRole === "ENCARGADO") {

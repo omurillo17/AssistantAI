@@ -11,7 +11,7 @@ async function verifyRoot() {
   const token = cookieStore.get("tci_session")?.value;
   if (!token) return false;
   try {
-    const secretKey = new TextEncoder().encode(ENV.JWT_SECRET || 'secret-key-default');
+    const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
     const { payload } = await jwtVerify(token, secretKey);
     return payload.rol === 'ROOT' || payload.rol === 'ADMIN';
   } catch (err) {

@@ -15,10 +15,10 @@
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.3,
       "position": [
-        -640,
-        224
+        -192,
+        -80
       ],
-      "id": "5a667744-bca8-4df9-b303-f0e03c6bcb5e",
+      "id": "52d5493e-5ef2-453f-a093-c610e099327e",
       "name": "Limpieza"
     },
     {
@@ -30,10 +30,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        -416,
-        224
+        32,
+        -80
       ],
-      "id": "95bc3a3b-0fcc-414c-bad7-7decba49acb8",
+      "id": "038684ca-19b4-44c1-8a27-0a1173f9034b",
       "name": "LimpiarBD",
       "credentials": {
         "postgres": {
@@ -43,58 +43,14 @@
       }
     },
     {
-      "parameters": {
-        "rule": {
-          "interval": [
-            {
-              "field": "minutes",
-              "minutesInterval": 2
-            }
-          ]
-        }
-      },
-      "type": "n8n-nodes-base.scheduleTrigger",
-      "typeVersion": 1.3,
-      "position": [
-        -640,
-        432
-      ],
-      "id": "b1e4a2f0-6c3d-4a11-9e77-2f8a1c9d4e01",
-      "name": "ReintentoOutbox"
-    },
-    {
-      "parameters": {
-        "url": "={{ $env.TCI_API_BASE || 'http://host.docker.internal:3001' }}/api/cron/process-outbox",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            {
-              "name": "x-api-key",
-              "value": "={{ $env.N8N_API_KEY }}"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        -416,
-        432
-      ],
-      "id": "c2f5b3a1-7d4e-4b22-8f88-3a9b2d0e5f12",
-      "name": "LlamarProcessOutbox",
-      "continueOnFail": true
-    },
-    {
       "parameters": {},
       "type": "n8n-nodes-base.errorTrigger",
       "typeVersion": 1,
       "position": [
-        -640,
-        640
+        -512,
+        176
       ],
-      "id": "65fdee74-a0b3-4936-9e04-9d39c4637866",
+      "id": "5a9d02c9-3f71-4522-aa72-1b6815d744ec",
       "name": "Error Trigger"
     },
     {
@@ -104,10 +60,10 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        -416,
-        640
+        -288,
+        176
       ],
-      "id": "055255c9-aa04-438b-86a4-bc43e08087e4",
+      "id": "4484c4c7-379b-4034-b7d3-45142a3dc241",
       "name": "Wait1",
       "webhookId": "db0a92eb-4a68-4a9e-96b5-3214994d80aa"
     },
@@ -122,10 +78,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        -192,
-        640
+        -64,
+        176
       ],
-      "id": "31effe22-c826-44f8-a33b-57889119e9a3",
+      "id": "4ce15fed-089e-4057-b9b2-915b8b0fc505",
       "name": "BuscarTelefono",
       "alwaysOutputData": true,
       "credentials": {
@@ -147,15 +103,15 @@
       "type": "@devlikeapro/n8n-nodes-waha.WAHA",
       "typeVersion": 202502,
       "position": [
-        32,
-        640
+        160,
+        176
       ],
-      "id": "a28ad3ce-2517-4d99-aab3-72f8514e794a",
+      "id": "052695b8-edc1-4a61-a3d4-6339d2013459",
       "name": "AlertaAdmin",
       "retryOnFail": true,
       "credentials": {
         "wahaApi": {
-          "id": "OBarvY73V8DKtYv0",
+          "id": "kzWfdhUZ4FU6jVEa",
           "name": "WAHA account"
         }
       }
@@ -171,10 +127,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        256,
-        640
+        384,
+        176
       ],
-      "id": "4f7e7b22-ad7a-4c99-b4c2-cae493d6e998",
+      "id": "ed0795a3-fa13-40a2-ad3d-079e1c031e57",
       "name": "LogError",
       "credentials": {
         "postgres": {
@@ -191,17 +147,6 @@
         [
           {
             "node": "LimpiarBD",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "ReintentoOutbox": {
-      "main": [
-        [
-          {
-            "node": "LlamarProcessOutbox",
             "type": "main",
             "index": 0
           }
@@ -259,9 +204,10 @@
     "binaryMode": "separate",
     "availableInMCP": false
   },
-  "versionId": "ca18efa1-717d-458d-86bb-dae5dd5cae6f",
+  "versionId": "da67a46e-0a01-42a2-83d0-1f9a6a694d68",
   "meta": {
-    "instanceId": "e485a5a7ac8114c62636ecba6367db69dad6bc18fb5dd48f890b21271541f05c"
+    "instanceId": "dee31bcf1d2327582c0e4156e13b587f5779996960582a36461518ee5fc3826e",
+    "templateCredsSetupCompleted": true
   },
   "nodeGroups": [],
   "id": "pOvslSagdUyClOPv",

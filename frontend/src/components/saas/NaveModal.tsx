@@ -51,7 +51,7 @@ export default function NaveModal({
         empresa_id: empresaId,
         nombre: nombre.toUpperCase(),
         rfc: rfc.toUpperCase(),
-        ubicacion_maps: ubicacionMaps.toUpperCase(),
+        ubicacion_maps: ubicacionMaps.trim(),
       };
 
       const res = await fetch(url, {
@@ -112,10 +112,10 @@ export default function NaveModal({
             <label className="block text-sm font-bold text-slate-700 mb-1.5">Enlace de Google Maps (Ubicación)</label>
             <input 
               type="text" 
-              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium uppercase"
-              placeholder="EJ. HTTPS://MAPS.APP.GOO.GL/..."
+              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
+              placeholder="https://maps.app.goo.gl/..."
               value={ubicacionMaps}
-              onChange={(e) => setUbicacionMaps(e.target.value.toUpperCase())}
+              onChange={(e) => setUbicacionMaps(e.target.value)}
             />
           </div>
         </div>

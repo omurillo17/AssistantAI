@@ -2,12 +2,14 @@ import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { candidatoMachine } from '@/lib/stateMachine';
 import { createActor } from 'xstate';
-
-const WAHA_BASE = process.env.WAHA_BASE_URL || 'http://localhost:3000';
-const WAHA_API_KEY = process.env.WAHA_API_KEY || 'virgo_secret_key';
-const WAHA_SESSION = process.env.WAHA_SESSION || 'default';
+import { verifyWebhookApiKey } from '@/lib/auth';
+import { WAHA_BASE, WAHA_API_KEY, WAHA_SESSION } from '@/lib/waha';
 
 export async function POST(request: Request) {
+  if (!verifyWebhookApiKey(request)) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  }
+
   try {
     const data = await request.json();
     const {
@@ -43,7 +45,7 @@ export async function POST(request: Request) {
     }
 
     // 1. Obtener estado actual
-    let res = await pool.query('SELECT estado, tiene_cv, cv_manual as db_cv_manual, fecha_entrevista as db_fecha, privacidad_aceptada, escalado, datos_ine, datos_rfc, nombre_constancia, curp_ine, curp_rfc, alerta_identidad_estado, alerta_identidad_motivo, asignado_a FROM candidatos WHERE telefono = $1', [telefono]);
+    const res = await pool.query('SELECT estado, tiene_cv, cv_manual as db_cv_manual, fecha_entrevista as db_fecha, privacidad_aceptada, escalado, datos_ine, datos_rfc, nombre_constancia, curp_ine, curp_rfc, alerta_identidad_estado, alerta_identidad_motivo, asignado_a FROM candidatos WHERE telefono = $1', [telefono]);
     let currentState = 'NUEVO';
     let dbCandidato: any = {};
 
@@ -109,8 +111,8 @@ export async function POST(request: Request) {
       // La CURP recién comparada ya no muestra discrepancia (o no había una previa): se limpia la alerta.
       alertaIdentidadEstadoFinal = null;
       alertaIdentidadMotivoFinal = null;
-      const tieneIne = esINE || !!dbCandidato.datos_ine;
-      const tieneRfc = esConstancia || !!dbCandidato.datos_rfc;
+      const tieneIne = esINE || !!dbCandidato.datos_ine || !!dbCandidato.curp_ine || !!dbCandidato.nombre_ine;
+      const tieneRfc = esConstancia || !!dbCandidato.datos_rfc || !!dbCandidato.curp_rfc || !!dbCandidato.nombre_constancia;
       if (tieneIne && tieneRfc) {
         estado_final = 'INE_VALIDADA';
         resumen_ia_final = 'El candidato completó su INE y RFC. El siguiente paso es agendar la cita.';
@@ -304,12 +306,8 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ success: true, estado: estado_final });
-  } catch (err: any) {
+  } catch (err) {
     console.error('Error procesando webhook de expediente n8n:', err);
-    return NextResponse.json({
-      error: 'Error procesando webhook de expediente',
-      detail: err?.message || String(err),
-      stack: err?.stack?.split('\n').slice(0, 5)
-    }, { status: 500 });
+    return NextResponse.json({ error: 'Error procesando webhook de expediente' }, { status: 500 });
   }
 }

@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server';
 
 import { pool } from '@/lib/db';
-
-const WAHA_BASE = process.env.WAHA_BASE_URL || 'http://localhost:3000';
-const WAHA_API_KEY = process.env.WAHA_API_KEY || 'virgo_secret_key';
-const WAHA_SESSION = process.env.WAHA_SESSION || 'default';
+import { verifyInternalApiKey } from '@/lib/auth';
+import { WAHA_BASE, WAHA_API_KEY, WAHA_SESSION } from '@/lib/waha';
 
 /**
  * GET /api/cron/process-outbox
@@ -18,9 +16,7 @@ const WAHA_SESSION = process.env.WAHA_SESSION || 'default';
  * mismo patron que /api/prompt-context.
  */
 export async function GET(request: Request) {
-  const apiKey = request.headers.get('x-api-key');
-  const expectedKey = process.env.N8N_API_KEY;
-  if (expectedKey && apiKey !== expectedKey) {
+  if (!verifyInternalApiKey(request)) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
 
