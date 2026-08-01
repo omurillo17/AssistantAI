@@ -6,13 +6,13 @@
         "inputSource": "jsonExample",
         "jsonExample": "{\n  \"start\": \"2026-07-08T10:00:00.000Z\",\n  \"end\": \"2026-07-08T11:00:00.000Z\",\n  \"resumen_ia\": \"Resumen corto\",\n  \"calendar_id\": \"tu_correo@gmail.com\",\n  \"telefono\": \"5213323379399\",\n  \"nombre\": \"Candidato\",\n  \"nave_interes\": \"Nave X\",\n  \"vacante_interes\": \"Vacante X\",\n  \"ine_nombre\": \"Nombre INE\",\n  \"ine_curp\": \"CURP123\"\n}\n"
       },
-      "id": "b9f4a1b1-0e91-4764-a75b-edfa4172aac9",
+      "id": "30692ae5-911d-4c2e-bb80-3f23bd8afee7",
       "typeVersion": 1.1,
       "name": "When Executed by Another Workflow",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "position": [
-        -288,
-        -16
+        -320,
+        32
       ]
     },
     {
@@ -20,7 +20,7 @@
         "calendar": {
           "__rl": true,
           "value": "={{ $json.calendar_id }}",
-          "mode": "id"
+          "mode": "list"
         },
         "start": "={{ $json.start }}",
         "end": "={{ $json.end }}",
@@ -29,13 +29,13 @@
           "summary": "={{ `${$json.nombre || 'Candidato'} - ${$json.vacante_interes || 'Vacante General'}` }}"
         }
       },
-      "id": "ff8c20c9-d3c5-43c7-be44-06d23f3c8b87",
+      "id": "505f409c-6822-40c7-b7d1-67c5a5b5b644",
       "name": "Crear en Google Calendar",
       "type": "n8n-nodes-base.googleCalendar",
       "typeVersion": 1.1,
       "position": [
-        112,
-        64
+        80,
+        112
       ],
       "credentials": {
         "googleCalendarOAuth2Api": {
@@ -52,13 +52,13 @@
           "queryReplacement": "={{ $json.id }}, {{ $('When Executed by Another Workflow').item.json.telefono }}"
         }
       },
-      "id": "9437bda6-c873-41a1-878a-a456c346402b",
+      "id": "c54074f0-64a8-4eaf-b173-68c393e79b87",
       "name": "Guardar ID en Base de Datos",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        336,
-        64
+        304,
+        112
       ],
       "credentials": {
         "postgres": {
@@ -73,18 +73,18 @@
         "calendar": {
           "__rl": true,
           "value": "={{ $json.calendar_id }}",
-          "mode": "id"
+          "mode": "list"
         },
         "eventId": "={{ $json.event_id }}",
         "options": {}
       },
-      "id": "4cc6175b-dd90-47af-b2ec-4210d023f2c6",
+      "id": "3a3f7167-282c-49b1-a8f6-52bc6816e6e7",
       "name": "Borrar en Google Calendar",
       "type": "n8n-nodes-base.googleCalendar",
       "typeVersion": 1.1,
       "position": [
-        96,
-        -112
+        64,
+        -64
       ],
       "credentials": {
         "googleCalendarOAuth2Api": {
@@ -101,13 +101,13 @@
           "queryReplacement": "={{ $('When Executed by Another Workflow').item.json.telefono }}"
         }
       },
-      "id": "5463e010-d58f-4bde-92e4-c03bc6b8145d",
+      "id": "e1136441-d9a1-433d-9f59-b37c3ef2852c",
       "name": "Actualizar DB a Cancelado",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        320,
-        -112
+        288,
+        -64
       ],
       "credentials": {
         "postgres": {
@@ -140,13 +140,13 @@
         },
         "options": {}
       },
-      "id": "10dc9e43-01ba-4a7a-ae53-9d088c3ce39f",
+      "id": "1a1f3ca3-0aa4-4a0c-8edf-4d6f75ccfe1b",
       "name": "If Action",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -112,
-        -16
+        -144,
+        32
       ]
     }
   ],
@@ -210,7 +210,7 @@
     "binaryMode": "separate",
     "availableInMCP": false
   },
-  "versionId": "d04be88a-0b55-4761-aeae-5cbfdeaa7fea",
+  "versionId": "2211c16a-4809-49cf-86b1-fe90af39a51a",
   "meta": {
     "instanceId": "dee31bcf1d2327582c0e4156e13b587f5779996960582a36461518ee5fc3826e"
   },

@@ -42,6 +42,13 @@ export async function GET(request: Request) {
       params
     );
 
+    // Fetch all naves to resolve UUIDs to names for n8n matching
+    const navesRes = await pool.query(`SELECT id, nombre FROM naves`);
+    const naveMap = new Map<string, string>();
+    for (const r of navesRes.rows) {
+      naveMap.set(r.id, r.nombre);
+    }
+
     const recMap = new Map<string, any>();
     for (const row of res.rows) {
       if (!recMap.has(row.reclutador_id)) {
@@ -63,10 +70,16 @@ export async function GET(request: Request) {
         } else {
           navesArr = row.vacante_naves || [];
         }
+        const expandedNaves = Array.from(
+          new Set([
+            ...navesArr,
+            ...navesArr.map((id) => naveMap.get(id)).filter((n): n is string => Boolean(n)),
+          ])
+        );
         recMap.get(row.reclutador_id)!.vacantes.push({
           id: row.vacante_id,
           nombre: row.vacante_nombre,
-          naves: navesArr,
+          naves: expandedNaves,
           detalles: row.detalles || "",
           palabras_clave: row.palabras_clave || "",
           filtros: row.filtros || [],

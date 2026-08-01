@@ -274,19 +274,6 @@
     },
     {
       "parameters": {
-        "jsCode": "// 1. DATOS DEL CANDIDATO\nconst dbData = $('Recibido desde Inicio').first().json._candidato || {};\nconst naveActual = String(dbData.nave_interes || '').trim() || '1';\nconst vacante = String(dbData.vacante_interes || 'General').trim();\n\n// 2. CARGAR RECLUTADOR_VACANTES desde la BD via API\nlet equipo = [];\ntry {\n    let apiBase = 'http://host.docker.internal:3001';\n    let empresaId = '';\n    try { if (typeof process !== 'undefined' && process.env && process.env.TCI_API_BASE) apiBase = process.env.TCI_API_BASE; } catch(e) {}\n    try { if (typeof $env !== 'undefined' && $env && $env.TCI_API_BASE) apiBase = $env.TCI_API_BASE; } catch(e) {}\n    try { if (typeof process !== 'undefined' && process.env && process.env.TCI_EMPRESA_ID) empresaId = process.env.TCI_EMPRESA_ID; } catch(e) {}\n    try { if (typeof $env !== 'undefined' && $env && $env.TCI_EMPRESA_ID) empresaId = $env.TCI_EMPRESA_ID; } catch(e) {}\n    const apiUrl = empresaId\n        ? apiBase + \"/api/db/reclutador_vacantes?empresa_id=\" + empresaId\n        : apiBase + \"/api/db/reclutador_vacantes\";\n    const resp = await fetch(apiUrl);\n    if (resp.ok) { equipo = await resp.json(); }\n} catch (e) {\n    equipo = [{\n        nombre: \"Gerente de Reclutamiento\",\n        emoji: \"🚨\",\n        telefono: \"5213323379399\",\n        calendar_id: \"talreclutamiento01@gmail.com\",\n        naves: [\"1\",\"2\",\"3\"],\n        vacantes: []\n    }];\n}\n\nconst gerente = equipo.find(r => r.nombre === 'Gerente de Reclutamiento') || equipo[equipo.length - 1] || {\n    nombre: \"Gerente de Reclutamiento\",\n    telefono: \"5213323379399\",\n    calendar_id: \"talreclutamiento01@gmail.com\"\n};\n\nconst defaultCalendar = (gerente.calendar_id && String(gerente.calendar_id).trim()) || \"talreclutamiento01@gmail.com\";\n\n// 3. BUSCAR MATCHES: soporta comparación por ID de vacante, nombre de vacante y por nave/ID de nave\nconst cleanStr = (s) => s ? String(s).normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toUpperCase().trim() : '';\nconst vacanteClean = cleanStr(vacante);\nconst vacanteDesconocida = !vacanteClean || vacanteClean === 'GENERAL';\n\nif (vacanteDesconocida) {\n    return {\n        json: {\n            nombre_reclutador: \"Equipo de Reclutamiento\",\n            telefono_reclutador: gerente.telefono || \"5213323379399\",\n            calendar_id: defaultCalendar,\n            vacante_detectada: vacante,\n            nave_candidato: naveActual,\n            grupo_turno: null,\n            turno_total: 1,\n            candidatos_turno: null\n        }\n    };\n}\n\nconst matches = equipo.filter(r =>\n    r.nombre !== gerente.nombre &&\n    Array.isArray(r.vacantes) &&\n    r.vacantes.length > 0 &&\n    r.vacantes.some(v => {\n        const vNombreClean = cleanStr(v.nombre);\n        const vIdClean = cleanStr(v.id);\n        const matchVacante = (vIdClean && vIdClean === vacanteClean) ||\n                             (vNombreClean && vNombreClean === vacanteClean) ||\n                             (vNombreClean && vacanteClean && (vNombreClean.includes(vacanteClean) || vacanteClean.includes(vNombreClean)));\n\n        if (!matchVacante) return false;\n        const navesVacante = v.naves || (v.nave ? [v.nave] : []);\n        if (navesVacante.length === 0) return true;\n\n        const naveClean = cleanStr(naveActual);\n        return navesVacante.some(n => {\n            const nClean = cleanStr(n);\n            return nClean === naveClean || nClean.includes(naveClean) || naveClean.includes(nClean);\n        });\n    })\n);\n\n// 4. FALLBACK: si nadie tiene la vacante específica → Gerente\nconst candidatos = matches.length > 0 ? matches : [gerente];\n\n// 5. SI SOLO HAY 1 RECLUTADOR: salida directa\nif (candidatos.length === 1) {\n    const cand = candidatos[0];\n    return {\n        json: {\n            nombre_reclutador: cand.nombre || \"Equipo de Reclutamiento\",\n            telefono_reclutador: cand.telefono || \"5213323379399\",\n            calendar_id: (cand.calendar_id && String(cand.calendar_id).trim()) || defaultCalendar,\n            vacante_detectada: vacante,\n            nave_candidato: naveActual,\n            grupo_turno: null,\n            turno_total: 1,\n            candidatos_turno: null\n        }\n    };\n}\n\n// 6. MÚLTIPLES RECLUTADORES: preparar turno rotativo\nconst grupoKey = candidatos\n    .map(r => r.nombre)\n    .sort()\n    .join('|')\n    .substring(0, 100);\n\nreturn {\n    json: {\n        vacante_detectada: vacante,\n        nave_candidato: naveActual,\n        grupo_turno: grupoKey,\n        turno_total: candidatos.length,\n        candidatos_turno: JSON.stringify(\n            candidatos.map(r => ({\n                nombre: r.nombre || \"Reclutador\",\n                telefono: r.telefono || \"5213323379399\",\n                calendar_id: (r.calendar_id && String(r.calendar_id).trim()) || defaultCalendar,\n                emoji: r.emoji || '📅'\n            }))\n        )\n    }\n};\n"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        784,
-        -144
-      ],
-      "id": "67fb5c78-2d63-4302-b9e4-df7e7b4a7ce2",
-      "name": "DefinirAgenda"
-    },
-    {
-      "parameters": {
         "assignments": {
           "assignments": [
             {
@@ -665,6 +652,19 @@
         -2272,
         -128
       ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. DATOS DEL CANDIDATO\nconst dbData = $('Recibido desde Inicio').first().json._candidato || {};\nconst naveActual = String(dbData.nave_interes || '').trim() || '1';\nconst vacante = String(dbData.vacante_interes || 'General').trim();\n\n// 2. CARGAR RECLUTADOR_VACANTES desde la BD via API\nlet equipo = [];\ntry {\n    let apiBase = 'http://host.docker.internal:3001';\n    let empresaId = '';\n    try { if (typeof process !== 'undefined' && process.env && process.env.TCI_API_BASE) apiBase = process.env.TCI_API_BASE; } catch(e) {}\n    try { if (typeof $env !== 'undefined' && $env && $env.TCI_API_BASE) apiBase = $env.TCI_API_BASE; } catch(e) {}\n    try { if (typeof process !== 'undefined' && process.env && process.env.TCI_EMPRESA_ID) empresaId = process.env.TCI_EMPRESA_ID; } catch(e) {}\n    try { if (typeof $env !== 'undefined' && $env && $env.TCI_EMPRESA_ID) empresaId = $env.TCI_EMPRESA_ID; } catch(e) {}\n    const apiUrl = empresaId\n        ? apiBase + \"/api/db/reclutador_vacantes?empresa_id=\" + empresaId\n        : apiBase + \"/api/db/reclutador_vacantes\";\n    const resp = await fetch(apiUrl);\n    if (resp.ok) { equipo = await resp.json(); }\n} catch (e) {\n    equipo = [{\n        nombre: \"Gerente de Reclutamiento\",\n        emoji: \"🚨\",\n        telefono: \"5213332012658\",\n        calendar_id: \"talreclutamiento01@gmail.com\",\n        naves: [\"1\",\"2\",\"3\"],\n        vacantes: []\n    }];\n}\n\nconst gerente = equipo.find(r => r.nombre === 'Gerente de Reclutamiento') || equipo[equipo.length - 1] || {\n    nombre: \"Gerente de Reclutamiento\",\n    telefono: \"5213332012658\",\n    calendar_id: \"talreclutamiento01@gmail.com\"\n};\n\nconst defaultCalendar = (gerente.calendar_id && String(gerente.calendar_id).trim()) || \"talreclutamiento01@gmail.com\";\n\n// 3. BUSCAR MATCHES: soporta comparación por ID de vacante, nombre de vacante y por nave/ID de nave\nconst cleanStr = (s) => s ? String(s).normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toUpperCase().trim() : '';\nconst vacanteClean = cleanStr(vacante);\nconst vacanteDesconocida = !vacanteClean || vacanteClean === 'GENERAL';\n\nif (vacanteDesconocida) {\n    return {\n        json: {\n            nombre_reclutador: \"Equipo de Reclutamiento\",\n            telefono_reclutador: gerente.telefono || \"5213323379399\",\n            calendar_id: defaultCalendar,\n            vacante_detectada: vacante,\n            nave_candidato: naveActual,\n            grupo_turno: null,\n            turno_total: 1,\n            candidatos_turno: null\n        }\n    };\n}\n\nconst matches = equipo.filter(r =>\n    r.nombre !== gerente.nombre &&\n    Array.isArray(r.vacantes) &&\n    r.vacantes.length > 0 &&\n    r.vacantes.some(v => {\n        const vNombreClean = cleanStr(v.nombre);\n        const vIdClean = cleanStr(v.id);\n        const matchVacante = (vIdClean && vIdClean === vacanteClean) ||\n                             (vNombreClean && vNombreClean === vacanteClean) ||\n                             (vNombreClean && vacanteClean && (vNombreClean.includes(vacanteClean) || vacanteClean.includes(vNombreClean)));\n\n        if (!matchVacante) return false;\n        const navesVacante = v.naves || (v.nave ? [v.nave] : []);\n        if (navesVacante.length === 0) return true;\n\n        const naveClean = cleanStr(naveActual);\n        if (!naveClean || naveClean === '1' || naveClean === 'GENERAL' || naveClean === 'PENDIENTE') return true;\n\n        return navesVacante.some(n => {\n            const nClean = cleanStr(n);\n            return nClean === naveClean || nClean.includes(naveClean) || naveClean.includes(nClean);\n        });\n    })\n);\n\n// 4. FALLBACK: si nadie tiene la vacante específica → Gerente\nconst candidatos = matches.length > 0 ? matches : [gerente];\n\n// 5. SI SOLO HAY 1 RECLUTADOR: salida directa\nif (candidatos.length === 1) {\n    const cand = candidatos[0];\n    return {\n        json: {\n            nombre_reclutador: cand.nombre || \"Equipo de Reclutamiento\",\n            telefono_reclutador: cand.telefono || \"5213323379399\",\n            calendar_id: (cand.calendar_id && String(cand.calendar_id).trim()) || defaultCalendar,\n            vacante_detectada: vacante,\n            nave_candidato: naveActual,\n            grupo_turno: null,\n            turno_total: 1,\n            candidatos_turno: null\n        }\n    };\n}\n\n// 6. MÚLTIPLES RECLUTADORES: preparar turno rotativo\nconst grupoKey = candidatos\n    .map(r => r.nombre)\n    .sort()\n    .join('|')\n    .substring(0, 100);\n\nreturn {\n    json: {\n        vacante_detectada: vacante,\n        nave_candidato: naveActual,\n        grupo_turno: grupoKey,\n        turno_total: candidatos.length,\n        candidatos_turno: JSON.stringify(\n            candidatos.map(r => ({\n                nombre: r.nombre || \"Reclutador\",\n                telefono: r.telefono || \"5213323379399\",\n                calendar_id: (r.calendar_id && String(r.calendar_id).trim()) || defaultCalendar,\n                emoji: r.emoji || '📅'\n            }))\n        )\n    }\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        784,
+        -144
+      ],
+      "id": "4fa8c460-95f5-41bd-b47b-68bbd96c4a72",
+      "name": "DefinirAgenda"
     }
   ],
   "pinData": {},
@@ -772,17 +772,6 @@
         [
           {
             "node": "SubirCV",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "DefinirAgenda": {
-      "main": [
-        [
-          {
-            "node": "¿Hay Documento Analizado?",
             "type": "main",
             "index": 0
           }
@@ -934,6 +923,17 @@
           }
         ]
       ]
+    },
+    "DefinirAgenda": {
+      "main": [
+        [
+          {
+            "node": "¿Hay Documento Analizado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
@@ -942,7 +942,7 @@
     "binaryMode": "separate",
     "availableInMCP": false
   },
-  "versionId": "46a54211-59fc-4ac9-b302-a2b217361e83",
+  "versionId": "9bc09c3d-ebcc-401a-b6ba-51bf807bcd5b",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "dee31bcf1d2327582c0e4156e13b587f5779996960582a36461518ee5fc3826e"

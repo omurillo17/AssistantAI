@@ -14,16 +14,49 @@ interface CandidateModalProps {
 }
 
 export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat }: CandidateModalProps) {
+  const [cand, setCand] = useState<Candidato>(candidato);
+  const [validating, setValidating] = useState(false);
   const [mensajes, setMensajes] = useState<ChatMessage[]>([]);
   const [loadingChat, setLoadingChat] = useState(true);
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
-  const nombre = getCandidateDisplayName(candidato);
+  useEffect(() => {
+    setCand(candidato);
+  }, [candidato]);
+
+  const nombre = getCandidateDisplayName(cand);
+
+  const handleValidarIdentidad = async (decision: "validar" | "no_validar") => {
+    if (!cand.telefono || validating) return;
+    setValidating(true);
+    try {
+      const res = await fetch("/api/db/candidato/validar-identidad", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ telefono: cand.telefono, decision }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const newStatus = decision === "validar" ? "INE_VALIDADA" : "DOCUMENTOS_NO_COINCIDEN";
+        const newAlertaState = decision === "validar" ? "VALIDADO" : "RECHAZADO";
+        setCand(prev => ({
+          ...prev,
+          estado: newStatus,
+          alerta_identidad_estado: newAlertaState
+        }));
+        onStatusChange(cand.telefono, newStatus);
+      }
+    } catch (err) {
+      console.error("Error al procesar decisión de identidad:", err);
+    } finally {
+      setValidating(false);
+    }
+  };
 
   // Fetch chat history
   useEffect(() => {
     async function loadChat() {
-      if (!candidato.telefono) return;
+      if (!cand.telefono) return;
       setLoadingChat(true);
       try {
         const storedEmpresaId = localStorage.getItem("tci_empresa_id");
@@ -31,8 +64,8 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
         let query = "";
         if (storedEmpresaId) query += `?empresa_id=${storedEmpresaId}`;
         if (storedNaveId) query += (query ? `&` : `?`) + `nave_id=${storedNaveId}`;
-        
-        const res = await fetch(`/api/db/mensajes/${candidato.telefono}${query}`);
+
+        const res = await fetch(`/api/db/mensajes/${cand.telefono}${query}`);
         if (res.ok) {
           const data = await res.json();
           setMensajes(data.mensajes || data.history || []);
@@ -44,7 +77,7 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
       }
     }
     loadChat();
-  }, [candidato.telefono]);
+  }, [cand.telefono]);
 
   // Scroll to bottom of chat
   useEffect(() => {
@@ -53,13 +86,13 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
     }
   }, [mensajes]);
 
-  const hasCV = candidato.tiene_cv || !!candidato.cv_manual || !!candidato.link_cv;
-  const cvLink = candidato.link_cv || (candidato.cv_manual as any)?.url;
+  const hasCV = cand.tiene_cv || !!cand.cv_manual || !!cand.link_cv;
+  const cvLink = cand.link_cv || (cand.cv_manual as any)?.url;
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4 lg:p-6" onClick={onClose}>
-      <div 
-        className="bg-white rounded-2xl w-full max-w-6xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden animate-fade-in" 
+      <div
+        className="bg-white rounded-2xl w-full max-w-6xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden animate-fade-in"
         onClick={e => e.stopPropagation()}
       >
         {/* HEADER */}
@@ -67,22 +100,22 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
           <div>
             <h2 className="text-2xl font-extrabold text-slate-800">{nombre}</h2>
             <div className="flex items-center gap-3 mt-1 text-sm text-slate-500">
-              <span className="font-mono bg-slate-200 px-2 py-0.5 rounded text-slate-700">{candidato.telefono}</span>
-              {candidato.vacante_interes && (
+              <span className="font-mono bg-slate-200 px-2 py-0.5 rounded text-slate-700">{cand.telefono}</span>
+              {cand.vacante_interes && (
                 <span className="flex items-center gap-1 font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">
-                  <Briefcase size={14} /> {candidato.vacante_interes}
+                  <Briefcase size={14} /> {cand.vacante_interes}
                 </span>
               )}
-              {candidato.nave_interes && (
+              {cand.nave_interes && (
                 <span className="flex items-center gap-1 font-semibold text-slate-600 bg-slate-200 px-2 py-0.5 rounded">
-                  {candidato.nave_interes}
+                  {cand.nave_interes}
                 </span>
               )}
             </div>
           </div>
           <div className="flex items-center gap-4">
-            <button 
-              onClick={() => onGoToChat(candidato.telefono)}
+            <button
+              onClick={() => onGoToChat(cand.telefono)}
               className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-700 font-bold rounded-lg transition-colors shadow-sm"
             >
               <MessageSquare size={16} /> Ir a Mensajes
@@ -95,17 +128,21 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
 
         {/* BODY (Split Layout) */}
         <div className="flex flex-1 overflow-hidden flex-col md:flex-row min-h-0">
-          
+
           {/* LEFT COL: Profile Info */}
           <div className="w-full md:w-1/2 lg:w-5/12 border-r border-slate-100 overflow-y-auto p-6 space-y-6 bg-white">
-            
+
             {/* ESTADO CHANGER */}
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Estado del Proceso</label>
               <select
                 className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer shadow-sm transition-colors"
-                value={candidato.estado}
-                onChange={(e) => onStatusChange(candidato.telefono, e.target.value)}
+                value={cand.estado}
+                onChange={(e) => {
+                  const newStatus = e.target.value;
+                  setCand(prev => ({ ...prev, estado: newStatus }));
+                  onStatusChange(cand.telefono, newStatus);
+                }}
               >
                 {ESTADOS_CRM.map(k => (
                   <option key={k} value={k}>{ESTADOS[k as EstadoKey].emoji} {ESTADOS[k as EstadoKey].label}</option>
@@ -141,8 +178,8 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                 return { items: [], notes: text };
               };
 
-              const { items, notes } = parseResumenIa(candidato.resumen_ia);
-              const experienciaTexto = candidato.experiencia || candidato.motivo_analisis || notes || ((candidato.cv_manual as any)?.experiencia || (candidato.cv_manual as any)?.resumen_excel);
+              const { items, notes } = parseResumenIa(cand.resumen_ia);
+              const experienciaTexto = cand.experiencia || cand.motivo_analisis || notes || ((cand.cv_manual as any)?.experiencia || (cand.cv_manual as any)?.resumen_excel);
 
               return (
                 <div className="bg-gradient-to-br from-purple-50/70 to-indigo-50/50 border border-purple-100 rounded-2xl p-5 shadow-sm space-y-4">
@@ -150,15 +187,14 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                     <h3 className="text-sm font-bold text-purple-900 flex items-center gap-2">
                       <Bot size={18} className="text-purple-600" /> Resumen de IA Sofía
                     </h3>
-                    {candidato.veredicto && (
-                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
-                        candidato.veredicto === 'VIABLE' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
-                        candidato.veredicto === 'REUBICACION' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
-                        candidato.veredicto === 'CARTERA_GENERAL' ? 'bg-slate-200 text-slate-800 border border-slate-300' :
-                        'bg-rose-100 text-rose-800 border border-rose-200'
-                      }`}>
-                        {candidato.veredicto === 'VIABLE' ? <CheckCircle size={14}/> : <AlertCircle size={14}/>}
-                        {candidato.veredicto}
+                    {cand.veredicto && (
+                      <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${cand.veredicto === 'VIABLE' ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' :
+                        cand.veredicto === 'REUBICACION' ? 'bg-amber-100 text-amber-800 border border-amber-200' :
+                          cand.veredicto === 'CARTERA_GENERAL' ? 'bg-slate-200 text-slate-800 border border-slate-300' :
+                            'bg-rose-100 text-rose-800 border border-rose-200'
+                        }`}>
+                        {cand.veredicto === 'VIABLE' ? <CheckCircle size={14} /> : <AlertCircle size={14} />}
+                        {cand.veredicto}
                       </span>
                     )}
                   </div>
@@ -173,7 +209,7 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                         {items.map((it, idx) => {
                           const valLower = it.value.toLowerCase();
                           const isOk = valLower.includes('aceptad') || valLower.includes('verificad') || valLower.includes('recibid') || valLower.includes('agendad') || valLower.includes('sí') || valLower.includes('si');
-                          
+
                           const formatValue = (v: string) => {
                             if (!v) return v;
                             const isoMatch = v.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?/);
@@ -191,17 +227,16 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                                   });
                                   return v.replace(isoMatch[0], formatted);
                                 }
-                              } catch(e) {}
+                              } catch (e) { }
                             }
                             return v;
                           };
 
                           return (
-                            <div key={idx} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${
-                              isOk 
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200/80' 
-                                : 'bg-amber-50 text-amber-800 border-amber-200/80'
-                            }`}>
+                            <div key={idx} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${isOk
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200/80'
+                              : 'bg-amber-50 text-amber-800 border-amber-200/80'
+                              }`}>
                               <span className="opacity-75">{it.label}:</span>
                               <span className="font-bold">{formatValue(it.value)}</span>
                             </div>
@@ -210,130 +245,225 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                       </div>
                     </div>
                   )}
-
-                  {/* RESUMEN DE CV / SOLICITUD */}
-                  <div>
-                    <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5 flex items-center gap-1">
-                      <FileText size={13} /> Resumen de Perfil / Experiencia
-                    </div>
-                    <div className="text-sm text-slate-700 leading-relaxed bg-white/70 p-3.5 rounded-xl border border-purple-100/60 whitespace-pre-wrap font-sans">
-                      {experienciaTexto || <span className="text-slate-400 italic">No hay detalles de experiencia o resumen de CV registrados.</span>}
-                    </div>
-                  </div>
                 </div>
               );
             })()}
 
-            {/* DOCUMENTOS */}
-            <div>
-              <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2 mb-3">
-                <FileText size={16} /> Documentos y Expediente
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* CV Card */}
-                <div className={`p-4 rounded-xl border ${hasCV ? 'bg-cyan-50 border-cyan-100' : 'bg-slate-50 border-slate-100'} flex flex-col items-start gap-2`}>
-                  <div className={`text-xs font-bold ${hasCV ? 'text-cyan-800' : 'text-slate-500'}`}>Currículum Vitae</div>
-                  {cvLink ? (
-                    <a href={cvLink} target="_blank" rel="noreferrer" className="text-sm font-semibold text-cyan-600 hover:text-cyan-700 flex items-center gap-1">
-                      Ver Archivo <ExternalLink size={14}/>
-                    </a>
-                  ) : hasCV ? (
-                    <span className="text-sm font-semibold text-cyan-600">Recibido (Sin enlace)</span>
-                  ) : (
-                    <span className="text-sm text-slate-400">No proporcionado</span>
-                  )}
-                </div>
-                
-                {/* INE Card */}
-                {(() => {
-                  const ine = typeof candidato.datos_ine === 'string' ? (() => { try { return JSON.parse(candidato.datos_ine); } catch(e) { return null; } })() : candidato.datos_ine;
-                  const ineUrl = ine?.url || ine?.link || (candidato as any).link_ine;
-                  return (
-                    <div className={`p-4 rounded-xl border ${ine ? 'bg-violet-50 border-violet-100' : 'bg-slate-50 border-slate-100'} flex flex-col items-start gap-2`}>
-                      <div className={`text-xs font-bold ${ine ? 'text-violet-800' : 'text-slate-500'}`}>Datos de INE</div>
-                      {ine ? (
-                        <div className="text-xs text-violet-700 space-y-1 w-full">
-                          <div><span className="font-semibold">Clave:</span> {ine.clave_elector || ine.cve_elector || '—'}</div>
-                          <div><span className="font-semibold">CURP:</span> {ine.curp || '—'}</div>
-                          <div><span className="font-semibold">Nacimiento:</span> {ine.fecha_nacimiento || '—'}</div>
-                          {ineUrl && (
-                            <a href={ineUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 px-2.5 py-1 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded text-xs transition-colors shadow-sm">
-                              Ver INE <ExternalLink size={12}/>
-                            </a>
-                          )}
-                        </div>
+            {/* DOCUMENTOS Y COMPARACIÓN INE vs RFC */}
+            {(() => {
+              const ineData = typeof cand.datos_ine === 'string' ? (() => { try { return JSON.parse(cand.datos_ine); } catch (e) { return null; } })() : cand.datos_ine;
+              const csfData = typeof cand.datos_rfc === 'string' ? (() => { try { return JSON.parse(cand.datos_rfc); } catch (e) { return null; } })() : cand.datos_rfc;
+
+              const ineName = (ineData?.nombre_completo || ineData?.nombre || cand.nombre_ine || "").trim();
+              const rfcName = (csfData?.nombre_completo || csfData?.nombre || csfData?.razon_social || cand.nombre_constancia || "").trim();
+
+              const ineCurp = (ineData?.curp || cand.curp_ine || "").trim();
+              const rfcCurp = (csfData?.curp || cand.curp_rfc || "").trim();
+
+              const ineUrl = ineData?.url || ineData?.link || (cand as any).link_ine;
+              const csfUrl = csfData?.url || csfData?.link || (cand as any).link_csf || (cand as any).link_rfc;
+
+              // Calcular distancia Levenshtein entre nombres
+              const getLevenshtein = (s1: string, s2: string) => {
+                if (!s1 || !s2) return 0;
+                const a = s1.toUpperCase();
+                const b = s2.toUpperCase();
+                if (a === b) return 0;
+                const track = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
+                for (let i = 0; i <= a.length; i++) track[0][i] = i;
+                for (let j = 0; j <= b.length; j++) track[j][0] = j;
+                for (let j = 1; j <= b.length; j++) {
+                  for (let i = 1; i <= a.length; i++) {
+                    const indicator = a[i - 1] === b[j - 1] ? 0 : 1;
+                    track[j][i] = Math.min(
+                      track[j][i - 1] + 1,
+                      track[j - 1][i] + 1,
+                      track[j - 1][i - 1] + indicator
+                    );
+                  }
+                }
+                return track[b.length][a.length];
+              };
+
+              const charDiff = (ineName && rfcName) ? getLevenshtein(ineName, rfcName) : 0;
+              const hasBothDocs = (ineData || ineName) && (csfData || rfcName);
+
+              return (
+                <div className="space-y-4">
+                  <h3 className="text-sm font-bold text-slate-700 flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <FileText size={16} /> Documentos                    </span>
+                    {hasBothDocs && (
+                      <span className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full border ${charDiff === 0 ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                        charDiff <= 2 ? "bg-amber-50 text-amber-800 border-amber-300" :
+                          "bg-rose-50 text-rose-700 border-rose-300"
+                        }`}>
+                        {charDiff === 0 ? "✅ Nombres coinciden 100%" :
+                          charDiff <= 2 ? `⚠️ Variación leve (${charDiff} letra${charDiff > 1 ? 's' : ''}) - Agendamiento permitido` :
+                            `🚨 Discrepancia mayor (${charDiff} letras)`}
+                      </span>
+                    )}
+                  </h3>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {/* CV Card */}
+                    <div className={`p-4 rounded-xl border ${hasCV ? 'bg-cyan-50/80 border-cyan-100' : 'bg-slate-50 border-slate-100'} flex flex-col items-start gap-2 col-span-1 sm:col-span-2`}>
+                      <div className="flex justify-between items-center w-full">
+                        <div className={`text-xs font-bold ${hasCV ? 'text-cyan-800' : 'text-slate-500'}`}>Currículum Vitae / Solicitud</div>
+                        {cvLink && (
+                          <a href={cvLink} target="_blank" rel="noreferrer" className="text-xs font-bold text-cyan-700 hover:underline flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-cyan-200 shadow-2xs">
+                            Abrir CV <ExternalLink size={12} />
+                          </a>
+                        )}
+                      </div>
+                      {hasCV ? (
+                        <span className="text-xs text-cyan-700">Documento recibido y analizado por Sofia.</span>
                       ) : (
-                        <span className="text-sm text-slate-400">No validado</span>
+                        <span className="text-xs text-slate-400">No proporcionado</span>
                       )}
                     </div>
-                  );
-                })()}
 
-                {/* CSF / RFC Card */}
-                {(() => {
-                  const csf = typeof candidato.datos_rfc === 'string' ? (() => { try { return JSON.parse(candidato.datos_rfc); } catch(e) { return null; } })() : candidato.datos_rfc;
-                  const csfUrl = csf?.url || csf?.link || (candidato as any).link_csf || (candidato as any).link_rfc;
-                  return (
-                    <div className={`p-4 rounded-xl border ${csf ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-100'} flex flex-col items-start gap-2 col-span-1 sm:col-span-2`}>
-                      <div className={`text-xs font-bold ${csf ? 'text-emerald-800' : 'text-slate-500'}`}>Datos CSF (RFC)</div>
-                      {csf ? (
-                        <div className="text-xs text-emerald-700 space-y-1 w-full">
-                          <div className="grid grid-cols-2 gap-2">
-                            <div><span className="font-semibold">RFC:</span> {csf.rfc || '—'}</div>
-                            <div><span className="font-semibold">CURP:</span> {csf.curp || '—'}</div>
+                    {/* INE Card */}
+                    <div className={`p-4 rounded-xl border ${ineData || ineName ? 'bg-violet-50/80 border-violet-100' : 'bg-slate-50 border-slate-100'} flex flex-col items-start gap-2`}>
+                      <div className="flex justify-between items-center w-full">
+                        <div className={`text-xs font-bold ${ineData || ineName ? 'text-violet-800' : 'text-slate-500'}`}>🪪 Documento INE</div>
+                        {ineUrl && (
+                          <a href={ineUrl} target="_blank" rel="noreferrer" className="text-[11px] font-bold text-violet-700 hover:underline flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-violet-200 shadow-2xs">
+                            Ver INE <ExternalLink size={11} />
+                          </a>
+                        )}
+                      </div>
+                      {ineData || ineName ? (
+                        <div className="text-xs text-violet-900 space-y-1.5 w-full bg-white/70 p-2.5 rounded-lg border border-violet-100">
+                          <div><span className="font-bold text-slate-500 block text-[10px] uppercase">Nombre en INE:</span> <span className="font-extrabold">{ineName || '—'}</span></div>
+                          <div><span className="font-bold text-slate-500 block text-[10px] uppercase">CURP:</span> <span className="font-mono">{ineCurp || '—'}</span></div>
+                          {ineData?.clave_elector && <div><span className="font-bold text-slate-500 block text-[10px] uppercase">Clave Elector:</span> <span className="font-mono">{ineData.clave_elector}</span></div>}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-slate-400">No entregado aún</span>
+                      )}
+                    </div>
+
+                    {/* CSF / RFC Card */}
+                    <div className={`p-4 rounded-xl border ${csfData || rfcName ? 'bg-emerald-50/80 border-emerald-100' : 'bg-slate-50 border-slate-100'} flex flex-col items-start gap-2`}>
+                      <div className="flex justify-between items-center w-full">
+                        <div className={`text-xs font-bold ${csfData || rfcName ? 'text-emerald-800' : 'text-slate-500'}`}>📋 Constancia Fiscal (CSF)</div>
+                        {csfUrl && (
+                          <a href={csfUrl} target="_blank" rel="noreferrer" className="text-[11px] font-bold text-emerald-700 hover:underline flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-emerald-200 shadow-2xs">
+                            Ver CSF <ExternalLink size={11} />
+                          </a>
+                        )}
+                      </div>
+                      {csfData || rfcName ? (
+                        <div className="text-xs text-emerald-900 space-y-1.5 w-full bg-white/70 p-2.5 rounded-lg border border-emerald-100">
+                          <div><span className="font-bold text-slate-500 block text-[10px] uppercase">Nombre / Razón Social:</span> <span className="font-extrabold">{rfcName || '—'}</span></div>
+                          <div className="grid grid-cols-2 gap-1">
+                            <div><span className="font-bold text-slate-500 block text-[10px] uppercase">RFC:</span> <span className="font-mono">{csfData?.rfc || '—'}</span></div>
+                            <br></br>
+                            <div><span className="font-bold text-slate-500 block text-[10px] uppercase">CURP:</span> <span className="font-mono">{rfcCurp || '—'}</span></div>
                           </div>
-                          {csfUrl && (
-                            <a href={csfUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-xs transition-colors shadow-sm">
-                              Ver CSF <ExternalLink size={12}/>
-                            </a>
-                          )}
                         </div>
                       ) : (
-                        <span className="text-sm text-slate-400">No validado</span>
+                        <span className="text-xs text-slate-400">No entregado aún</span>
                       )}
                     </div>
-                  );
-                })()}
-              </div>
+                  </div>
 
-              {candidato.alerta_identidad_estado && (
-                <div className={`mt-3 p-3 rounded-xl border text-xs flex items-start gap-2 ${
-                  candidato.alerta_identidad_estado === 'PENDIENTE'
-                    ? 'bg-red-50 border-red-200 text-red-600'
-                    : candidato.alerta_identidad_estado === 'RECHAZADO'
-                      ? 'bg-amber-50 border-amber-200 text-amber-700'
-                      : 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                }`}>
-                  <span className="font-bold shrink-0">
-                    {candidato.alerta_identidad_estado === 'PENDIENTE' && '⚠️ Pendiente de validar:'}
-                    {candidato.alerta_identidad_estado === 'RECHAZADO' && '🚫 No validado:'}
-                    {candidato.alerta_identidad_estado === 'VALIDADO' && '✅ Validado por reclutador:'}
-                  </span>
-                  <span>{candidato.alerta_identidad_motivo || 'Discrepancia de CURP entre INE y RFC.'}</span>
+                  {/* PANEL DE VALIDACIÓN / DECISIÓN MANUAL */}
+                  {(() => {
+                    const isAlreadyValidated = cand.alerta_identidad_estado === 'VALIDADO' || cand.estado === 'INE_VALIDADA';
+                    const hasActivePendingError = !isAlreadyValidated && (
+                      charDiff >= 3 ||
+                      cand.alerta_identidad_estado === 'PENDIENTE' ||
+                      cand.estado === 'DOCUMENTOS_NO_COINCIDEN'
+                    );
+
+                    return (
+                      <div className={`rounded-2xl p-4 space-y-3 border transition-all ${hasActivePendingError
+                          ? 'bg-amber-50/70 border-amber-200 shadow-sm'
+                          : isAlreadyValidated
+                            ? 'bg-emerald-50/60 border-emerald-200'
+                            : 'bg-slate-50 border-slate-200 opacity-80'
+                        }`}>
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                            <CheckCircle size={14} className={hasActivePendingError ? "text-amber-600" : "text-emerald-600"} /> Validación Manual de Documentación
+                          </div>
+                          {isAlreadyValidated ? (
+                            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full border bg-emerald-100 text-emerald-800 border-emerald-300">
+                              ✅ Validado
+                            </span>
+                          ) : cand.alerta_identidad_estado ? (
+                            <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${cand.alerta_identidad_estado === 'RECHAZADO' ? 'bg-rose-100 text-rose-800 border-rose-300' :
+                                'bg-amber-100 text-amber-800 border-amber-300'
+                              }`}>
+                              {cand.alerta_identidad_estado === 'RECHAZADO' && '🚫 Rechazado'}
+                              {cand.alerta_identidad_estado === 'PENDIENTE' && '⚠️ Pendiente de revisión'}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full border bg-emerald-100 text-emerald-800 border-emerald-300">
+                              ✅ Sin Errores
+                            </span>
+                          )}
+                        </div>
+
+                        {isAlreadyValidated ? (
+                          <div className="text-xs text-emerald-800 font-medium">
+                            La documentación ya fue validada. Las opciones de validación manual se encuentran deshabilitadas.
+                          </div>
+                        ) : hasActivePendingError && cand.alerta_identidad_motivo ? (
+                          <div className="text-xs text-amber-800 bg-white/80 p-2.5 rounded-xl border border-amber-200 leading-snug">
+                            {cand.alerta_identidad_motivo}
+                          </div>
+                        ) : !hasActivePendingError ? (
+                          <div className="text-xs text-slate-500 italic">
+                            Los documentos fueron validados sin errores. La validación manual solo se habilita cuando existe un error pendiente.
+                          </div>
+                        ) : null}
+
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            disabled={!hasActivePendingError || validating}
+                            onClick={() => handleValidarIdentidad('validar')}
+                            className="flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5"
+                          >
+                            <CheckCircle size={14} /> Validar Documentos
+                          </button>
+                          <button
+                            disabled={!hasActivePendingError || validating}
+                            onClick={() => handleValidarIdentidad('no_validar')}
+                            className="flex-1 py-2.5 px-4 bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-1.5"
+                          >
+                            <AlertCircle size={14} /> No Validar
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
-              )}
-            </div>
+              );
+            })()}
 
             {/* INFO EXTRA */}
-            {(candidato.edad || candidato.correo || candidato.fecha_entrevista) && (
+            {(cand.edad || cand.correo || cand.fecha_entrevista) && (
               <div className="bg-slate-50 border border-slate-100 rounded-xl p-5 shadow-sm space-y-3">
-                {candidato.fecha_entrevista && (
+                {cand.fecha_entrevista && (
                   <div className="flex items-center gap-2 text-sm text-slate-700">
                     <Calendar size={16} className="text-amber-500" />
-                    <span className="font-bold">Entrevista:</span> 
-                    {new Date(candidato.fecha_entrevista).toLocaleString("es-MX", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    <span className="font-bold">Entrevista:</span>
+                    {new Date(cand.fecha_entrevista).toLocaleString("es-MX", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                   </div>
                 )}
-                {candidato.edad && (
+                {cand.edad && (
                   <div className="flex items-center gap-2 text-sm text-slate-700">
                     <User size={16} className="text-slate-400" />
-                    <span className="font-bold">Edad:</span> {candidato.edad}
+                    <span className="font-bold">Edad:</span> {cand.edad}
                   </div>
                 )}
-                {candidato.correo && (
+                {cand.correo && (
                   <div className="flex items-center gap-2 text-sm text-slate-700">
                     <span className="font-bold text-slate-400">@</span>
-                    <span className="font-bold">Correo:</span> {candidato.correo}
+                    <span className="font-bold">Correo:</span> {cand.correo}
                   </div>
                 )}
               </div>
@@ -347,7 +477,7 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                 <MessageSquare size={16} className="text-emerald-600" /> Historial de Conversación (WhatsApp)
               </h3>
             </div>
-            
+
             <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-3 min-h-0 max-h-[450px] md:max-h-none" ref={chatScrollRef}>
               {loadingChat ? (
                 <div className="flex justify-center items-center h-full text-slate-400">
@@ -359,7 +489,7 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                 mensajes.map((m, i) => {
                   const isUser = m.role === 'user';
                   const isSystem = m.role === 'system';
-                  
+
                   if (isSystem) {
                     return (
                       <div key={i} className="flex justify-center my-3">
@@ -372,14 +502,13 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
 
                   return (
                     <div key={i} className={`flex flex-col ${isUser ? 'items-start' : 'items-end'}`}>
-                      <div className={`max-w-[85%] md:max-w-[75%] rounded-2xl px-4 py-2.5 shadow-sm text-sm ${
-                        isUser 
-                          ? 'bg-white text-slate-800 rounded-tl-none border border-slate-200/80' 
-                          : 'bg-[#d9fdd3] text-[#111b21] rounded-tr-none'
-                      }`}>
+                      <div className={`max-w-[85%] md:max-w-[75%] rounded-2xl px-4 py-2.5 shadow-sm text-sm ${isUser
+                        ? 'bg-white text-slate-800 rounded-tl-none border border-slate-200/80'
+                        : 'bg-[#d9fdd3] text-[#111b21] rounded-tr-none'
+                        }`}>
                         <div className="whitespace-pre-wrap leading-relaxed break-words">{m.content}</div>
                         <div className={`text-[10px] mt-1 text-right font-medium ${isUser ? 'text-slate-400' : 'text-[#4b5e48]'}`}>
-                          {m.timestamp ? new Date(m.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}
+                          {m.timestamp ? new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                         </div>
                       </div>
                     </div>

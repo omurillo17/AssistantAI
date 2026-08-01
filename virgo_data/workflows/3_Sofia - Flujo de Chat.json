@@ -6,13 +6,13 @@
         "inputSource": "jsonExample",
         "jsonExample": "{\n  \"_webhook\": \"{...}\",\n  \"_contacto\": \"{...}\",\n  \"_candidato\": \"{...}\",\n  \"_prompt\": \"{...salida de CargarPrompt...}\",\n  \"_agenda\": \"{...salida de DefinirAgenda...}\"\n}"
       },
-      "id": "a7be9eb6-441f-4814-9c61-e43b72e4d848",
+      "id": "9c8cac9e-4bf7-4f94-b1c1-b1d0689413b5",
       "name": "Recibido desde Analizador",
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.1,
       "position": [
-        -1728,
-        -144
+        -2992,
+        0
       ]
     },
     {
@@ -26,10 +26,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        1776,
-        -480
+        512,
+        -336
       ],
-      "id": "7ff93ce2-de6b-4d39-8945-7d305e191c7a",
+      "id": "c94b768b-1409-48dc-aab3-06ee395a1fc2",
       "name": "AlmacenarMensajes1",
       "credentials": {
         "postgres": {
@@ -49,10 +49,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        64,
-        -192
+        -1200,
+        -48
       ],
-      "id": "f0da33d0-e580-48e7-947e-030f8def65de",
+      "id": "c6d2090d-e183-41d4-afc8-40a1907dd92f",
       "name": "GuardarMensajeUsuario",
       "credentials": {
         "postgres": {
@@ -88,10 +88,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -256,
-        -80
+        -1520,
+        64
       ],
-      "id": "7d6a8634-b43b-4179-b3c8-510467263981",
+      "id": "f68dd667-4740-48df-b095-700962d027c3",
       "name": "¿Está Escalado?"
     },
     {
@@ -105,44 +105,13 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 3.1,
       "position": [
-        128,
-        0
+        -1136,
+        144
       ],
-      "id": "5b4bae4b-7043-4e93-b962-cf426f717956",
+      "id": "35ef98b8-1f96-4e87-883e-508b7533b0c0",
       "name": "AI Chat",
       "retryOnFail": true,
       "waitBetweenTries": 5000
-    },
-    {
-      "parameters": {
-        "descriptionType": "manual",
-        "toolDescription": "=Usa esta herramienta para dos cosas: 1) Verificar disponibilidad de horarios. 2) BUSCAR una cita existente si el usuario quiere cancelar o cambiar fecha (busca en un rango amplio de fechas). Devuelve la lista de eventos OCUPADOS con sus detalles e IDs.\n\n¡ALERTA CRÍTICA!: SI LA HERRAMIENTA DEVUELVE UNA LISTA VACÍA (0 EVENTOS), SIGNIFICA QUE TODO EL CALENDARIO ESTÁ TOTALMENTE LIBRE Y DISPONIBLE. NO SIGNIFICA QUE NO HAYA HORARIOS. EN ESE CASO, OFRECE CUALQUIER HORARIO DENTRO DE LA JORNADA OFICIAL.\n\nCONTEXTO TEMPORAL CRÍTICO:\n- La fecha y hora actual EXACTA es: {{ $now.setZone('America/Mexico_City').toString() }}\n- El día de la semana es: {{ $now.setZone('America/Mexico_City').toFormat('cccc') }}\n- El año actual es: {{ $now.setZone('America/Mexico_City').year }}\n\nINSTRUCCIONES:\n1. Calcula todas las fechas relativas (\"mañana\", \"el viernes\", \"próxima semana\") basándote en la FECHA ACTUAL de arriba.\n2. JAMÁS agendes citas en el pasado (años 2024, 2025).\n3. Si el usuario dice \"viernes\" y hoy es lunes 16, el viernes es 20 (del mismo mes y año).\n",
-        "operation": "getAll",
-        "calendar": {
-          "__rl": true,
-          "value": "={{ $('ResolverReclutador').first().json.calendar_id }}",
-          "mode": "id"
-        },
-        "limit": 10,
-        "timeMin": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('After', ``, 'string') }}",
-        "timeMax": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Before', ``, 'string') }}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.googleCalendarTool",
-      "typeVersion": 1.3,
-      "position": [
-        320,
-        224
-      ],
-      "id": "7960c7dd-c960-4acf-81d5-d123f957b53a",
-      "name": "RevisarCalendario",
-      "notesInFlow": false,
-      "credentials": {
-        "googleCalendarOAuth2Api": {
-          "id": "j28g9WdB9Ug4Yh18",
-          "name": "Google Calendar account"
-        }
-      }
     },
     {
       "parameters": {
@@ -153,10 +122,10 @@
       "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
       "typeVersion": 1.3,
       "position": [
-        64,
-        224
+        -1200,
+        368
       ],
-      "id": "cf4f6c5e-13a9-4ee8-8280-e41654569533",
+      "id": "0e02067c-f7ae-4969-8863-2ed856b363c4",
       "name": "Postgres Chat Memory",
       "credentials": {
         "postgres": {
@@ -174,10 +143,10 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
       "typeVersion": 1,
       "position": [
-        -64,
-        224
+        -1328,
+        368
       ],
-      "id": "037025e8-5afa-4653-a19f-af50defa5d40",
+      "id": "795d9fd1-bbe9-42bc-b0ea-06c09f8a5449",
       "name": "IA CHAT",
       "credentials": {
         "googlePalmApi": {
@@ -268,10 +237,10 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.4,
       "position": [
-        896,
-        -272
+        -368,
+        -128
       ],
-      "id": "86de6973-08bd-4b57-a7d2-705b2b6f6d3a",
+      "id": "07209413-b4b1-4bd8-81e5-a66af302751e",
       "name": "Switch1"
     },
     {
@@ -281,10 +250,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -1104,
-        -144
+        -2368,
+        0
       ],
-      "id": "024ef9aa-344c-4119-b23e-bfba32693e18",
+      "id": "c91c4e45-d33c-418f-9622-50a12153f184",
       "name": "ResolverReclutador"
     },
     {
@@ -298,10 +267,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        -1296,
-        -224
+        -2560,
+        -80
       ],
-      "id": "cb89466e-9f9f-474c-ba24-5f2e03299722",
+      "id": "7610d14d-e253-47a4-b07f-26ef7193aadf",
       "name": "TurnoReclutador",
       "credentials": {
         "postgres": {
@@ -339,10 +308,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -1488,
-        -144
+        -2752,
+        0
       ],
-      "id": "1b301e1c-e4db-48dd-a4fa-473d1ee1d878",
+      "id": "c582d315-24f1-43b4-96a1-322d919931df",
       "name": "If5"
     },
     {
@@ -357,10 +326,10 @@
       "type": "@devlikeapro/n8n-nodes-waha.WAHA",
       "typeVersion": 202502,
       "position": [
-        1328,
-        192
+        64,
+        336
       ],
-      "id": "17981aef-a0f8-4693-90b6-475a5c0c5550",
+      "id": "40c71636-bfc0-4f26-a379-c34bd1485953",
       "name": "NuevoCandidato",
       "credentials": {
         "wahaApi": {
@@ -371,15 +340,15 @@
     },
     {
       "parameters": {
-        "jsCode": "// 1. Obtenemos los datos desde el contexto del chat\nconst dbData = $('Recibido desde Analizador').first().json._candidato || {};\nconst chatData = $input.first().json;\n\n// 🔮 MAGIA: Tomamos el reclutador EXACTO que ya asignó el sistema de turnos\nconst reclutadorAsignado = $('ResolverReclutador').first()?.json || {};\n\nlet nombreCandidato = dbData.nombre_ine || dbData.nombre_chat || \"Candidato\";\nlet telefonoCandidato = $('Recibido desde Analizador').first().json._contacto?.number || dbData.telefono || \"0000000000\";\nlet fechaCita = chatData.fecha_entrevista_detectada || \"Fecha por confirmar\";\n\n// 💡 Transformar la fecha fea \"2026-07-17T16:00:00\" a texto bonito\nif (fechaCita && fechaCita.includes(\"T\")) {\n    try {\n        const [fechaParte, horaParte] = fechaCita.split('T');\n        const [anio, mes, dia] = fechaParte.split('-');\n        let [hora, minuto] = horaParte.split(':');\n        \n        const meses = [\"enero\", \"febrero\", \"marzo\", \"abril\", \"mayo\", \"junio\", \"julio\", \"agosto\", \"septiembre\", \"octubre\", \"noviembre\", \"diciembre\"];\n        const nombreMes = meses[parseInt(mes, 10) - 1];\n        \n        let ampm = \"AM\";\n        let horaInt = parseInt(hora, 10);\n        if (horaInt >= 12) {\n            ampm = \"PM\";\n            if (horaInt > 12) horaInt -= 12;\n        }\n        if (horaInt === 0) horaInt = 12;\n        \n        fechaCita = `${parseInt(dia, 10)} de ${nombreMes} de ${anio} a las ${horaInt}:${minuto} ${ampm}`;\n    } catch(e) {}\n}\n\nlet naveCandidato = dbData.nave_interes || \"No especificada\";\nlet resumenIA = \"Sin resumen previo disponible.\";\nconst rawResumen = dbData.resumen_ia || \"\";\n\nlet vacanteDesdeResumen = \"\";\n\nif (rawResumen.includes(\"MEMORY_UPDATE\")) {\n    const bloqueResumen = rawResumen.split(\"MEMORY_UPDATE\")[1]?.split(\"|\")?.[1]?.trim() || rawResumen;\n    resumenIA = expandirResumenComprimido(bloqueResumen);\n} else {\n    resumenIA = rawResumen || \"Sin resumen previo disponible.\";\n    \n    // 💡 NUEVO: Si el resumen ya viene expandido en texto, lo extraemos de ahí\n    if (resumenIA.includes(\"Vacante: \")) {\n        const match = resumenIA.match(/Vacante:\\s*([^.]+)/);\n        if (match && match[1] !== 'N/D') {\n            vacanteDesdeResumen = match[1].trim();\n        }\n    }\n}\n\nfunction expandirResumenComprimido(texto) {\n    if (!texto) return \"Sin resumen previo disponible.\";\n    const esFormatoComprimido = /\\bN:|V:|E:|Priv:|CV:|INE:|RFC:|Cita:/.test(texto);\n    if (!esFormatoComprimido) return texto;\n\n    const get = (regex) => {\n        const m = texto.match(regex);\n        return m ? m[1].trim() : null;\n    };\n\n    const nombre = get(/N:([^V]*?)(?=\\s+V:|$)/);\n    const vacante = get(/V:([^E]*?)(?=\\s+E:|$)/);\n    const etapa = get(/E:([^P]*?)(?=\\s+Priv:|$)/);\n    const privacidad = get(/Priv:([^\\s]*)/);\n    const cv = get(/CV:([^\\s]*)/);\n    const ine = get(/INE:([^\\s]*)/);\n    const rfc = get(/RFC:([^\\s]*)/);\n    const cita = get(/Cita:([^N]*?)(?=\\s+Notas:|$)/);\n    const notas = get(/Notas:(.*)$/);\n    \n    // Guardamos la vacante que extrajo la IA si estaba comprimido\n    if (vacante && vacante !== 'N/D') vacanteDesdeResumen = vacante;\n\n    const siNo = (v) => v === 'S' ? 'Sí' : v === 'N' ? 'No' : (v || 'N/D');\n\n    let partes = [];\n    if (nombre) partes.push(`Nombre: ${nombre}`);\n    if (vacante) partes.push(`Vacante: ${vacante}`);\n    if (etapa) partes.push(`Etapa: ${etapa}`);\n    if (privacidad) partes.push(`Privacidad aceptada: ${siNo(privacidad)}`);\n    if (cv) partes.push(`CV recibido: ${siNo(cv)}`);\n    if (ine) partes.push(`INE recibido: ${siNo(ine)}`);\n    if (rfc) partes.push(`RFC recibido: ${siNo(rfc)}`);\n    if (cita) partes.push(`Cita: ${cita.trim() === 'N' ? 'pendiente' : cita.trim()}`);\n    if (notas) partes.push(`Notas: ${notas.trim()}`);\n\n    return partes.length ? partes.join('. ') + '.' : texto;\n}\n\n// Limpiar espacios en blanco (ej: \" \") que arruinan la vacante\nlet vacInteres = dbData.vacante_interes?.trim();\nlet vacDetectada = chatData.vacante_detectada?.trim();\n\n// 💡 Toma la vacante detectada, o la de interés, o la del resumen de la IA\nlet vacanteDetectada = vacDetectada || vacInteres || vacanteDesdeResumen || \"General\";\n\n// 💡 Parsear y formatear Filtros Técnicos para que se vea bonito\nlet ft = dbData.filtros_tecnicos;\nlet filtrosTecnicos = \"Pendiente\";\nif (ft) {\n    if (typeof ft === 'string') {\n        try { ft = JSON.parse(ft); } catch(e){}\n    }\n    if (typeof ft === 'object' && ft !== null) {\n        filtrosTecnicos = `Viable: ${ft.viable ? '✅ Sí' : '❌ No'}\\nMotivo: ${ft.motivo || 'N/A'}`;\n    } else {\n        filtrosTecnicos = ft;\n    }\n}\n\n// 2. Extraemos los datos del reclutador que ganó el turno\nlet nombreReclutador = reclutadorAsignado.nombre_reclutador || \"Equipo de Reclutamiento\";\nlet telefonoDestino = reclutadorAsignado.telefono_reclutador || \"5213323379399\";\n\n// 3. ARMAR EL MENSAJE DE ÉXITO\nlet mensaje_alerta = `📅 *¡NUEVA ENTREVISTA AGENDADA!* \\n\\nHola ${nombreReclutador}, el bot acaba de cerrar una cita con éxito:\\n\\n👤 *Candidato:* ${nombreCandidato}\\n📱 *Tel:* wa.me/${telefonoCandidato}\\n💼 *Vacante:* ${vacanteDetectada}\\n🏢 *Nave/Sucursal:* ${naveCandidato}\\n⏰ *Fecha:* ${fechaCita}\\n\\n📝 *RESUMEN DEL CANDIDATO (IA):*\\n${resumenIA}\\n\\n⚙️ *FILTROS TÉCNICOS:*\\n${filtrosTecnicos}\\n\\n_Todos los documentos (CV, INE, RFC) ya están listos y cargados en tu Google Sheets._{https://drive.google.com/drive/folders/1teiQYm9gXvmwZfBkFLV7nsTEiljrCfpf?usp=sharing}`;\n\nreturn {\n    json: {\n        telefono_destino: telefonoDestino.replace('@c.us', ''),\n        mensaje_alerta: mensaje_alerta\n    }\n};\n"
+        "jsCode": "// 1. Obtenemos los datos desde el contexto del chat\nconst dbData = $('Recibido desde Analizador').first().json._candidato || {};\nconst chatData = $input.first().json;\n\n// 🔮 MAGIA: Tomamos el reclutador EXACTO que ya asignó el sistema de turnos\nconst reclutadorAsignado = $('ResolverReclutador').first()?.json || {};\n\nlet nombreCandidato = dbData.nombre_ine || dbData.nombre_chat || \"Candidato\";\nlet telefonoCandidato = $('Recibido desde Analizador').first().json._contacto?.number || dbData.telefono || \"0000000000\";\nlet fechaCita = chatData.fecha_entrevista_detectada || \"Fecha por confirmar\";\n\n// 💡 Transformar la fecha fea \"2026-07-17T16:00:00\" a texto bonito\nif (fechaCita && fechaCita.includes(\"T\")) {\n    try {\n        const [fechaParte, horaParte] = fechaCita.split('T');\n        const [anio, mes, dia] = fechaParte.split('-');\n        let [hora, minuto] = horaParte.split(':');\n        \n        const meses = [\"enero\", \"febrero\", \"marzo\", \"abril\", \"mayo\", \"junio\", \"julio\", \"agosto\", \"septiembre\", \"octubre\", \"noviembre\", \"diciembre\"];\n        const nombreMes = meses[parseInt(mes, 10) - 1];\n        \n        let ampm = \"AM\";\n        let horaInt = parseInt(hora, 10);\n        if (horaInt >= 12) {\n            ampm = \"PM\";\n            if (horaInt > 12) horaInt -= 12;\n        }\n        if (horaInt === 0) horaInt = 12;\n        \n        fechaCita = `${parseInt(dia, 10)} de ${nombreMes} de ${anio} a las ${horaInt}:${minuto} ${ampm}`;\n    } catch(e) {}\n}\n\nlet naveCandidato = dbData.nave_interes || \"No especificada\";\nlet resumenIA = \"Sin resumen previo disponible.\";\nconst rawResumen = dbData.resumen_ia || \"\";\n\nlet vacanteDesdeResumen = \"\";\n\nif (rawResumen.includes(\"MEMORY_UPDATE\")) {\n    const bloqueResumen = rawResumen.split(\"MEMORY_UPDATE\")[1]?.split(\"|\")?.[1]?.trim() || rawResumen;\n    resumenIA = expandirResumenComprimido(bloqueResumen);\n} else {\n    resumenIA = rawResumen || \"Sin resumen previo disponible.\";\n    \n    // 💡 NUEVO: Si el resumen ya viene expandido en texto, lo extraemos de ahí\n    if (resumenIA.includes(\"Vacante: \")) {\n        const match = resumenIA.match(/Vacante:\\s*([^.]+)/);\n        if (match && match[1] !== 'N/D') {\n            vacanteDesdeResumen = match[1].trim();\n        }\n    }\n}\n\nfunction expandirResumenComprimido(texto) {\n    if (!texto) return \"Sin resumen previo disponible.\";\n    const esFormatoComprimido = /\\bN:|V:|E:|Priv:|CV:|INE:|RFC:|Cita:/.test(texto);\n    if (!esFormatoComprimido) return texto;\n\n    const get = (regex) => {\n        const m = texto.match(regex);\n        return m ? m[1].trim() : null;\n    };\n\n    const nombre = get(/N:([^V]*?)(?=\\s+V:|$)/);\n    const vacante = get(/V:([^E]*?)(?=\\s+E:|$)/);\n    const etapa = get(/E:([^P]*?)(?=\\s+Priv:|$)/);\n    const privacidad = get(/Priv:([^\\s]*)/);\n    const cv = get(/CV:([^\\s]*)/);\n    const ine = get(/INE:([^\\s]*)/);\n    const rfc = get(/RFC:([^\\s]*)/);\n    const cita = get(/Cita:([^N]*?)(?=\\s+Notas:|$)/);\n    const notas = get(/Notas:(.*)$/);\n    \n    // Guardamos la vacante que extrajo la IA si estaba comprimido\n    if (vacante && vacante !== 'N/D') vacanteDesdeResumen = vacante;\n\n    const siNo = (v) => v === 'S' ? 'Sí' : v === 'N' ? 'No' : (v || 'N/D');\n\n    let partes = [];\n    if (nombre) partes.push(`Nombre: ${nombre}`);\n    if (vacante) partes.push(`Vacante: ${vacante}`);\n    if (etapa) partes.push(`Etapa: ${etapa}`);\n    if (privacidad) partes.push(`Privacidad aceptada: ${siNo(privacidad)}`);\n    if (cv) partes.push(`CV recibido: ${siNo(cv)}`);\n    if (ine) partes.push(`INE recibido: ${siNo(ine)}`);\n    if (rfc) partes.push(`RFC recibido: ${siNo(rfc)}`);\n    if (cita) partes.push(`Cita: ${cita.trim() === 'N' ? 'pendiente' : cita.trim()}`);\n    if (notas) partes.push(`Notas: ${notas.trim()}`);\n\n    return partes.length ? partes.join('. ') + '.' : texto;\n}\n\n// Limpiar espacios en blanco (ej: \" \") que arruinan la vacante\nlet vacInteres = dbData.vacante_interes?.trim();\nlet vacDetectada = chatData.vacante_detectada?.trim();\n\n// 💡 Toma la vacante detectada, o la de interés, o la del resumen de la IA\nlet vacanteDetectada = vacDetectada || vacInteres || vacanteDesdeResumen || \"General\";\n\n// 💡 Parsear y formatear Filtros Técnicos para que se vea bonito\nlet ft = dbData.filtros_tecnicos;\nlet filtrosTecnicos = \"Pendiente\";\nif (ft) {\n    if (typeof ft === 'string') {\n        try { ft = JSON.parse(ft); } catch(e){}\n    }\n    if (typeof ft === 'object' && ft !== null) {\n        filtrosTecnicos = `Viable: ${ft.viable ? '✅ Sí' : '❌ No'}\\nMotivo: ${ft.motivo || 'N/A'}`;\n    } else {\n        filtrosTecnicos = ft;\n    }\n}\n\n// 2. Extraemos los datos del reclutador que ganó el turno\nlet nombreReclutador = reclutadorAsignado.nombre_reclutador || \"Equipo de Reclutamiento\";\nlet telefonoDestino = reclutadorAsignado.telefono_reclutador || \"5213332012658\";\n\n// 3. ARMAR EL MENSAJE DE ÉXITO\nlet mensaje_alerta = `📅 *¡NUEVA ENTREVISTA AGENDADA!* \\n\\nHola ${nombreReclutador}, el bot acaba de cerrar una cita con éxito:\\n\\n👤 *Candidato:* ${nombreCandidato}\\n📱 *Tel:* wa.me/${telefonoCandidato}\\n💼 *Vacante:* ${vacanteDetectada}\\n🏢 *Nave/Sucursal:* ${naveCandidato}\\n⏰ *Fecha:* ${fechaCita}\\n\\n📝 *RESUMEN DEL CANDIDATO (IA):*\\n${resumenIA}\\n\\n⚙️ *FILTROS TÉCNICOS:*\\n_Todos los documentos (CV, INE, RFC) ya están listos y cargados en la plataforma.\n\nreturn {\n    json: {\n        telefono_destino: telefonoDestino.replace('@c.us', ''),\n        mensaje_alerta: mensaje_alerta\n    }\n};\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1104,
-        192
+        -160,
+        336
       ],
-      "id": "42a0e440-ae8b-4bf2-8c8a-7fcf7592f76a",
+      "id": "90ff5b7f-a92d-4645-aefe-89cc7f83bdef",
       "name": "AlertaCandidato",
       "executeOnce": true
     },
@@ -411,10 +380,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        880,
-        192
+        -384,
+        336
       ],
-      "id": "e2c510e8-3080-4e40-b731-435d7715608c",
+      "id": "7382f247-bc95-4529-9bc1-359dfc772f07",
       "name": "¿Se Agendo Cita?"
     },
     {
@@ -445,10 +414,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        -512,
-        -64
+        -1776,
+        80
       ],
-      "id": "50c38792-acf2-41f4-aad6-b50ebfe0594a",
+      "id": "21d87160-69ce-4a53-8188-838a3f308bb6",
       "name": "¿HayMensajes?"
     },
     {
@@ -462,10 +431,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        -736,
-        -144
+        -2000,
+        0
       ],
-      "id": "4c477b63-0553-4584-b2ea-cc5c93684b23",
+      "id": "edb3f47c-691b-4263-afe4-8e7b97726c23",
       "name": "JuntarMsj",
       "credentials": {
         "postgres": {
@@ -481,10 +450,10 @@
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1.1,
       "position": [
-        1328,
-        -96
+        64,
+        48
       ],
-      "id": "60c6ca50-c6ea-4213-8243-136fbeea2c25",
+      "id": "6240c844-5db7-4679-a197-a7790f537fcd",
       "name": "Wait",
       "webhookId": "e9352d04-1854-4b5c-a751-788f11625c4d"
     },
@@ -495,10 +464,10 @@
       "type": "n8n-nodes-base.splitInBatches",
       "typeVersion": 3,
       "position": [
-        1104,
-        -96
+        -160,
+        48
       ],
-      "id": "fdc990f5-de68-4f7a-aed9-47128b3daf06",
+      "id": "5f769828-ebdb-46be-b05d-412969869ef2",
       "name": "Loop Over Items"
     },
     {
@@ -513,10 +482,10 @@
       "type": "@devlikeapro/n8n-nodes-waha.WAHA",
       "typeVersion": 202502,
       "position": [
-        1104,
-        -480
+        -160,
+        -336
       ],
-      "id": "1da9f48e-5c9b-41be-9e67-af4bce508c77",
+      "id": "2703bc5a-c8d7-4060-bd62-617b3a4dc657",
       "name": "MensajeEscalado",
       "credentials": {
         "wahaApi": {
@@ -537,10 +506,10 @@
       "type": "@devlikeapro/n8n-nodes-waha.WAHA",
       "typeVersion": 202502,
       "position": [
-        1552,
-        -480
+        288,
+        -336
       ],
-      "id": "45f04708-7547-4619-a0aa-0ec61e6980c0",
+      "id": "915228d6-ddb8-45ca-b753-3ca55d70ceeb",
       "name": "NotificarPersonal1",
       "credentials": {
         "wahaApi": {
@@ -556,10 +525,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1328,
-        -480
+        64,
+        -336
       ],
-      "id": "08e4ea31-cb0d-44a7-b21d-2e22365c743e",
+      "id": "6d27c279-37b0-4005-b607-bf81d36328b7",
       "name": "PrepararAlertaHumano"
     },
     {
@@ -574,10 +543,10 @@
       "type": "@devlikeapro/n8n-nodes-waha.WAHA",
       "typeVersion": 202502,
       "position": [
-        1104,
-        -288
+        -160,
+        -144
       ],
-      "id": "6ee2a921-9304-441e-b113-dc558c762055",
+      "id": "d5188618-4177-4515-8d9c-97b6b8dc9fb1",
       "name": "CVManual",
       "credentials": {
         "wahaApi": {
@@ -598,10 +567,10 @@
       "type": "@devlikeapro/n8n-nodes-waha.WAHA",
       "typeVersion": 202502,
       "position": [
-        1552,
-        -16
+        288,
+        128
       ],
-      "id": "7bbef007-3873-4e17-830b-dc427c3b6746",
+      "id": "8fa73dd1-e337-4030-b689-9cff76f787d6",
       "name": "MensajeUsuario",
       "credentials": {
         "wahaApi": {
@@ -619,14 +588,71 @@
         "jsonBody": "={{ JSON.stringify({\n  telefono: $('Recibido desde Analizador').first().json._contacto.number,\n  nombre: $('Leer').first().json.nombre_detectado || 'Candidato',\n  cita_creada: !!($('Leer').first().json.cita_creada || $('Leer').first().json.fecha_entrevista_detectada),\n  vacante: ($('Leer').first().json.vacante_detectada || $('Leer').first().json.vacante_manual || $('Recibido desde Analizador').first().json._candidato?.vacante_interes || '').trim(),\n  resumen: (($('Leer').first().json.resumen_generado || '').includes('MEMORY_UPDATE') ? ((($('Leer').first().json.resumen_generado || '').split('MEMORY_UPDATE')[1] || '').split('|')[1] || ($('Leer').first().json.resumen_generado || '')).trim() : ($('Leer').first().json.resumen_generado || '')),\n  cita_cancelada: !!$('Leer').first().json.cita_cancelada,\n  filtros: $('Leer').first().json.respuestas_filtro_detectadas || null,\n  cv_manual: $('Leer').first().json.datos_cv_manual ? JSON.stringify($('Leer').first().json.datos_cv_manual) : null,\n  fecha_entrevista: $('Leer').first().json.fecha_entrevista_detectada || null,\n  privacidad: !!$('Leer').first().json.acepto_privacidad,\n  nombre_wpp: ($('Recibido desde Analizador').first().json._webhook.body.payload._data ? $('Recibido desde Analizador').first().json._webhook.body.payload._data.notifyName : '') || '',\n  nave: $('Leer').first().json.nave_detectada || '',\n  es_cv: !!$('Leer').first().json.es_cv_manual,\n  mensaje_ia: $('Leer').first().json.message_to_user || '',\n  mensaje_candidato: $('JuntarMsj').first().json.mensaje_completo || '[Mensaje multimedia]',\n  message_type: $('JuntarMsj').first().json.message_type || 'text',\n  media_url: $('JuntarMsj').first().json.media_url || null\n}) }}",
         "options": {}
       },
-      "id": "4dea5112-8b68-4c2f-a6a6-ade8b52f0620",
+      "id": "8eddab6e-4db7-408b-a67e-11dc07773e90",
       "name": "AlmacenarMensajes",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
       "position": [
-        816,
-        -16
+        -448,
+        128
       ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    original: $json,\n    contacto: $('Recibido desde Analizador').first().json._contacto,\n    number: $('Recibido desde Analizador').first().json._contacto?.number,\n    replacement: [ $('Recibido desde Analizador').first().json._contacto?.number ?? '' ]\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2192,
+        0
+      ],
+      "id": "ad8a85cc-6b10-40b7-b04e-9f0e79246536",
+      "name": "code"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================\n// PARSER DE CÓDIGOS ESPECIALES (antes en /home/node/virgo_files/functions/parse_special_codes.js,\n// ahora inline para no depender de require() en el nodo)\n// ============================================================\n\nconst SPECIAL_CODES = {\n  NAME_UPDATE: { pattern: /NAME_UPDATE\\s*\\|\\s*([^|]+)\\s*\\|/i, action: 'update_name', field: 'nombre' },\n  VACANTE_UPDATE: { pattern: /VACANTE_UPDATE\\s*\\|\\s*([^|]+)\\s*\\|/i, action: 'update_vacante', field: 'vacante_interes' },\n  CITA_CONFIRMADA: { pattern: /CITA_CONFIRMADA\\s*\\|/i, action: 'cita_confirmada', field: 'fecha_cita_detectada' },\n  CON_CV: { pattern: /CON_CV\\s*\\|\\s*([^|]+)\\s*\\|/i, action: 'cv_recibido', field: 'tiene_cv' },\n  CV_MANUAL: { pattern: /CV_MANUAL\\s*\\|\\s*(\\{[^}]+\\})/i, action: 'cv_manual', field: 'cv_data', isJSON: true },\n  HUMAN_ALERT: { pattern: /HUMAN_ALERT\\s*\\|\\s*([^|]+)\\s*\\|/i, action: 'escalate_to_human', field: 'escalation_reason' },\n  MEMORY_UPDATE: { pattern: /MEMORY_UPDATE\\s*\\|\\s*([^|]+)\\s*\\|/i, action: 'update_memory', field: 'resumen_ia' },\n  CITA_CANCELADA: { pattern: /CITA_CANCELADA\\s*\\|/i, action: 'cita_cancelada', field: 'estado' }\n};\nconst CODE_ENTRIES = Object.entries(SPECIAL_CODES);\n\nfunction extractCode(text, codeName, codeConfig) {\n  const match = text.match(codeConfig.pattern);\n  if (!match) return null;\n  let value = match[1]?.trim();\n  if (codeConfig.isJSON && value) {\n    try { value = JSON.parse(value); }\n    catch (e) { console.error(`⚠️ Error JSON ${codeConfig.action}:`, value); return null; }\n  }\n  return { code: codeName, action: codeConfig.action, field: codeConfig.field, value, raw_match: match[0] };\n}\n\nfunction cleanMessage(text, detectedCodes) {\n  if (!detectedCodes.length) return (typeof text === 'string' ? text : '').trim();\n  let cleaned = typeof text === 'string' ? text : '';\n  for (const code of detectedCodes) cleaned = cleaned.replace(code.raw_match, '');\n  return cleaned.trim();\n}\n\nfunction generateDatabaseUpdates(detectedCodes) {\n  const updates = {};\n  const actions = [];\n  for (const code of detectedCodes) {\n    switch (code.action) {\n      case 'update_name':\n        updates.nombre = code.value;\n        updates.nombre_confirmado = true;\n        actions.push({ type: 'database_update', table: 'candidatos', field: 'nombre', value: code.value });\n        break;\n      case 'update_vacante':\n        updates.vacante_interes = code.value;\n        updates.estado = 'INTERESADO';\n        actions.push({ type: 'database_update', table: 'candidatos', field: 'vacante_interes', value: code.value });\n        break;\n      case 'cita_confirmada':\n        updates.estado = 'CITA_AGENDADA';\n        updates.fecha_ultima_cita = new Date().toISOString();\n        actions.push({ type: 'database_update', table: 'candidatos', field: 'estado', value: 'CITA_AGENDADA' });\n        actions.push({ type: 'send_confirmation', channel: 'whatsapp' });\n        break;\n      case 'cv_recibido':\n        updates.tiene_cv = true;\n        updates.estado = 'CV_RECIBIDO';\n        updates.vacante_cv = code.value;\n        actions.push({ type: 'database_update', table: 'candidatos', field: 'tiene_cv', value: true });\n        break;\n      case 'cv_manual': {\n        const cvManualStr = JSON.stringify(code.value);\n        updates.cv_manual = cvManualStr;\n        updates.cv_manual_obj = code.value;\n        updates.tiene_cv = true;\n        updates.estado = 'CV_MANUAL';\n        actions.push({ type: 'database_update', table: 'candidatos', field: 'cv_manual', value: cvManualStr });\n        break;\n      }\n      case 'escalate_to_human':\n        updates.estado = 'ESCALADO';\n        updates.escalation_reason = code.value;\n        updates.escalated_at = new Date().toISOString();\n        actions.push({ type: 'alert_human', priority: 'high', reason: code.value });\n        break;\n      case 'update_memory':\n        updates.resumen_ia = code.value;\n        updates.ultima_actualizacion = new Date().toISOString();\n        actions.push({ type: 'database_update', table: 'candidatos', field: 'resumen_ia', value: code.value });\n        break;\n      case 'cita_cancelada':\n        updates.estado = 'INTERESADO';\n        actions.push({ type: 'database_update', table: 'candidatos', field: 'estado', value: 'INTERESADO' });\n        break;\n    }\n  }\n  return { updates, actions };\n}\n\nfunction parseSpecialCodes(aiResponse) {\n  if (!aiResponse) {\n    return { message_to_user: \"\", has_special_codes: false, detected_codes: [], pending_actions: [] };\n  }\n\n  let textToParse = \"\";\n  let jsonObj = null;\n\n  if (typeof aiResponse === 'object') {\n    jsonObj = aiResponse;\n    textToParse = JSON.stringify(aiResponse);\n  } else if (typeof aiResponse === 'string') {\n    const cleanStr = aiResponse.replace(/```json/gi, '').replace(/```/g, '').trim();\n    textToParse = cleanStr;\n    if (cleanStr.startsWith('{') && cleanStr.endsWith('}')) {\n      try { jsonObj = JSON.parse(cleanStr); } catch (e) {}\n    }\n  } else {\n    textToParse = String(aiResponse);\n  }\n\n  const detectedCodes = [];\n  for (const [codeName, codeConfig] of CODE_ENTRIES) {\n    const extracted = extractCode(textToParse, codeName, codeConfig);\n    if (extracted) detectedCodes.push(extracted);\n  }\n\n  let cleanedMessage = cleanMessage(textToParse, detectedCodes);\n  if (jsonObj?.mensaje_al_usuario) cleanedMessage = jsonObj.mensaje_al_usuario;\n\n  const { updates, actions } = generateDatabaseUpdates(detectedCodes);\n\n  if (jsonObj?.memoria_update) {\n    updates.resumen_ia = jsonObj.memoria_update;\n    actions.push({ type: 'database_update', table: 'candidatos', field: 'resumen_ia', value: jsonObj.memoria_update });\n  }\n\n  return {\n    message_to_user: cleanedMessage,\n    detected_codes: detectedCodes.map(c => ({ code: c.code, action: c.action, value: c.value })),\n    database_updates: updates,\n    pending_actions: actions,\n    text_para_whatsapp: cleanedMessage,\n    nombre_detectado: updates.nombre,\n    vacante_detectada: updates.vacante_interes,\n    cita_creada: actions.some(a => a.type === 'send_confirmation'),\n    cita_cancelada: detectedCodes.some(c => c.action === 'cita_cancelada'),\n    motivo_final: updates.escalation_reason,\n    es_cv_manual: !!updates.cv_manual,\n    datos_cv_manual: updates.cv_manual_obj || null,\n    resumen_generado: updates.resumen_ia,\n    has_special_codes: detectedCodes.length > 0 || !!jsonObj?.memoria_update,\n    processed_at: new Date().toISOString(),\n    _original_response: aiResponse\n  };\n}\n\n// ============================================================\n// LÓGICA DEL NODO\n// ============================================================\n\n// 1. Obtener datos de entrada (soporta objeto JSON directo o texto string)\nconst item = $input.first();\nlet rawInput = item.json.output || item.json.text || item.json.message || item.json;\n\nif (typeof rawInput === 'object' && rawInput !== null) {\n  if (typeof rawInput.output === 'string') rawInput = rawInput.output;\n  else if (typeof rawInput.text === 'string') rawInput = rawInput.text;\n  else if (typeof rawInput.message === 'string') rawInput = rawInput.message;\n}\n\nlet inputForParser = rawInput;\nlet jsonParsed = null;\n\nif (typeof rawInput === 'string') {\n  const trimmed = rawInput.trim();\n\n  // Intentar parsear toda la cadena como JSON (caso más común)\n  if (trimmed.startsWith('{')) {\n    try { jsonParsed = JSON.parse(trimmed); inputForParser = jsonParsed; } catch (e) {}\n  }\n\n  // Si falló, buscar JSON incrustado en texto con brace-matching seguro\n  if (!jsonParsed) {\n    const keyIdx = trimmed.indexOf('\"mensaje_al_usuario\"');\n    if (keyIdx !== -1) {\n      const startBrace = trimmed.lastIndexOf('{', keyIdx);\n      if (startBrace !== -1) {\n        let depth = 0;\n        let endIdx = -1;\n        for (let i = startBrace; i < trimmed.length; i++) {\n          if (trimmed[i] === '{') depth++;\n          else if (trimmed[i] === '}') { depth--; if (depth === 0) { endIdx = i; break; } }\n        }\n        if (endIdx !== -1) {\n          try { jsonParsed = JSON.parse(trimmed.substring(startBrace, endIdx + 1)); inputForParser = jsonParsed; } catch (e) {}\n        }\n      }\n    }\n  }\n} else if (typeof rawInput === 'object' && rawInput !== null) {\n  jsonParsed = rawInput;\n  inputForParser = rawInput;\n}\n\n// 2. Contexto — una sola lectura del nodo previo, reutilizada en todo el script\n// (antes se llamaba $('Recibido desde Analizador').first() hasta 5 veces)\nconst analizador = $('Recibido desde Analizador').first().json;\nconst webhookData = analizador._webhook?.body?.payload || {};\nconst context = { phone: webhookData.from, executionId: $execution.id };\n\n// 3. Ejecutar parser\nconst result = parseSpecialCodes(inputForParser, context);\n\n// Si viene JSON estructurado con mensaje_al_usuario y memoria_update\nif (jsonParsed) {\n  if (jsonParsed.mensaje_al_usuario) {\n    result.message_to_user = jsonParsed.mensaje_al_usuario;\n    result.text_para_whatsapp = jsonParsed.mensaje_al_usuario;\n  }\n  if (jsonParsed.memoria_update) {\n    result.resumen_generado = jsonParsed.memoria_update;\n    result.database_updates = result.database_updates || {};\n    result.database_updates.resumen_ia = jsonParsed.memoria_update;\n  }\n\n  const et = jsonParsed.etiquetas_internas || jsonParsed;\n  if (et.actualizar_vacante || et.vacante_interes || et.vacante) {\n    result.vacante_detectada = String(et.actualizar_vacante || et.vacante_interes || et.vacante).trim().toUpperCase();\n  }\n  if (et.actualizar_nave || et.nave_interes || et.nave) {\n    result.nave_detectada = String(et.actualizar_nave || et.nave_interes || et.nave).trim().toUpperCase();\n  }\n  if (et.actualizar_nombre || et.nombre) {\n    result.nombre_detectado = String(et.actualizar_nombre || et.nombre).trim();\n  }\n}\n\n// ---------------------------------------------------------\n// 4. PARCHES Y ETIQUETAS SECRETAS\n// ---------------------------------------------------------\n\nconst aiResponseStr = typeof rawInput === 'object' ? JSON.stringify(rawInput) : String(rawInput || '');\n\nif (result.message_to_user && typeof result.message_to_user === 'string') {\n  result.message_to_user = result.message_to_user.split('MEMORY_UPDATE')[0].trim();\n}\n\nconst vacMatch = aiResponseStr.match(/(?:ACTUALIZAR_VACANTE|\"actualizar_vacante\"|\"vacante_interes\")\\s*[:|^\"]\\s*([^\"|\\n,}]+)/i);\nif (vacMatch?.[1]) {\n  const val = vacMatch[1].trim().replace(/^[\"\\s|]+|[\"\\s|]+$/g, '');\n  if (val && val.toUpperCase() !== 'GENERAL' && val.toUpperCase() !== 'NINGUNA') {\n    result.vacante_detectada = val.toUpperCase();\n  }\n}\n\nconst naveMatch = aiResponseStr.match(/(?:ACTUALIZAR_NAVE|\"actualizar_nave\"|\"nave_interes\")\\s*[:|^\"]\\s*([^\"|\\n,}]+)/i);\nif (naveMatch?.[1]) {\n  const val = naveMatch[1].trim().replace(/^[\"\\s|]+|[\"\\s|]+$/g, '');\n  if (val && val.toUpperCase() !== 'PENDIENTE') {\n    result.nave_detectada = val.toUpperCase();\n  }\n}\n\nconst nomMatch = aiResponseStr.match(/(?:ACTUALIZAR_NOMBRE|\"actualizar_nombre\")\\s*[:|^\"]\\s*([^\"|\\n,}]+)/i);\nif (nomMatch?.[1]) {\n  const val = nomMatch[1].trim().replace(/^[\"\\s|]+|[\"\\s|]+$/g, '');\n  if (val && val !== 'Desconocido' && val !== 'Candidato') {\n    result.nombre_detectado = val;\n  }\n}\n\nif (aiResponseStr.includes('PRIVACIDAD_ACEPTADA')) result.acepto_privacidad = true;\nif (aiResponseStr.includes('CITA_CANCELADA')) result.cita_cancelada = true;\nif (aiResponseStr.includes('ENVIAR_UBICACION')) result.enviar_ubicacion = true;\n\nconst citaMatch = aiResponseStr.match(/CITA_CONFIRMADA[\\s:|]*(.*?)([|\\n]|$)/i);\nif (citaMatch?.[1]) {\n  result.fecha_entrevista_detectada = citaMatch[1].replace(/\\|/g, '').trim();\n}\n\n// HUMAN_ALERT\nconst humanAlertParts = aiResponseStr.split(/HUMAN_ALERT/i);\nif (humanAlertParts.length > 1) {\n  const mensajeHumanoDefault =\n    \"Gracias por explicarme 😊 Voy a compartir tu caso con el equipo de reclutamiento para que puedan revisarlo y darte seguimiento por este medio.\";\n\n  let fragmento = (humanAlertParts[1].split(/MEMORY_UPDATE/i)[0] || \"\").trim();\n  fragmento = fragmento.replace(/^\\s*\\|\\s*/, \"\").trim();\n  const partesRaw = fragmento.split(\"|\").map(p => p.trim());\n\n  // Antes: hasta 3 llamadas a $('Recibido desde Analizador').first() por rama (x2 ramas).\n  // Ahora: se calcula una sola vez, a partir del `analizador` ya cacheado.\n  const nombreCandidatoFallback =\n    analizador._candidato?.nombre_chat ||\n    analizador._candidato?.nombre_ine ||\n    analizador._candidato?.nombre_solicitud ||\n    \"Candidato\";\n\n  let nombre = \"\", resumen = \"\", mensajeVisible = \"\";\n  const primerCampo = partesRaw[0] || \"\";\n  const primerCampoPareceResumen =\n    /candidato|documento|constancia|rfc|ine|cv|solicit|agend|conflict|no cuenta|no tiene/i.test(primerCampo);\n\n  if (partesRaw.length >= 3 && !primerCampoPareceResumen) {\n    nombre = partesRaw[0];\n    resumen = partesRaw[1];\n    mensajeVisible = partesRaw.slice(2).join(\" | \").trim();\n  } else if (partesRaw.length >= 2 && primerCampoPareceResumen) {\n    nombre = nombreCandidatoFallback;\n    resumen = partesRaw[0];\n    mensajeVisible = partesRaw.slice(1).join(\" | \").trim();\n  } else if (partesRaw.length >= 2) {\n    nombre = partesRaw[0];\n    resumen = partesRaw[1];\n    mensajeVisible = mensajeHumanoDefault;\n  } else {\n    nombre = nombreCandidatoFallback;\n    resumen = \"El candidato solicitó apoyo de reclutamiento humano.\";\n    mensajeVisible = mensajeHumanoDefault;\n  }\n\n  if (\n    !mensajeVisible ||\n    /^el candidato/i.test(mensajeVisible) ||\n    /impidiendo el agendamiento/i.test(mensajeVisible) ||\n    /solicitó escalamiento/i.test(mensajeVisible)\n  ) {\n    mensajeVisible = mensajeHumanoDefault;\n  }\n\n  result.human_alert_nombre = nombre.trim();\n  result.human_alert_resumen = resumen.trim();\n  result.message_to_user = mensajeVisible.trim();\n}\n\n// CV_MANUAL\nconst cvManualMatch = aiResponseStr.match(/CV_MANUAL[\\s:|]*(\\{[\\s\\S]*?\\})/i);\nif (cvManualMatch?.[1]) {\n  try {\n    const jsonLimpio = cvManualMatch[1]\n      .replace(/```json/gi, '')\n      .replace(/```/g, '')\n      .replace(/[\\n\\r\\t]/g, ' ')\n      .trim();\n    const cvData = JSON.parse(jsonLimpio);\n    result.experiencia_manual = cvData.experiencia;\n    result.vacante_manual = cvData.vacante;\n    result.datos_cv_manual = cvData;\n    result.es_cv_manual = true;\n    if (cvData.nombre && cvData.nombre !== \"Desconocido\") {\n      result.nombre_detectado = cvData.nombre;\n    }\n  } catch (e) {\n    result.datos_cv_manual = { error: \"La IA formateó mal el JSON\", experiencia: \"Candidato llenó solicitud manual por chat.\" };\n    result.es_cv_manual = true;\n  }\n}\n\n// RESPUESTAS_FILTRO\nconst filtroMatch = aiResponseStr.match(/RESPUESTAS_FILTRO[\\s:|]*([\\s\\S]*?)(?=\\n[A-Z_]+\\s*\\||$)/i);\nif (filtroMatch?.[1]) {\n  result.respuestas_filtro_detectadas = filtroMatch[1].replace(/\\|/g, '').trim();\n}\n\n// ---------------------------------------------------------\n// 5. LIMPIEZA VISUAL PROFUNDA (sin ReDoS)\n// ---------------------------------------------------------\n\nif (result.message_to_user && typeof result.message_to_user === 'string') {\n  // Cortar bloque JSON directo si se filtró\n  const jsonKeyIdx = result.message_to_user.indexOf('\"mensaje_al_usuario\"');\n  if (jsonKeyIdx !== -1) {\n    const startB = result.message_to_user.lastIndexOf('{', jsonKeyIdx);\n    if (startB !== -1) {\n      result.message_to_user = result.message_to_user.substring(0, startB);\n    }\n  }\n\n  // Antes: 8 llamadas encadenadas de .replace() (8 pasadas completas sobre el string).\n  // Ahora: un solo regex combinado, una sola pasada.\n  const CLEANUP_RE = /ACTUALIZAR_(?:NOMBRE|VACANTE|NAVE)\\s*\\|\\s*[^|\\n]+(?:\\||)|PRIVACIDAD_ACEPTADA\\s*\\|?|CITA_CONFIRMADA[\\s:|]*.*?(?:[|\\n]|$)|CITA_CANCELADA[\\s:|]*.*?(?:[|\\n]|$)|ENVIAR_UBICACION[\\s:|]*.*?(?:[|\\n]|$)|```json|```/gi;\n  result.message_to_user = result.message_to_user.replace(CLEANUP_RE, '').trim();\n\n  if (result.fecha_entrevista_detectada) {\n    result.message_to_user = result.message_to_user\n      .replace(result.fecha_entrevista_detectada, '')\n      .replace(/\\|/g, '')\n      .trim();\n  }\n\n  if (\n    /^el candidato/i.test(result.message_to_user) ||\n    result.message_to_user.includes(\"impidiendo el agendamiento\") ||\n    result.message_to_user.includes(\"Solicitó escalamiento\") ||\n    result.message_to_user.includes(\"solicitó escalamiento\")\n  ) {\n    result.message_to_user =\n      \"Gracias por explicarme 😊 Voy a compartir tu caso con el equipo de reclutamiento para que puedan revisarlo y darte seguimiento por este medio.\";\n  }\n\n  if (result.message_to_user.includes(\"|\")) {\n    const partes = result.message_to_user.split(\"|\").map(p => p.trim()).filter(Boolean);\n    result.message_to_user = partes[partes.length - 1] ||\n      \"Gracias por explicarme 😊 Voy a compartir tu caso con el equipo de reclutamiento para que puedan revisarlo y darte seguimiento por este medio.\";\n  }\n\n  result.message_to_user = result.message_to_user.replace(/^[|\\s]+/, '').trim();\n}\n\nif (!result.message_to_user || typeof result.message_to_user !== 'string' || result.message_to_user.trim() === \"\") {\n  result.message_to_user = \"¡Hola! 😊 ¿En qué puedo ayudarte hoy o qué duda tienes sobre nuestras vacantes?\";\n}\n\n// ---------------------------------------------------------\n// 6. SPLIT DE MENSAJES Y MENÚ CADA 3 MENSAJES\n// ---------------------------------------------------------\n\nlet mensajes = result.message_to_user.includes('[SPLIT]')\n  ? result.message_to_user.split(/\\[SPLIT\\]/i).map(m => m.trim()).filter(m => m !== \"\")\n  : [result.message_to_user];\n\n// Antes: JSON.parse(JSON.stringify(result)) por cada mensaje (serialización completa).\n// Ahora: clon superficial con spread, suficiente porque solo se sobrescribe\n// message_to_user (campo de primer nivel) en cada copia.\nlet output = mensajes.map(msg => ({ json: { ...result, message_to_user: msg } }));\n\nlet mensajes_enviados = analizador._candidato?.mensajes_bot_enviados || 0;\nif (mensajes_enviados % 3 === 0 && output.length > 0) {\n  output[output.length - 1].json.message_to_user += '\\n\\n_(Escribe \"Menú\" para volver al menú principal o \"Cambiar sucursal\" para cambiar de nave)_';\n}\n\nreturn output;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -720,
+        144
+      ],
+      "id": "29a97c44-a2c3-4193-8936-d931baab7e26",
+      "name": "Leer"
+    },
+    {
+      "parameters": {
+        "descriptionType": "manual",
+        "toolDescription": "=Usa esta herramienta para dos cosas: 1) Verificar disponibilidad de horarios. 2) BUSCAR una cita existente si el usuario quiere cancelar o cambiar fecha (busca en un rango amplio de fechas). Devuelve la lista de eventos OCUPADOS con sus detalles e IDs.\n\n¡ALERTA CRÍTICA!: SI LA HERRAMIENTA DEVUELVE UNA LISTA VACÍA (0 EVENTOS), SIGNIFICA QUE TODO EL CALENDARIO ESTÁ TOTALMENTE LIBRE Y DISPONIBLE. NO SIGNIFICA QUE NO HAYA HORARIOS. EN ESE CASO, OFRECE CUALQUIER HORARIO DENTRO DE LA JORNADA OFICIAL.\n\nCONTEXTO TEMPORAL CRÍTICO:\n- La fecha y hora actual EXACTA es: {{ $now.setZone('America/Mexico_City').toString() }}\n- El día de la semana es: {{ $now.setZone('America/Mexico_City').toFormat('cccc') }}\n- El año actual es: {{ $now.setZone('America/Mexico_City').year }}\n\nINSTRUCCIONES:\n1. Calcula todas las fechas relativas (\"mañana\", \"el viernes\", \"próxima semana\") basándote en la FECHA ACTUAL de arriba.\n2. JAMÁS agendes citas en el pasado (años 2024, 2025).\n3. Si el usuario dice \"viernes\" y hoy es lunes 16, el viernes es 20 (del mismo mes y año).\n",
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "={{ $('ResolverReclutador').first().json.calendar_id }}",
+          "mode": "list"
+        },
+        "limit": 10,
+        "timeMin": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('After', ``, 'string') }}",
+        "timeMax": "={{ /*n8n-auto-generated-fromAI-override*/ $fromAI('Before', ``, 'string') }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleCalendarTool",
+      "typeVersion": 1.3,
+      "position": [
+        -944,
+        416
+      ],
+      "id": "8cec9aa8-0ed1-4333-951c-ca4a7cfd86b3",
+      "name": "RevisarCalendario",
+      "notesInFlow": false,
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "j28g9WdB9Ug4Yh18",
+          "name": "Google Calendar account"
+        }
+      }
     },
     {
       "parameters": {
@@ -648,8 +674,8 @@
             "resumen_ia": "={{ $fromAI('resumen_corto', 'Resumen corto de la cita', 'string') }}",
             "notas_ia": "={{ $('Recibido desde Analizador').first().json._candidato?.resumen_ia || '' }}",
             "nombre": "={{ $('Recibido desde Analizador').first().json._candidato?.nombre || '' }}",
-            "nave_interes": "={{ $('Leer').first().json.nave_detectada || $('Recibido desde Analizador').first().json._candidato?.nave_interes || '' }}",
-            "vacante_interes": "={{ $('Leer').first().json.vacante_detectada || $('Recibido desde Analizador').first().json._candidato?.vacante_interes || '' }}",
+            "nave_interes": "={{ $('Recibido desde Analizador').first().json._candidato?.nave_interes || '' }}",
+            "vacante_interes": "={{ $('Recibido desde Analizador').first().json._candidato?.vacante_interes || '' }}",
             "ine_nombre": "={{ $('Recibido desde Analizador').first().json._candidato?.datos_ine?.nombre_completo || '' }}",
             "ine_curp": "={{ $('Recibido desde Analizador').first().json._candidato?.datos_ine?.curp || '' }}"
           },
@@ -769,16 +795,16 @@
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2.2,
       "position": [
-        208,
-        240
+        -1056,
+        432
       ],
-      "id": "062291dc-c9c5-4370-8c26-be1640e98f10",
-      "name": "Subflujo Crear Evento1",
+      "id": "81f06c43-0fd5-4b1d-99e4-6ef939cb7f40",
+      "name": "Subflujo Crear Evento",
       "rewireOutputLogTo": "ai_tool"
     },
     {
       "parameters": {
-        "description": "=Herramienta para ELIMINAR/CANCELAR una cita en el calendario. Necesitas el Event_ID que recibes de la herramienta RevisarCalendario.",
+        "description": "=Herramienta para ELIMINAR/CANCELAR una cita en el calendario.",
         "workflowId": {
           "__rl": true,
           "value": "G1Ow8lsap2BQkeJB",
@@ -790,9 +816,9 @@
           "mappingMode": "defineBelow",
           "value": {
             "action": "delete",
-            "calendar_id": "={{ $('ResolverReclutador').first().json.calendar_id }}",
-            "telefono": "={{ $('Recibido desde Analizador').first().json._candidato.telefono }}",
-            "event_id": "={{ $('Recibido desde Analizador').first().json._candidato.event_id }}"
+            "calendar_id": "={{ $('ResolverReclutador').first().json?.calendar_id || '' }}",
+            "telefono": "={{ $('Recibido desde Analizador').first().json._candidato?.telefono || '' }}",
+            "event_id": "={{ $('Recibido desde Analizador').first().json._candidato?.event_id || '' }}"
           },
           "matchingColumns": [],
           "schema": [
@@ -932,37 +958,11 @@
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2.2,
       "position": [
-        464,
-        224
+        -784,
+        368
       ],
-      "id": "91008288-a661-462a-8533-56eb2feebbf3",
+      "id": "b7f84ef9-52bc-435c-9ecf-fa88fa859afe",
       "name": "Subflujo Eliminar Evento"
-    },
-    {
-      "parameters": {
-        "jsCode": "return [{\n  json: {\n    original: $json,\n    contacto: $('Recibido desde Analizador').first().json._contacto,\n    number: $('Recibido desde Analizador').first().json._contacto?.number,\n    replacement: [ $('Recibido desde Analizador').first().json._contacto?.number ?? '' ]\n  }\n}];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -928,
-        -144
-      ],
-      "id": "81b9f1c3-6e78-4a28-9e81-3943a53ebbfd",
-      "name": "code"
-    },
-    {
-      "parameters": {
-        "jsCode": "// === INLINED PARSER DE CÓDIGOS Y MENSAJES ===\nconst SPECIAL_CODES = {\n  NAME_UPDATE: {\n    pattern: /NAME_UPDATE\\s*\\|\\s*([^|]+)\\s*\\|/i,\n    action: 'update_name',\n    field: 'nombre'\n  },\n  VACANTE_UPDATE: {\n    pattern: /VACANTE_UPDATE\\s*\\|\\s*([^|]+)\\s*\\|/i,\n    action: 'update_vacante',\n    field: 'vacante_interes'\n  },\n  CITA_CONFIRMADA: {\n    pattern: /CITA_CONFIRMADA\\s*\\|/i,\n    action: 'cita_confirmada',\n    field: 'fecha_cita_detectada'\n  },\n  CON_CV: {\n    pattern: /CON_CV\\s*\\|\\s*([^|]+)\\s*\\|/i,\n    action: 'cv_recibido',\n    field: 'tiene_cv'\n  },\n  CV_MANUAL: {\n    pattern: /CV_MANUAL\\s*\\|\\s*(\\{[^}]+\\})/i,\n    action: 'cv_manual',\n    field: 'cv_data',\n    isJSON: true\n  },\n  HUMAN_ALERT: {\n    pattern: /HUMAN_ALERT\\s*\\|\\s*([^|]+)\\s*\\|/i,\n    action: 'escalate_to_human',\n    field: 'escalation_reason'\n  },\n  MEMORY_UPDATE: {\n    pattern: /MEMORY_UPDATE\\s*\\|\\s*([^|]+)\\s*\\|/i,\n    action: 'update_memory',\n    field: 'resumen_ia'\n  },\n  CITA_CANCELADA: {\n    pattern: /CITA_CANCELADA\\s*\\|/i,\n    action: 'cita_cancelada',\n    field: 'estado'\n  }\n};\n\nfunction extractCode(text, codeConfig) {\n  if (!text || typeof text !== 'string') return null;\n  const match = text.match(codeConfig.pattern);\n  if (!match) return null;\n  let value = match[1]?.trim();\n  if (codeConfig.isJSON && value) {\n    try { value = JSON.parse(value); } catch (e) { return null; }\n  }\n  return { code: Object.keys(SPECIAL_CODES).find(k => SPECIAL_CODES[k] === codeConfig), action: codeConfig.action, field: codeConfig.field, value: value, raw_match: match[0] };\n}\n\nfunction cleanMessage(text, detectedCodes) {\n  let cleaned = (typeof text === 'string') ? text : \"\";\n  for (const code of detectedCodes) { cleaned = cleaned.replace(code.raw_match, ''); }\n  return cleaned.replace(/^\\s+/g, '').replace(/\\s+$/g, '').trim();\n}\n\nfunction generateDatabaseUpdates(detectedCodes, context) {\n  const updates = {};\n  const actions = [];\n  for (const code of detectedCodes) {\n    switch (code.action) {\n      case 'update_name': updates.nombre = code.value; updates.nombre_confirmado = true; actions.push({ type: 'database_update', table: 'candidatos', field: 'nombre', value: code.value }); break;\n      case 'update_vacante': updates.vacante_interes = code.value; updates.estado = 'INTERESADO'; actions.push({ type: 'database_update', table: 'candidatos', field: 'vacante_interes', value: code.value }); break;\n      case 'cita_confirmada': updates.estado = 'CITA_AGENDADA'; updates.fecha_ultima_cita = new Date().toISOString(); actions.push({ type: 'database_update', table: 'candidatos', field: 'estado', value: 'CITA_AGENDADA' }); actions.push({ type: 'send_confirmation', channel: 'whatsapp' }); break;\n      case 'cv_recibido': updates.tiene_cv = true; updates.estado = 'CV_RECIBIDO'; updates.vacante_cv = code.value; actions.push({ type: 'database_update', table: 'candidatos', field: 'tiene_cv', value: true }); break;\n      case 'cv_manual': updates.cv_manual = JSON.stringify(code.value); updates.tiene_cv = true; updates.estado = 'CV_MANUAL'; actions.push({ type: 'database_update', table: 'candidatos', field: 'cv_manual', value: JSON.stringify(code.value) }); break;\n      case 'escalate_to_human': updates.estado = 'ESCALADO'; updates.escalation_reason = code.value; updates.escalated_at = new Date().toISOString(); actions.push({ type: 'alert_human', priority: 'high', reason: code.value }); break;\n      case 'update_memory': updates.resumen_ia = code.value; updates.ultima_actualizacion = new Date().toISOString(); actions.push({ type: 'database_update', table: 'candidatos', field: 'resumen_ia', value: code.value }); break;\n      case 'cita_cancelada': updates.estado = 'INTERESADO'; actions.push({ type: 'database_update', table: 'candidatos', field: 'estado', value: 'INTERESADO' }); break;\n    }\n  }\n  return { updates, actions };\n}\n\nfunction parseSpecialCodes(aiResponse, context) {\n  if (!aiResponse) return { message_to_user: \"\", has_special_codes: false, detected_codes: [], pending_actions: [] };\n  let textToParse = \"\";\n  let jsonObj = null;\n  if (typeof aiResponse === 'object' && aiResponse !== null) {\n    jsonObj = aiResponse;\n    textToParse = JSON.stringify(aiResponse);\n  } else if (typeof aiResponse === 'string') {\n    const cleanStr = aiResponse.replace(/```json/gi, '').replace(/```/g, '').trim();\n    textToParse = cleanStr;\n    const jsonMatch = cleanStr.match(/\\{[\\s\\S]*?\"mensaje_al_usuario\"[\\s\\S]*?\\}/);\n    if (jsonMatch) {\n      try { jsonObj = JSON.parse(jsonMatch[0]); } catch (e) {}\n    } else if (cleanStr.startsWith('{') && cleanStr.endsWith('}')) {\n      try { jsonObj = JSON.parse(cleanStr); } catch (e) {}\n    }\n  } else {\n    textToParse = String(aiResponse);\n  }\n\n  const detectedCodes = [];\n  for (const [codeName, codeConfig] of Object.entries(SPECIAL_CODES)) {\n    const extracted = extractCode(textToParse, codeConfig);\n    if (extracted) detectedCodes.push(extracted);\n  }\n\n  let cleanedMessage = cleanMessage(textToParse, detectedCodes);\n  if (jsonObj && jsonObj.mensaje_al_usuario) cleanedMessage = jsonObj.mensaje_al_usuario;\n\n  const { updates, actions } = generateDatabaseUpdates(detectedCodes, context);\n  if (jsonObj && jsonObj.memoria_update) {\n    updates.resumen_ia = jsonObj.memoria_update;\n    actions.push({ type: 'database_update', table: 'candidatos', field: 'resumen_ia', value: jsonObj.memoria_update });\n  }\n\n  return {\n    message_to_user: cleanedMessage,\n    detected_codes: detectedCodes.map(c => ({ code: c.code, action: c.action, value: c.value })),\n    database_updates: updates,\n    pending_actions: actions,\n    text_para_whatsapp: cleanedMessage,\n    nombre_detectado: updates.nombre,\n    vacante_detectada: updates.vacante_interes,\n    cita_creada: actions.some(a => a.type === 'send_confirmation'),\n    cita_cancelada: detectedCodes.some(c => c.action === 'cita_cancelada'),\n    motivo_final: updates.escalation_reason,\n    es_cv_manual: !!updates.cv_manual,\n    datos_cv_manual: updates.cv_manual ? JSON.parse(updates.cv_manual) : null,\n    resumen_generado: updates.resumen_ia,\n    has_special_codes: detectedCodes.length > 0 || (jsonObj && !!jsonObj.memoria_update),\n    processed_at: new Date().toISOString(),\n    _original_response: aiResponse\n  };\n}\n\n// 2. Obtener datos de entrada (Soporta objeto JSON directos o texto string)\nconst item = $input.first();\nconst rawInput = item.json.output || item.json.text || item.json.message || item.json;\n\nlet inputForParser = rawInput;\nlet jsonParsed = null;\n\nif (typeof rawInput === 'string') {\n  const trimmed = rawInput.trim();\n  const jsonMatch = trimmed.match(/\\{[\\s\\S]*?\"mensaje_al_usuario\"[\\s\\S]*?\\}/);\n  if (jsonMatch) {\n    try {\n      jsonParsed = JSON.parse(jsonMatch[0]);\n      inputForParser = jsonParsed;\n    } catch (e) {}\n  } else if (trimmed.startsWith('{') && trimmed.endsWith('}')) {\n    try {\n      jsonParsed = JSON.parse(trimmed);\n      inputForParser = jsonParsed;\n    } catch (e) {}\n  }\n} else if (typeof rawInput === 'object' && rawInput !== null) {\n  jsonParsed = rawInput;\n  inputForParser = rawInput;\n}\n\n// 3. Preparar contexto\nconst webhookData = $('Recibido desde Analizador').first().json._webhook?.body?.payload || {};\nconst context = { \n  phone: webhookData.from,\n  executionId: $execution.id \n};\n\n// 4. Ejecutar parser inlined\nconst result = parseSpecialCodes(inputForParser, context);\n\n// Si viene JSON estructurado con mensaje_al_usuario y memoria_update\nif (jsonParsed) {\n  if (jsonParsed.mensaje_al_usuario) {\n    result.message_to_user = jsonParsed.mensaje_al_usuario;\n    result.text_para_whatsapp = jsonParsed.mensaje_al_usuario;\n  }\n  if (jsonParsed.memoria_update) {\n    result.resumen_generado = jsonParsed.memoria_update;\n    result.database_updates = result.database_updates || {};\n    result.database_updates.resumen_ia = jsonParsed.memoria_update;\n  }\n\n  // EXTRAER ETIQUETAS ESTRUCTURADAS DE JSON\n  const et = jsonParsed.etiquetas_internas || jsonParsed;\n  if (et.actualizar_vacante || et.vacante_interes || et.vacante) {\n    result.vacante_detectada = String(et.actualizar_vacante || et.vacante_interes || et.vacante).trim().toUpperCase();\n  }\n  if (et.actualizar_nave || et.nave_interes || et.nave) {\n    result.nave_detectada = String(et.actualizar_nave || et.nave_interes || et.nave).trim().toUpperCase();\n  }\n  if (et.actualizar_nombre || et.nombre) {\n    result.nombre_detectado = String(et.actualizar_nombre || et.nombre).trim();\n  }\n}\n\n// ---------------------------------------------------------\n// 5. PARCHES Y ETIQUETAS SECRETAS\n// ---------------------------------------------------------\n\nconst aiResponseStr = typeof rawInput === 'object' ? JSON.stringify(rawInput) : String(rawInput || '');\n\n// Limpieza inicial de MEMORY_UPDATE\nif (result.message_to_user && typeof result.message_to_user === 'string') {\n  result.message_to_user = result.message_to_user.split('MEMORY_UPDATE')[0].trim();\n}\n\n// EXTRAER ETIQUETAS DE TEXTO Y REGEX ROBUSTO\nconst vacMatch = aiResponseStr.match(/(?:ACTUALIZAR_VACANTE|\"actualizar_vacante\"|\"vacante_interes\")\\s*[:|^\"]\\s*([^\"|\\n,}]+)/i);\nif (vacMatch && vacMatch[1]) {\n  const val = vacMatch[1].trim().replace(/^[\"\\s|]+|[\"\\s|]+$/g, '');\n  if (val && val.toUpperCase() !== 'GENERAL' && val.toUpperCase() !== 'NINGUNA') {\n    result.vacante_detectada = val.toUpperCase();\n  }\n}\n\n// Respaldo inteligente: Extraer Vacante desde la memoria de la IA si no venía en etiqueta explícita\nif (!result.vacante_detectada || result.vacante_detectada === 'GENERAL') {\n  const memVacMatch = (result.resumen_generado || aiResponseStr).match(/Vacante:\\s*([^.\\n|]+)/i);\n  if (memVacMatch && memVacMatch[1]) {\n    const vVal = memVacMatch[1].trim();\n    if (vVal && !['General', 'Ninguna', 'Pendiente', 'Desconocida', 'X'].includes(vVal)) {\n      result.vacante_detectada = vVal.toUpperCase();\n    }\n  }\n}\n\nconst naveMatch = aiResponseStr.match(/(?:ACTUALIZAR_NAVE|\"actualizar_nave\"|\"nave_interes\")\\s*[:|^\"]\\s*([^\"|\\n,}]+)/i);\nif (naveMatch && naveMatch[1]) {\n  const val = naveMatch[1].trim().replace(/^[\"\\s|]+|[\"\\s|]+$/g, '');\n  if (val && val.toUpperCase() !== 'PENDIENTE') {\n    result.nave_detectada = val.toUpperCase();\n  }\n}\n\nconst nomMatch = aiResponseStr.match(/(?:ACTUALIZAR_NOMBRE|\"actualizar_nombre\")\\s*[:|^\"]\\s*([^\"|\\n,}]+)/i);\nif (nomMatch && nomMatch[1]) {\n  const val = nomMatch[1].trim().replace(/^[\"\\s|]+|[\"\\s|]+$/g, '');\n  if (val && val !== 'Desconocido' && val !== 'Candidato') {\n    result.nombre_detectado = val;\n  }\n}\n\n// PRIVACIDAD_ACEPTADA\nif (aiResponseStr.includes('PRIVACIDAD_ACEPTADA')) {\n  result.acepto_privacidad = true;\n}\n\n// CITA_CANCELADA\nif (aiResponseStr.includes('CITA_CANCELADA')) {\n  result.cita_cancelada = true;\n}\n\n// CITA_CONFIRMADA\nif (aiResponseStr.includes('CITA_CONFIRMADA')) {\n  const match = aiResponseStr.match(/CITA_CONFIRMADA[\\s:|]*(.*?)([|\\n]|$)/i);\n  if (match?.[1]) {\n    result.fecha_entrevista_detectada = match[1].replace(/\\|/g, '').trim();\n  }\n}\n\n// HUMAN_ALERT\nif (aiResponseStr.includes('HUMAN_ALERT')) {\n    const mensajeHumanoDefault =\n        \"Gracias por explicarme 😊 Voy a compartir tu caso con el equipo de reclutamiento para que puedan revisarlo y darte seguimiento por este medio.\";\n\n    let fragmento = aiResponseStr\n        .split(/HUMAN_ALERT/i)[1]\n        ?.split(/MEMORY_UPDATE/i)[0] || \"\";\n\n    fragmento = fragmento.trim();\n    fragmento = fragmento.replace(/^\\s*\\|\\s*/, \"\").trim();\n    const partesRaw = fragmento.split(\"|\").map(p => p.trim());\n\n    let nombre = \"\";\n    let resumen = \"\";\n    let mensajeVisible = \"\";\n    const primerCampo = partesRaw[0] || \"\";\n    const primerCampoPareceResumen =\n        /candidato|documento|constancia|rfc|ine|cv|solicit|agend|conflict|no cuenta|no tiene/i.test(primerCampo);\n\n    if (partesRaw.length >= 3 && !primerCampoPareceResumen) {\n        nombre = partesRaw[0];\n        resumen = partesRaw[1];\n        mensajeVisible = partesRaw.slice(2).join(\" | \").trim();\n    } else if (partesRaw.length >= 2 && primerCampoPareceResumen) {\n        nombre = $('Recibido desde Analizador').first().json._candidato?.nombre_chat\n              || $('Recibido desde Analizador').first().json._candidato?.nombre_ine\n              || $('Recibido desde Analizador').first().json._candidato?.nombre_solicitud\n              || \"Candidato\";\n        resumen = partesRaw[0];\n        mensajeVisible = partesRaw.slice(1).join(\" | \").trim();\n    } else if (partesRaw.length >= 2) {\n        nombre = partesRaw[0];\n        resumen = partesRaw[1];\n        mensajeVisible = mensajeHumanoDefault;\n    } else {\n        nombre = $('Recibido desde Analizador').first().json._candidato?.nombre_chat\n              || $('Recibido desde Analizador').first().json._candidato?.nombre_ine\n              || $('Recibido desde Analizador').first().json._candidato?.nombre_solicitud\n              || \"Candidato\";\n        resumen = \"El candidato solicitó apoyo de reclutamiento humano.\";\n        mensajeVisible = mensajeHumanoDefault;\n    }\n\n    if (\n        !mensajeVisible ||\n        /^el candidato/i.test(mensajeVisible) ||\n        /impidiendo el agendamiento/i.test(mensajeVisible) ||\n        /solicitó escalamiento/i.test(mensajeVisible)\n    ) {\n        mensajeVisible = mensajeHumanoDefault;\n    }\n\n    result.human_alert_nombre = nombre.trim();\n    result.human_alert_resumen = resumen.trim();\n    result.message_to_user = mensajeVisible.trim();\n}\n\n// CV_MANUAL\nif (aiResponseStr.includes('CV_MANUAL')) {\n  const match = aiResponseStr.match(/CV_MANUAL[\\s:|]*(\\{[\\s\\S]*?\\})/i);\n  if (match?.[1]) {\n    try {\n      const jsonLimpio = match[1]\n        .replace(/```json/gi, '')\n        .replace(/```/g, '')\n        .replace(/[\\n\\r\\t]/g, ' ')\n        .trim();\n      const cvData = JSON.parse(jsonLimpio);\n      result.experiencia_manual = cvData.experiencia;\n      result.vacante_manual = cvData.vacante;\n      result.datos_cv_manual = cvData;\n      result.es_cv_manual = true;\n      if (cvData.nombre && cvData.nombre !== \"Desconocido\") {\n        result.nombre_detectado = cvData.nombre;\n      }\n    } catch (e) {\n      result.datos_cv_manual = { error: \"La IA formateó mal el JSON\", experiencia: \"Candidato llenó solicitud manual por chat.\" };\n      result.es_cv_manual = true;\n    }\n  }\n}\n\n// RESPUESTAS_FILTRO\nif (aiResponseStr.includes('RESPUESTAS_FILTRO')) {\n  const match = aiResponseStr.match(/RESPUESTAS_FILTRO[\\s:|]*([\\s\\S]*?)(?=\\n[A-Z_]+\\s*\\||$)/i);\n  if (match?.[1]) {\n    result.respuestas_filtro_detectadas = match[1].replace(/\\|/g, '').trim();\n  }\n}\n\n// ENVIAR_UBICACION\nif (aiResponseStr.includes('ENVIAR_UBICACION')) {\n  result.enviar_ubicacion = true;\n}\n\n// ---------------------------------------------------------\n// 6. LIMPIEZA VISUAL PROFUNDA\n// ---------------------------------------------------------\n\nif (result.message_to_user && typeof result.message_to_user === 'string') {\n  result.message_to_user = result.message_to_user\n    .replace(/\\{[\\s\\S]*?\"mensaje_al_usuario\"[\\s\\S]*?\\}/gi, '')\n    .replace(/\\{[\\s\\S]*?\"memoria_update\"[\\s\\S]*?\\}/gi, '')\n    .replace(/ACTUALIZAR_NOMBRE\\s*\\|\\s*[^|\\n]+(?:\\||)/gi, '')\n    .replace(/ACTUALIZAR_VACANTE\\s*\\|\\s*[^|\\n]+(?:\\||)/gi, '')\n    .replace(/ACTUALIZAR_NAVE\\s*\\|\\s*[^|\\n]+(?:\\||)/gi, '')\n    .replace(/^\\s*\\[REQUISITO EXCLUSIVO:\\s*[^\\]]+\\]\\s*$/gim, '')\n    .replace(/\\s*\\[REQUISITO EXCLUSIVO:\\s*[^\\]]+\\]\\s*/gi, '')\n    .replace(/^\\s*\\[(CONTROL_INTERNO|PERFIL|CONDICIONES_OPERATIVAS|REQUISITO_FISICO):[^\\]]+\\]\\s*$/gim, '')\n    .replace(/\\s*\\[(CONTROL_INTERNO|PERFIL|CONDICIONES_OPERATIVAS|REQUISITO_FISICO):[^\\]]+\\]\\s*/gi, '')\n    .replace(/PRIVACIDAD_ACEPTADA\\s*\\|?/gi, '')\n    .replace(/CITA_CONFIRMADA[\\s:|]*(.*?)([|\\n]|$)/gi, '')\n    .replace(/CITA_CANCELADA[\\s:|]*(.*?)([|\\n]|$)/gi, '')\n    .replace(/ENVIAR_UBICACION[\\s:|]*(.*?)([|\\n]|$)/gi, '')\n    .replace(/RESPUESTAS_FILTRO[\\s:|]*([\\s\\S]*?)(?=\\n[A-Z_]+\\s*\\||$)/gi, '')\n    .replace(/CV_MANUAL[\\s:|]*\\{[\\s\\S]*?\\}/gi, '')\n    .replace(/```json/gi, '')\n    .replace(/```/g, '')\n    .replace(/[ \\t]+\\n/g, '\\n')\n    .replace(/\\n{3,}/g, '\\n\\n')\n    .trim();\n\n  if (result.fecha_entrevista_detectada) {\n    result.message_to_user = result.message_to_user\n      .replace(result.fecha_entrevista_detectada, '')\n      .replace(/\\|/g, '')\n      .trim();\n  }\n\n  if (\n      /^el candidato/i.test(result.message_to_user) ||\n      result.message_to_user.includes(\"impidiendo el agendamiento\") ||\n      result.message_to_user.includes(\"Solicitó escalamiento\") ||\n      result.message_to_user.includes(\"solicitó escalamiento\")\n  ) {\n      result.message_to_user =\n          \"Gracias por explicarme 😊 Voy a compartir tu caso con el equipo de reclutamiento para que puedan revisarlo y darte seguimiento por este medio.\";\n  }\n  \n  if (result.message_to_user.includes(\"|\")) {\n      const partes = result.message_to_user.split(\"|\").map(p => p.trim()).filter(Boolean);\n      result.message_to_user = partes[partes.length - 1] ||\n          \"Gracias por explicarme 😊 Voy a compartir tu caso con el equipo de reclutamiento para que puedan revisarlo y darte seguimiento por este medio.\";\n  }\n\n  result.message_to_user = result.message_to_user\n    .replace(/^[|\\s]+/, '')\n    .trim();\n}\n\nif (!result.message_to_user || typeof result.message_to_user !== 'string' || result.message_to_user.trim() === \"\") {\n  result.message_to_user = \"Gracias por tu mensaje 😊 Permíteme revisar la información para poder ayudarte mejor.\";\n}\n\n// ---------------------------------------------------------\n// 7. SPLIT DE MENSAJES\n// ---------------------------------------------------------\n\nlet mensajes = [result.message_to_user];\nif (result.message_to_user.includes('[SPLIT]')) {\n  mensajes = result.message_to_user.split(/\\[SPLIT\\]/i).map(m => m.trim()).filter(m => m !== \"\");\n}\n\nlet output = [];\nfor (let msg of mensajes) {\n  let itemCopia = JSON.parse(JSON.stringify(result));\n  itemCopia.message_to_user = msg;\n  output.push({ json: itemCopia });\n}\n\n// 8. AÑADIR MENÚ CADA 3 MENSAJES\nlet mensajes_enviados = $('Recibido desde Analizador').first().json._candidato?.mensajes_bot_enviados || 0;\nif (mensajes_enviados % 3 === 0 && output.length > 0) {\n    output[output.length - 1].json.message_to_user += '\\n\\n_(Escribe \"Menú\" para volver al menú principal o \"Cambiar sucursal\" para cambiar de nave)_';\n}\n\nreturn output;"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        480,
-        0
-      ],
-      "id": "f1b474a3-443d-44c0-a541-f7f320cfce63",
-      "name": "Leer"
     }
   ],
   "pinData": {},
@@ -991,17 +991,6 @@
           {
             "node": "Leer",
             "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "RevisarCalendario": {
-      "ai_tool": [
-        [
-          {
-            "node": "AI Chat",
-            "type": "ai_tool",
             "index": 0
           }
         ]
@@ -1205,28 +1194,6 @@
         ]
       ]
     },
-    "Subflujo Crear Evento1": {
-      "ai_tool": [
-        [
-          {
-            "node": "AI Chat",
-            "type": "ai_tool",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Subflujo Eliminar Evento": {
-      "ai_tool": [
-        [
-          {
-            "node": "AI Chat",
-            "type": "ai_tool",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Recibido desde Analizador": {
       "main": [
         [
@@ -1269,6 +1236,39 @@
           }
         ]
       ]
+    },
+    "RevisarCalendario": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Chat",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Subflujo Crear Evento": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Chat",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Subflujo Eliminar Evento": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Chat",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
@@ -1277,7 +1277,7 @@
     "binaryMode": "separate",
     "availableInMCP": false
   },
-  "versionId": "e8093f08-9765-4e19-9e12-2b148440865e",
+  "versionId": "6f784e41-f7b2-46be-a6cc-b6370940a6e5",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "dee31bcf1d2327582c0e4156e13b587f5779996960582a36461518ee5fc3826e"

@@ -4,6 +4,7 @@ import { ENV } from "@/lib/env";
 import { cookies } from "next/headers";
 import bcrypt from "bcryptjs";
 import { pool } from '@/lib/db';
+import { syncPromptContextDisk } from '@/lib/syncPromptContext';
 
 export async function GET(request: Request) {
   let rol = "USER";
@@ -310,8 +311,8 @@ export async function POST(request: Request) {
 
     await client.query('COMMIT');
     
-    // NOTE: Old TXT generation logic has been REMOVED as requested in Phase 4.
-    // N8N now fetches directly from PostgreSQL or API, making txt files obsolete for SaaS mode.
+    // Auto-sync prompt_context.json file for n8n/AI
+    await syncPromptContextDisk(target_empresa_id || undefined);
 
     return NextResponse.json({ ok: true });
   } catch (err) {
