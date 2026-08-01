@@ -103,11 +103,10 @@ function CustomToolbar({ date, view, onNavigate, onView }: any) {
           <button
             key={v.key}
             onClick={() => onView(v.key)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${
-              view === v.key
+            className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${view === v.key
                 ? "bg-white text-indigo-700 shadow-sm"
                 : "text-slate-500 hover:text-slate-700"
-            }`}
+              }`}
           >
             {v.label}
           </button>
@@ -141,6 +140,8 @@ export default function CalendarioPage() {
 
   // Modal de confirmación de cancelación
   const [cancelTarget, setCancelTarget] = useState<CalendarEvent | null>(null);
+  const [cancelReason, setCancelReason] = useState("");
+  const [recruiterPhone, setRecruiterPhone] = useState("");
   const [cancelPassword, setCancelPassword] = useState("");
   const [cancelError, setCancelError] = useState("");
 
@@ -148,10 +149,13 @@ export default function CalendarioPage() {
   const [rescheduleTarget, setRescheduleTarget] = useState<CalendarEvent | null>(null);
   const [newDate, setNewDate] = useState("");
   const [newTime, setNewTime] = useState("");
+  const [rescheduleReason, setRescheduleReason] = useState("");
   const [rescheduling, setRescheduling] = useState(false);
 
-  // Modal de crear bloqueo
-  const [blockTarget, setBlockTarget] = useState<{ start: Date, end: Date } | null>(null);
+  // Modal de crear bloqueo por rango (días, horas, minutos)
+  const [blockTarget, setBlockTarget] = useState<{ start: Date; end: Date } | null>(null);
+  const [blockStartStr, setBlockStartStr] = useState("");
+  const [blockEndStr, setBlockEndStr] = useState("");
   const [blockTitle, setBlockTitle] = useState("Vacaciones / Bloqueo");
   const [blocking, setBlocking] = useState(false);
 
@@ -208,7 +212,7 @@ export default function CalendarioPage() {
           const gcalData = await resGcal.json();
           setGoogleEvents(Array.isArray(gcalData) ? gcalData : gcalData.events || gcalData.data || []);
         }
-      } catch {}
+      } catch { }
 
       try {
         const resRec = await fetch(`/api/db/vacantes`);
@@ -218,7 +222,7 @@ export default function CalendarioPage() {
           const colorMap: Record<string, string> = {};
           const nameMap: Record<string, string> = {};
           const idToEmailMap: Record<string, string> = {};
-          const palette = ["#6366f1","#ef4444","#10b981","#f59e0b","#8b5cf6","#ec4899","#14b8a6","#f97316"];
+          const palette = ["#6366f1", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
           let myCalIdLocal = "";
           const myRecruiterId = localStorage.getItem("tci_reclutador_id");
 
@@ -247,7 +251,7 @@ export default function CalendarioPage() {
           if (myCalIdLocal) setMyCalId(myCalIdLocal);
           setMisNaveIds(misNaves);
         }
-      } catch {}
+      } catch { }
 
       showToast("Datos cargados", false);
     } catch {
@@ -417,7 +421,7 @@ export default function CalendarioPage() {
     if (role === "ADMIN" || role === "ROOT") return navesList;
     if (role === "ENCARGADO") {
       let asignadas: string[] = [];
-      try { asignadas = JSON.parse(localStorage.getItem("tci_naves_asignadas") || "[]"); } catch {}
+      try { asignadas = JSON.parse(localStorage.getItem("tci_naves_asignadas") || "[]"); } catch { }
       return navesList.filter((n) => asignadas.includes(n.id));
     }
     // RECLUTADOR: solo las naves de sus propias vacantes
@@ -457,15 +461,18 @@ export default function CalendarioPage() {
     setCancelTarget(event);
     setCancelPassword("");
     setCancelError("");
+    setCancelReason("Por imprevistos de agenda en el equipo de reclutamiento.");
+    const defaultTel = typeof window !== "undefined" ? localStorage.getItem("tci_telefono") : "";
+    setRecruiterPhone(defaultTel || "5213323379399");
   };
 
   const confirmCancel = async () => {
     if (!cancelPassword) {
-      setCancelError("Ingresa tu contraseña.");
+      setCancelError("Ingresa tu contraseña para confirmar.");
       return;
     }
     if (!cancelTarget) return;
-    
+
     setCancelingId(cancelTarget.id);
     setCancelError("");
 
@@ -476,7 +483,7 @@ export default function CalendarioPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password: cancelPassword })
       });
-      
+
       const authData = await authRes.json();
       if (!authRes.ok || !authData.success) {
         setCancelError(authData.error || "Contraseña incorrecta.");
@@ -486,10 +493,15 @@ export default function CalendarioPage() {
 
       // 2. Si es correcta, procedemos a cancelar en n8n
       setCancelTarget(null);
+      const myRecruiterName = typeof window !== "undefined" ? localStorage.getItem("tci_nombre") : "";
       const payload = {
         telefono: cancelTarget.resource.telefono,
         event_id: cancelTarget.resource.event_id || (cancelTarget.resource.es_google_calendar ? cancelTarget.id : null),
         calendar_id: cancelTarget.resource.creator_email,
+        motivo: cancelReason,
+        telefono_reclutador: recruiterPhone,
+        nombre_reclutador: myRecruiterName || getRecruiterDisplayName(cancelTarget.resource.creator_email || ""),
+        nombre_candidato: cancelTarget.resource.nombre_chat || cancelTarget.resource.nombre_solicitud || "Candidato"
       };
       const res = await fetch(`${N8N_BASE_URL}/webhook/crm-cancelar-cita`, {
         method: "POST",
@@ -497,7 +509,7 @@ export default function CalendarioPage() {
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error();
-      showToast("✅ Cita cancelada correctamente", false);
+      showToast("✅ Cita cancelada y candidato notificado por WhatsApp", false);
       setSelectedEvent(null);
       loadData();
     } catch {
@@ -512,23 +524,31 @@ export default function CalendarioPage() {
     setRescheduleTarget(event);
     setNewDate(format(event.start, "yyyy-MM-dd"));
     setNewTime(format(event.start, "HH:mm"));
+    setRescheduleReason("Por reorganización de agenda de entrevistas.");
+    const defaultTel = typeof window !== "undefined" ? localStorage.getItem("tci_telefono") : "";
+    setRecruiterPhone(defaultTel || "5213323379399");
   };
 
   const confirmReschedule = async () => {
     if (!rescheduleTarget || !newDate || !newTime) return;
     setRescheduling(true);
-    
+
     const startStr = `${newDate}T${newTime}:00`;
     const start = new Date(startStr);
     const end = new Date(start.getTime() + 60 * 60 * 1000);
 
     try {
+      const myRecruiterName = typeof window !== "undefined" ? localStorage.getItem("tci_nombre") : "";
       const payload = {
         telefono: rescheduleTarget.resource.telefono,
         event_id: rescheduleTarget.resource.event_id || (rescheduleTarget.resource.es_google_calendar ? rescheduleTarget.id : null),
         calendar_id: rescheduleTarget.resource.creator_email,
         start: start.toISOString(),
-        end: end.toISOString()
+        end: end.toISOString(),
+        motivo: rescheduleReason,
+        telefono_reclutador: recruiterPhone,
+        nombre_reclutador: myRecruiterName || getRecruiterDisplayName(rescheduleTarget.resource.creator_email || ""),
+        nombre_candidato: rescheduleTarget.resource.nombre_chat || rescheduleTarget.resource.nombre_solicitud || "Candidato"
       };
       const res = await fetch(`${N8N_BASE_URL}/webhook/crm-reagendar-cita`, {
         method: "POST",
@@ -536,7 +556,7 @@ export default function CalendarioPage() {
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error();
-      showToast("✅ Cita reagendada", false);
+      showToast("✅ Cita reagendada y candidato notificado por WhatsApp", false);
       setSelectedEvent(null);
       setRescheduleTarget(null);
       loadData();
@@ -547,14 +567,24 @@ export default function CalendarioPage() {
     }
   };
 
+  const openBlockModalForRange = (start: Date, end: Date) => {
+    setBlockTarget({ start, end });
+    setBlockStartStr(format(start, "yyyy-MM-dd'T'HH:mm"));
+    setBlockEndStr(format(end, "yyyy-MM-dd'T'HH:mm"));
+    setBlockTitle("Bloqueo de Horario");
+  };
+
   const confirmBlock = async () => {
     if (!blockTarget || !blockTitle) return;
     setBlocking(true);
     try {
+      const startDate = blockStartStr ? new Date(blockStartStr) : blockTarget.start;
+      const endDate = blockEndStr ? new Date(blockEndStr) : blockTarget.end;
+
       const payload = {
         calendar_id: myCalId,
-        start: blockTarget.start.toISOString(),
-        end: blockTarget.end.toISOString(),
+        start: startDate.toISOString(),
+        end: endDate.toISOString(),
         summary: blockTitle,
         description: "Bloqueo manual creado desde CRM"
       };
@@ -564,7 +594,7 @@ export default function CalendarioPage() {
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error();
-      showToast("✅ Bloqueo creado", false);
+      showToast("✅ Bloqueo de horario creado correctamente", false);
       setBlockTarget(null);
       loadData();
     } catch {
@@ -583,7 +613,7 @@ export default function CalendarioPage() {
 
   const getColorForEmail = (email: string) => {
     if (recruiterColors[email]) return recruiterColors[email];
-    const palette = ["#6366f1","#ef4444","#10b981","#f59e0b","#8b5cf6","#ec4899","#14b8a6","#f97316"];
+    const palette = ["#6366f1", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
     let hash = 0;
     for (let i = 0; i < email.length; i++) hash = email.charCodeAt(i) + ((hash << 5) - hash);
     return palette[Math.abs(hash) % palette.length];
@@ -605,7 +635,7 @@ export default function CalendarioPage() {
           <span className="bg-indigo-100 text-indigo-700 text-xs font-bold px-2.5 py-1 rounded-full">
             {totalProximas} próximas
           </span>
-          
+
           {/* FILTRO DE NAVE/SUCURSAL */}
           {naveOptions.length > 0 && (
             <div className="flex items-center gap-2">
@@ -747,7 +777,7 @@ export default function CalendarioPage() {
                 showToast("❌ No tienes un calendario asignado para bloquear", true);
                 return;
               }
-              setBlockTarget({ start, end });
+              openBlockModalForRange(start, end);
             }}
             components={{ toolbar: CustomToolbar }}
             messages={{
@@ -792,7 +822,7 @@ export default function CalendarioPage() {
           onClick={() => setCancelTarget(null)}
         >
           <div
-            className="bg-white w-[90%] max-w-sm rounded-2xl p-6 shadow-2xl"
+            className="bg-white w-[90%] max-w-md rounded-2xl p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-3 mb-4">
@@ -800,37 +830,64 @@ export default function CalendarioPage() {
                 <XCircle size={20} className="text-red-600" />
               </div>
               <div>
-                <h3 className="font-bold text-slate-800">Cancelar Cita</h3>
-                <p className="text-sm text-slate-500">
-                  {cancelTarget.resource.nombre_chat || cancelTarget.resource.nombre_solicitud || "Candidato"}
+                <h3 className="font-bold text-slate-800 text-lg">Cancelar Entrevista</h3>
+                <p className="text-sm font-semibold text-indigo-600">
+                  {cancelTarget.resource.nombre_chat || cancelTarget.resource.nombre_solicitud || "Candidato"} ({cancelTarget.resource.vacante_interes || "General"})
                 </p>
               </div>
             </div>
 
-            <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4 text-sm text-red-700">
-              ⚠️ Esta acción cancelará la cita y cambiará el estado del candidato. El evento también se eliminará de Google Calendar.
+            <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4 text-xs text-red-700">
+              ⚠️ Esta acción eliminará el evento de Google Calendar y le enviará un mensaje de WhatsApp al candidato con el motivo y tu número de contacto.
             </div>
 
-            <div className="mb-4">
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-                Ingresa la contraseña para confirmar
-              </label>
-              <input
-                type="password"
-                value={cancelPassword}
-                onChange={(e) => { setCancelPassword(e.target.value); setCancelError(""); }}
-                onKeyDown={(e) => e.key === "Enter" && confirmCancel()}
-                placeholder="••••••••"
-                autoFocus
-                className={`w-full px-3 py-2.5 rounded-lg border outline-none text-sm transition-all ${
-                  cancelError
-                    ? "border-red-400 bg-red-50 focus:border-red-500"
-                    : "border-slate-200 bg-slate-50 focus:border-indigo-400 focus:bg-white"
-                }`}
-              />
-              {cancelError && (
-                <p className="text-xs text-red-500 mt-1 font-medium">{cancelError}</p>
-              )}
+            <div className="space-y-4 mb-5">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Motivo / Explicación para el candidato
+                </label>
+                <textarea
+                  rows={2}
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  placeholder="Explica la razón de la cancelación..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-red-400 focus:bg-white outline-none text-xs text-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Teléfono del Reclutador (para aclaraciones)
+                </label>
+                <input
+                  type="text"
+                  value={recruiterPhone}
+                  onChange={(e) => setRecruiterPhone(e.target.value)}
+                  placeholder="521..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 focus:bg-white outline-none text-xs text-slate-800 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Contraseña de confirmación
+                </label>
+                <input
+                  type="password"
+                  value={cancelPassword}
+                  onChange={(e) => { setCancelPassword(e.target.value); setCancelError(""); }}
+                  onKeyDown={(e) => e.key === "Enter" && confirmCancel()}
+                  placeholder="••••••••"
+                  autoFocus
+                  className={`w-full px-3 py-2 rounded-xl border outline-none text-xs transition-all ${cancelError
+                      ? "border-red-400 bg-red-50 focus:border-red-500"
+                      : "border-slate-200 bg-slate-50 focus:border-indigo-400 focus:bg-white"
+                    }`}
+                />
+                {cancelError && (
+                  <p className="text-xs text-red-500 mt-1 font-medium">{cancelError}</p>
+                )}
+              </div>
             </div>
 
             <div className="flex gap-3">
@@ -842,7 +899,7 @@ export default function CalendarioPage() {
               </button>
               <button
                 onClick={confirmCancel}
-                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-colors"
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-colors shadow-sm"
               >
                 Sí, cancelar cita
               </button>
@@ -906,7 +963,7 @@ export default function CalendarioPage() {
               >
                 <XCircle size={16} /> Cancelar
               </button>
-              
+
               <button
                 onClick={(e) => openRescheduleModal(e, selectedEvent)}
                 className="flex-1 py-2.5 bg-amber-50 text-amber-600 hover:bg-amber-100 font-bold rounded-xl transition-colors flex items-center justify-center gap-2 text-sm border border-amber-200"
@@ -942,29 +999,62 @@ export default function CalendarioPage() {
           onClick={() => setRescheduleTarget(null)}
         >
           <div
-            className="bg-white w-[90%] max-w-sm rounded-2xl p-6 shadow-2xl relative"
+            className="bg-white w-[90%] max-w-md rounded-2xl p-6 shadow-2xl relative"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="font-bold text-slate-800 mb-4">Reagendar Cita</h3>
-            
-            <div className="mb-4">
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Nueva Fecha</label>
-              <input
-                type="date"
-                value={newDate}
-                onChange={(e) => setNewDate(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-sm"
-              />
+            <h3 className="font-bold text-slate-800 text-lg mb-1">Reagendar Entrevista</h3>
+            <p className="text-xs text-indigo-600 font-semibold mb-4">
+              Candidato: {rescheduleTarget.resource.nombre_chat || rescheduleTarget.resource.nombre_solicitud || "Candidato"}
+            </p>
+
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Nueva Fecha</label>
+                <input
+                  type="date"
+                  value={newDate}
+                  onChange={(e) => setNewDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Nueva Hora</label>
+                <input
+                  type="time"
+                  value={newTime}
+                  onChange={(e) => setNewTime(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs"
+                />
+              </div>
             </div>
-            
-            <div className="mb-6">
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Nueva Hora</label>
-              <input
-                type="time"
-                value={newTime}
-                onChange={(e) => setNewTime(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-sm"
-              />
+
+            <div className="space-y-3 mb-5">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Motivo / Explicación del cambio
+                </label>
+                <textarea
+                  rows={2}
+                  value={rescheduleReason}
+                  onChange={(e) => setRescheduleReason(e.target.value)}
+                  placeholder="Explica la razón del cambio..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs text-slate-800"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Teléfono del Reclutador (para aclaraciones)
+                </label>
+                <input
+                  type="text"
+                  value={recruiterPhone}
+                  onChange={(e) => setRecruiterPhone(e.target.value)}
+                  placeholder="521..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs text-slate-800 font-mono"
+                />
+              </div>
             </div>
 
             <div className="flex gap-3">
@@ -977,38 +1067,123 @@ export default function CalendarioPage() {
               <button
                 onClick={confirmReschedule}
                 disabled={rescheduling}
-                className="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm transition-colors disabled:opacity-50"
+                className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm transition-colors disabled:opacity-50 shadow-sm"
               >
-                {rescheduling ? "Guardando..." : "Guardar"}
+                {rescheduling ? "Guardando..." : "Reagendar y Notificar"}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ─── MODAL CREAR BLOQUEO ─── */}
+      {/* ─── MODAL CREAR BLOQUEO DE RANGO (DÍAS, HORAS, MINUTOS) ─── */}
       {blockTarget && (
         <div
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[2000]"
           onClick={() => setBlockTarget(null)}
         >
           <div
-            className="bg-white w-[90%] max-w-sm rounded-2xl p-6 shadow-2xl relative"
+            className="bg-white w-[90%] max-w-md rounded-2xl p-6 shadow-2xl relative"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="font-bold text-slate-800 mb-1">Bloquear Horario</h3>
+            <h3 className="font-bold text-slate-800 text-lg mb-1">Bloquear Rango de Horario</h3>
             <p className="text-xs text-slate-500 mb-4">
-              {formatVisualDate(blockTarget.start)} - {formatVisualDate(blockTarget.end)}
+              Bloquea tu disponibilidad por días, horas o minutos exactos en Google Calendar.
             </p>
 
-            <div className="mb-6">
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">Título del bloqueo</label>
+            <div className="mb-4">
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Motivo / Título del Bloqueo</label>
               <input
                 type="text"
                 value={blockTitle}
                 onChange={(e) => setBlockTitle(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-sm"
+                placeholder="Ej. Vacaciones, Junta de equipo, Capacitación..."
+                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs font-medium text-slate-800"
               />
+            </div>
+
+            <div className="space-y-3 mb-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  📅 Fecha y Hora de Inicio
+                </label>
+                <input
+                  type="datetime-local"
+                  value={blockStartStr}
+                  onChange={(e) => setBlockStartStr(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs text-slate-800 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  🏁 Fecha y Hora de Fin
+                </label>
+                <input
+                  type="datetime-local"
+                  value={blockEndStr}
+                  onChange={(e) => setBlockEndStr(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs text-slate-800 font-mono"
+                />
+              </div>
+            </div>
+
+            {/* PRESETS RÁPIDOS DE RANGO */}
+            <div className="mb-6">
+              <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Accesos Rápidos de Rango</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!blockStartStr) return;
+                    const st = new Date(blockStartStr);
+                    const end = new Date(st.getTime() + 60 * 60 * 1000);
+                    setBlockEndStr(format(end, "yyyy-MM-dd'T'HH:mm"));
+                  }}
+                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 rounded-lg text-xs font-bold transition-all border border-slate-200"
+                >
+                  ⏱️ +1 Hora
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!blockStartStr) return;
+                    const st = new Date(blockStartStr);
+                    const end = new Date(st.getTime() + 4 * 60 * 60 * 1000);
+                    setBlockEndStr(format(end, "yyyy-MM-dd'T'HH:mm"));
+                  }}
+                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 rounded-lg text-xs font-bold transition-all border border-slate-200"
+                >
+                  ⏳ +4 Horas (Media jornada)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!blockStartStr) return;
+                    const datePart = blockStartStr.split("T")[0];
+                    setBlockStartStr(`${datePart}T08:00`);
+                    setBlockEndStr(`${datePart}T18:00`);
+                  }}
+                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 rounded-lg text-xs font-bold transition-all border border-slate-200"
+                >
+                  ☀️ Todo el Día (8 AM - 6 PM)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!blockStartStr) return;
+                    const st = new Date(blockStartStr);
+                    const end = new Date(st.getTime() + 48 * 60 * 60 * 1000);
+                    setBlockEndStr(format(end, "yyyy-MM-dd'T'HH:mm"));
+                  }}
+                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 rounded-lg text-xs font-bold transition-all border border-slate-200"
+                >
+                  🏖️ +2 Días (48 Horas)
+                </button>
+              </div>
             </div>
 
             <div className="flex gap-3">
@@ -1021,9 +1196,9 @@ export default function CalendarioPage() {
               <button
                 onClick={confirmBlock}
                 disabled={blocking}
-                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-colors disabled:opacity-50"
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-colors disabled:opacity-50 shadow-sm"
               >
-                {blocking ? "Bloqueando..." : "Bloquear"}
+                {blocking ? "Bloqueando..." : "Confirmar Bloqueo"}
               </button>
             </div>
           </div>
@@ -1031,9 +1206,8 @@ export default function CalendarioPage() {
       )}
 
       {/* TOAST */}
-      <div className={`fixed bottom-6 right-6 px-5 py-3 rounded-xl font-bold text-white shadow-xl transition-all duration-300 z-[3000] ${
-        toast ? "translate-y-0 opacity-100" : "translate-y-16 opacity-0"
-      } ${toast?.isError ? "bg-red-500" : "bg-emerald-500"}`}>
+      <div className={`fixed bottom-6 right-6 px-5 py-3 rounded-xl font-bold text-white shadow-xl transition-all duration-300 z-[3000] ${toast ? "translate-y-0 opacity-100" : "translate-y-16 opacity-0"
+        } ${toast?.isError ? "bg-red-500" : "bg-emerald-500"}`}>
         {toast?.msg}
       </div>
     </div>

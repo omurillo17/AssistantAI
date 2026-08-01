@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { pool } from '@/lib/db';
 import { enviarMensajeCandidato } from '@/lib/waha';
+import { getSession } from '@/lib/auth';
 
 const bodySchema = z.object({
   telefono: z.string().min(1, 'Falta el campo telefono').max(20),
@@ -17,6 +18,9 @@ const MENSAJE_NO_VALIDAR = 'Hola, revisamos tus documentos y notamos que la INE 
 // Body: { telefono, decision: 'validar' | 'no_validar' }
 export async function POST(request: Request) {
   try {
+    if (!(await getSession(request))) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+    }
     const parsed = bodySchema.safeParse(await request.json());
     if (!parsed.success) {
       return NextResponse.json({ error: 'Datos inválidos', detail: parsed.error.flatten() }, { status: 400 });

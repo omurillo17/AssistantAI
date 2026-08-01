@@ -30,24 +30,11 @@ const nextConfig: NextConfig = {
         source: '/(.*)',
         headers: securityHeaders,
       },
-      {
-        source: '/api/:path*',
-        headers: [
-          { key: 'Access-Control-Allow-Credentials', value: 'true' },
-          { key: 'Access-Control-Allow-Origin', value: '*' }, // Consider changing '*' to your domain in production
-          { key: 'Access-Control-Allow-Methods', value: 'GET,DELETE,PATCH,POST,PUT' },
-          { key: 'Access-Control-Allow-Headers', value: 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version' },
-        ],
-      },
-    ];
-  },
-  async rewrites() {
-    return [
-      // Proxy WAHA API — permite al frontend enviar mensajes sin exponer credenciales
-      {
-        source: "/api/waha/:path*",
-        destination: "http://localhost:3000/:path*",
-      },
+      // NOTA: se eliminó el bloque CORS que enviaba
+      // Access-Control-Allow-Origin: * con Allow-Credentials: true.
+      // La app es same-origin (el CRM y la API viven en el mismo dominio) y
+      // n8n llama server-to-server (CORS no aplica), así que no hace falta
+      // abrir la API a cualquier origen.
     ];
   },
 };

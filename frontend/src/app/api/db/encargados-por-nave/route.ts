@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { getSession, verifyInternalApiKey } from "@/lib/auth";
 
 /**
  * GET /api/db/encargados-por-nave?empresa_id=xxx
@@ -11,6 +12,12 @@ import { pool } from "@/lib/db";
  * de un unico fallback global hardcodeado.
  */
 export async function GET(request: Request) {
+  // Acepta sesión de usuario (CRM) o x-api-key = N8N_API_KEY (n8n).
+  const session = await getSession(request);
+  if (!session && !verifyInternalApiKey(request)) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
   const empresa_id = searchParams.get("empresa_id");
 

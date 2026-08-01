@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { pool } from '@/lib/db';
 import { enviarMensajeCandidato } from '@/lib/waha';
+import { getSession } from '@/lib/auth';
 
 // ─── GET /api/db/mensajes/[telefono] ──────────────────────
 // Devuelve historial de conversation_history para ese candidato
@@ -12,6 +13,9 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ telefono: string }> }
 ) {
+  if (!(await getSession(_request))) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  }
   const { telefono } = await params;
 
   if (!telefono) {
@@ -77,6 +81,9 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ telefono: string }> }
 ) {
+  if (!(await getSession(request))) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  }
   const { telefono } = await params;
 
   try {

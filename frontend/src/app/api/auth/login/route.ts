@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { ENV } from "@/lib/env";
 import { z } from "zod";
 import { rateLimit } from "@/lib/rate-limit";
+import { normalizeUsername } from "@/lib/auth";
 
 import { pool } from '@/lib/db';
 
@@ -29,8 +30,7 @@ export async function POST(request: Request) {
 
     const { usuario, password } = parsed.data;
     
-    // Normalize username: lowercase and remove accents
-    const normalizedUser = usuario.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+    const normalizedUser = normalizeUsername(usuario);
 
     // Query using normalized username
     const res = await pool.query(
@@ -88,7 +88,7 @@ export async function POST(request: Request) {
     } else {
       return NextResponse.json({ success: false, error: "Credenciales incorrectas" }, { status: 401 });
     }
-  } catch (error) {
+  } catch {
     console.error("Login Error"); // Intentional generic log to avoid leaking sensitive data
     return NextResponse.json({ success: false, error: "Bad Request" }, { status: 400 });
   }

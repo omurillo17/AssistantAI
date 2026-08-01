@@ -1,27 +1,16 @@
 import { NextResponse } from 'next/server';
-import { pool } from '../../../../lib/db';
-import { cookies } from "next/headers";
-import { jwtVerify } from "jose";
-import { ENV } from "../../../../lib/env";
+import { pool } from '@/lib/db';
+import { getSession, requireRole } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
-async function verifyRoot() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("tci_session")?.value;
-  if (!token) return false;
-  try {
-    const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
-    const { payload } = await jwtVerify(token, secretKey);
-    return payload.rol === 'ROOT' || payload.rol === 'ADMIN';
-  } catch (err) {
-    return false;
-  }
+async function verifyRootOrAdmin(request: Request): Promise<boolean> {
+  return requireRole(await getSession(request), 'ROOT', 'ADMIN');
 }
 
 // GET: Obtener todas las relaciones de empresas ligadas
-export async function GET() {
-  if (!(await verifyRoot())) {
+export async function GET(request: Request) {
+  if (!(await verifyRootOrAdmin(request))) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
@@ -43,7 +32,7 @@ export async function GET() {
 
 // POST: Crear relación bidireccional entre empresas
 export async function POST(request: Request) {
-  if (!(await verifyRoot())) {
+  if (!(await verifyRootOrAdmin(request))) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
@@ -75,7 +64,7 @@ export async function POST(request: Request) {
 
 // DELETE: Eliminar relación bidireccional
 export async function DELETE(request: Request) {
-  if (!(await verifyRoot())) {
+  if (!(await verifyRootOrAdmin(request))) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 

@@ -1,27 +1,16 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
-import { jwtVerify } from "jose";
-import { cookies } from "next/headers";
-import { ENV } from "@/lib/env";
+import { getSession } from '@/lib/auth';
 
 export async function GET(request: Request) {
-  let userRole = "USER";
-  let userEmpresaId: string | null = null;
-  let userGrupoId: string | null = null;
-
-  try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get("tci_session")?.value;
-    if (token) {
-      const secret = new TextEncoder().encode(ENV.JWT_SECRET);
-      const { payload } = await jwtVerify(token, secret);
-      userRole = (payload.rol as string) || "USER";
-      userEmpresaId = (payload.empresa_id as string) || null;
-      userGrupoId = (payload.grupo_id as string) || null;
-    }
-  } catch (err) {
-    // JWT validation error fallback
+  // Fail-closed: sin sesión válida no se devuelve nada (antes continuaba como "USER").
+  const payload = await getSession(request);
+  if (!payload) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
+  const userRole = (payload.rol as string) || "USER";
+  const userEmpresaId = (payload.empresa_id as string | null) ?? null;
+  const userGrupoId = (payload.grupo_id as string | null) ?? null;
 
   const { searchParams } = new URL(request.url);
   const rawEmpresaId = searchParams.get("empresa_id");
@@ -52,7 +41,7 @@ export async function GET(request: Request) {
       WHERE u.rol IN ('RECLUTADOR', 'ENCARGADO')
     `;
 
-    const params: any[] = [];
+    const params: unknown[] = [];
     let paramIdx = 1;
 
     if (userRole === "RECLUTADOR") {
@@ -90,7 +79,7 @@ export async function GET(request: Request) {
     const result = await pool.query(query, params);
 
     if (isGrouped) {
-      const groupMap = new Map<string, any>();
+      const groupMap = new Map<string, { [k: string]: unknown; reclutadores: Record<string, unknown>[] }>();
 
       for (const row of result.rows) {
         const groupKey = row.grupo_id || "sin_grupo";
@@ -106,7 +95,7 @@ export async function GET(request: Request) {
           });
         }
 
-        groupMap.get(groupKey).reclutadores.push({
+        groupMap.get(groupKey)!.reclutadores.push({
           id: row.id,
           nombre: row.nombre_display,
           usuario: row.usuario,
@@ -120,7 +109,7 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json(result.rows.map(row => row.nombre_display));
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error fetching reclutadores:', error);
     return NextResponse.json({ error: 'Error al obtener los reclutadores' }, { status: 500 });
   }

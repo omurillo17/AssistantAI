@@ -1,36 +1,21 @@
 import { NextResponse } from 'next/server';
-import { jwtVerify } from "jose";
-import { ENV } from "@/lib/env";
-import { cookies } from "next/headers";
-import bcrypt from "bcryptjs";
+import { getSession } from '@/lib/auth';
 import { pool } from '@/lib/db';
 import { syncPromptContextDisk } from '@/lib/syncPromptContext';
 
 export async function GET(request: Request) {
-  let rol = "USER";
-  let reclutador_id: string | null = null;
-  let jwt_empresa_id: string | null = null;
-  let jwt_grupo_id: string | null = null;
-
-  try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get("tci_session")?.value;
-    if (!token) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
-    const secret = new TextEncoder().encode(ENV.JWT_SECRET);
-    const { payload } = await jwtVerify(token, secret);
-    rol = payload.rol as string;
-    reclutador_id = payload.reclutador_id as string;
-    jwt_empresa_id = payload.empresa_id as string;
-    jwt_grupo_id = payload.grupo_id as string | null;
-  } catch (err) {
-    return NextResponse.json({ error: "Token inválido o expirado" }, { status: 401 });
+  const session = await getSession(request);
+  if (!session) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
+  const rol = (session.rol as string) || "USER";
+  const reclutador_id = (session.reclutador_id as string | null) ?? null;
+  const jwt_empresa_id = (session.empresa_id as string | null) ?? null;
+  const jwt_grupo_id = (session.grupo_id as string | null) ?? null;
 
   const { searchParams } = new URL(request.url);
   let filter_empresa_id = searchParams.get("empresa_id");
-  let filter_nave_id = searchParams.get("nave_id");
+  const filter_nave_id = searchParams.get("nave_id");
 
   // Si no es ROOT, forzamos su propia empresa_id
   if (rol !== "ROOT") {
@@ -39,7 +24,7 @@ export async function GET(request: Request) {
 
   try {
     let whereClause = "";
-    const params: any[] = [];
+    const params: unknown[] = [];
     let paramIndex = 1;
 
     if (filter_empresa_id) {
@@ -92,7 +77,7 @@ export async function GET(request: Request) {
     `, params);
 
     // Agrupar por reclutador
-    const map = new Map<string, any>();
+    const map = new Map<string, { [k: string]: unknown; vacantes: Record<string, unknown>[] }>();
 
     for (const row of res.rows) {
       if (!map.has(row.reclutador_id)) {
@@ -109,7 +94,7 @@ export async function GET(request: Request) {
       }
 
       if (row.vacante_id) {
-        map.get(row.reclutador_id).vacantes.push({
+        map.get(row.reclutador_id)!.vacantes.push({
           id: row.vacante_id,
           nombre: row.vacante_nombre,
           naves: typeof row.naves === 'string' ? JSON.parse(row.naves) : row.naves,
@@ -129,26 +114,14 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  let rol = "USER";
-  let jwt_reclutador_id: string | null = null;
-  let jwt_empresa_id: string | null = null;
-  let jwt_grupo_id: string | null = null;
-
-  try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get("tci_session")?.value;
-    if (!token) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
-    const secret = new TextEncoder().encode(ENV.JWT_SECRET);
-    const { payload } = await jwtVerify(token, secret);
-    rol = payload.rol as string;
-    jwt_reclutador_id = payload.reclutador_id as string;
-    jwt_empresa_id = payload.empresa_id as string;
-    jwt_grupo_id = payload.grupo_id as string | null;
-  } catch (err) {
-    return NextResponse.json({ error: "Token inválido o expirado" }, { status: 401 });
+  const session = await getSession(request);
+  if (!session) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
+  const rol = (session.rol as string) || "USER";
+  const jwt_reclutador_id = (session.reclutador_id as string | null) ?? null;
+  const jwt_empresa_id = (session.empresa_id as string | null) ?? null;
+  const jwt_grupo_id = (session.grupo_id as string | null) ?? null;
 
   const { searchParams } = new URL(request.url);
   let target_empresa_id = searchParams.get("empresa_id");
@@ -159,7 +132,7 @@ export async function POST(request: Request) {
   }
   const client = await pool.connect();
   try {
-    let body = await request.json();
+    const body = await request.json();
     let data = [];
     let transfer_map: {from: string, to: string}[] = [];
 
@@ -178,7 +151,7 @@ export async function POST(request: Request) {
       if (!jwt_reclutador_id) {
          return NextResponse.json({ error: 'Acceso denegado' }, { status: 403 });
       }
-      data = data.filter((r: any) => r.reclutador_id === jwt_reclutador_id);
+      data = data.filter((r: { reclutador_id: string }) => r.reclutador_id === jwt_reclutador_id);
     }
 
     // Un ENCARGADO solo puede tocar reclutadores de su propio grupo
@@ -190,8 +163,8 @@ export async function POST(request: Request) {
          WHERE u.grupo_id = $1 AND r.empresa_id = $2`,
         [jwt_grupo_id, jwt_empresa_id]
       );
-      allowedReclutadorIds = allowedRes.rows.map((row: any) => row.id);
-      data = data.filter((r: any) => allowedReclutadorIds.includes(r.reclutador_id));
+      allowedReclutadorIds = allowedRes.rows.map((row: { id: string }) => row.id);
+      data = data.filter((r: { reclutador_id: string }) => allowedReclutadorIds.includes(r.reclutador_id));
     }
 
     await client.query('BEGIN');
@@ -206,8 +179,8 @@ export async function POST(request: Request) {
       }
     }
 
-    const incomingRecruiters = data.map((r: any) => r.reclutador_id);
-    const incomingVacancies = data.flatMap((r: any) => r.vacantes.map((v: any) => v.id));
+    const incomingRecruiters = data.map((r: { reclutador_id: string }) => r.reclutador_id);
+    const incomingVacancies = data.flatMap((r: { vacantes: { id: string }[] }) => r.vacantes.map((v) => v.id));
 
     if (rol === "ADMIN" || rol === "ROOT") {
       if (incomingRecruiters.length > 0) {

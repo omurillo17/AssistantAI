@@ -126,9 +126,9 @@ function BurbujaMensaje({ msg }: { msg: Mensaje }) {
             Multimedia recibida (Imagen/Archivo). Revisa la app de WhatsApp para ver el contenido.
           </div>
         ) : (
-          msg.content && !hasMedia && <div className="whitespace-pre-wrap break-words" dangerouslySetInnerHTML={{ __html: msg.content.replace(/\n/g, "<br>") }} />
+          msg.content && !hasMedia && <div className="whitespace-pre-wrap break-words">{msg.content}</div>
         )}
-        {msg.content && hasMedia && !detectMediaUrl(msg.content) && !isSinTexto && msg.content.trim() && <div className="whitespace-pre-wrap break-words mt-1.5" dangerouslySetInnerHTML={{ __html: msg.content.replace(/\n/g, "<br>") }} />}
+        {msg.content && hasMedia && !detectMediaUrl(msg.content) && !isSinTexto && msg.content.trim() && <div className="whitespace-pre-wrap break-words mt-1.5">{msg.content}</div>}
         <div className={`text-[10px] mt-1.5 text-right flex items-center justify-end gap-1 opacity-70 font-medium ${isUser ? 'text-slate-500' : 'text-[#4b5e48]'}`}>
           {formatTime(msg.timestamp)}
           {!isUser && <Check size={14} className="text-[#3b82f6]" />}

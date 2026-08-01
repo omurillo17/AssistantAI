@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { getSession, verifyInternalApiKey } from "@/lib/auth";
 
 /**
  * GET /api/db/reclutador_vacantes?empresa_id=xxx
@@ -8,8 +9,13 @@ import { pool } from "@/lib/db";
  * formato que el antiguo reclutador_vacantes.json, ahora desde PostgreSQL.
  * Usado por n8n para identificar a qué reclutador pertenece un teléfono
  * y para calcular turnos de asignación de candidatos.
+ * Acepta sesión de usuario (CRM) o x-api-key = N8N_API_KEY (n8n).
  */
 export async function GET(request: Request) {
+  const session = await getSession(request);
+  if (!session && !verifyInternalApiKey(request)) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
   const { searchParams } = new URL(request.url);
   const empresa_id = searchParams.get("empresa_id");
 
@@ -49,7 +55,7 @@ export async function GET(request: Request) {
       naveMap.set(r.id, r.nombre);
     }
 
-    const recMap = new Map<string, any>();
+    const recMap = new Map<string, { reclutador_id: string; nombre: string; activo: boolean; telefono: string; calendar_id: string; color: string; usuario: string; vacantes: Record<string, unknown>[] }>();
     for (const row of res.rows) {
       if (!recMap.has(row.reclutador_id)) {
         recMap.set(row.reclutador_id, {

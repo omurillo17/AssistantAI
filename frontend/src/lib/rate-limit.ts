@@ -9,9 +9,13 @@ const rateLimitOptions = {
 const tokenCache = new LRUCache<string, number>(rateLimitOptions);
 
 export function rateLimit(request: NextRequest | Request, limit: number = 100) {
-  // Try to get IP from headers
-  const ip = request.headers.get('x-forwarded-for') ?? 
-             request.headers.get('x-real-ip') ?? 
+  // x-forwarded-for puede traer una cadena "cliente, proxy1, proxy2":
+  // usamos solo la primera IP. Nota: estos headers los puede falsear un
+  // cliente que llegue directo al servidor; detrás de un reverse proxy
+  // confiable (nginx/traefik) sí reflejan la IP real.
+  const forwarded = request.headers.get('x-forwarded-for');
+  const ip = (forwarded ? forwarded.split(',')[0].trim() : null) ||
+             request.headers.get('x-real-ip') ||
              '127.0.0.1';
 
   const tokenCount = tokenCache.get(ip) || 0;

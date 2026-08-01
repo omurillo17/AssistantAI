@@ -1,26 +1,11 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
-import { cookies } from "next/headers";
-import { jwtVerify } from "jose";
-import { ENV } from "@/lib/env";
+import { getSession } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
-async function verifyAuthAndTenant() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("tci_session")?.value;
-  if (!token) return null;
-  try {
-    const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
-    const { payload } = await jwtVerify(token, secretKey);
-    return payload;
-  } catch (err) {
-    return null;
-  }
-}
-
 export async function GET(request: Request) {
-  const payload = await verifyAuthAndTenant();
+  const payload = await getSession(request);
   if (!payload || (payload.rol !== 'ADMIN' && payload.rol !== 'ENCARGADO' && payload.rol !== 'ROOT')) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
@@ -33,7 +18,7 @@ export async function GET(request: Request) {
       SELECT id, empresa_id, nombre, naves_asignadas, created_at 
       FROM grupos_reclutamiento 
     `;
-    let params: any[] = [];
+    let params: unknown[] = [];
 
     if (empresaId) {
       query += ` WHERE empresa_id = $1 ORDER BY created_at ASC`;
@@ -51,7 +36,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const payload = await verifyAuthAndTenant();
+  const payload = await getSession(request);
   if (!payload || (payload.rol !== 'ADMIN' && payload.rol !== 'ENCARGADO' && payload.rol !== 'ROOT')) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
@@ -79,7 +64,7 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const payload = await verifyAuthAndTenant();
+  const payload = await getSession(request);
   if (!payload || (payload.rol !== 'ADMIN' && payload.rol !== 'ENCARGADO' && payload.rol !== 'ROOT')) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
@@ -107,7 +92,7 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const payload = await verifyAuthAndTenant();
+  const payload = await getSession(request);
   if (!payload || (payload.rol !== 'ADMIN' && payload.rol !== 'ENCARGADO' && payload.rol !== 'ROOT')) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }

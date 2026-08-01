@@ -3,10 +3,10 @@ import { ENV } from "@/lib/env";
 import { pool } from "@/lib/db";
 
 const N8N_BASE_URL = "http://localhost:5678";
+// Solo webhooks: la API REST de administración de n8n (/api/v1/*) no debe ser
+// alcanzable desde el navegador aunque exista sesión.
 const ALLOWED_PATHS = [
   "/webhook",
-  "/api/v1/executions",
-  "/api/v1/workflows"
 ];
 
 export async function GET(request: Request, context: { params: Promise<{ path: string[] }> }) {
@@ -93,7 +93,7 @@ async function handleProxy(request: Request, pathArray: string[]) {
                 }
               }
             }
-          } catch (parseErr) {
+          } catch {
             // Ignorar errores de parseo si el body no es JSON válido
           }
         }
@@ -117,7 +117,7 @@ async function handleProxy(request: Request, pathArray: string[]) {
       },
     });
 
-  } catch (error: any) {
+  } catch (error) {
     console.error("Proxy n8n Error:", error);
     return NextResponse.json({ success: false, error: "Error en el proxy de n8n" }, { status: 500 });
   }

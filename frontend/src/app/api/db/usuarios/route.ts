@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { z } from "zod";
 
 import { pool } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, normalizeUsername } from '@/lib/auth';
 
 import crypto from 'crypto';
 
@@ -31,7 +31,7 @@ export async function GET(request: Request) {
       FROM usuarios u
       LEFT JOIN reclutadores r ON u.reclutador_id = r.id
     `;
-    const params: any[] = [];
+    const params: unknown[] = [];
     const conditions: string[] = [];
 
     if (userRole !== 'ROOT') {
@@ -85,8 +85,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "El correo es obligatorio para Reclutadores y Encargados" }, { status: 400 });
     }
 
-    // Normalize username: lowercase and remove accents
-    const normalizedUser = usuario.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+    const normalizedUser = normalizeUsername(usuario);
 
     // Verificar si el usuario ya existe
     const check = await pool.query(`SELECT id FROM usuarios WHERE usuario = $1`, [normalizedUser]);
@@ -157,6 +156,12 @@ export async function PATCH(request: Request) {
     const adminUsername = payload.usuario as string;
     const adminRole = payload.rol as string;
     const adminGrupoId = payload.grupo_id as string | null;
+
+    // Defensa en profundidad: aunque el middleware ya restringe /api/db/usuarios,
+    // verificamos el rol también aquí.
+    if (adminRole !== 'ADMIN' && adminRole !== 'ROOT' && adminRole !== 'ENCARGADO') {
+      return NextResponse.json({ error: "No autorizado para modificar usuarios" }, { status: 403 });
+    }
 
     // Verificar la contraseña del administrador
     const adminRes = await pool.query(`SELECT password_hash FROM usuarios WHERE usuario = $1`, [adminUsername]);

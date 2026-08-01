@@ -1,4 +1,5 @@
 import { jwtVerify, type JWTPayload } from "jose";
+import { timingSafeEqual } from "crypto";
 import { ENV } from "@/lib/env";
 
 export interface SessionPayload extends JWTPayload {
@@ -41,7 +42,33 @@ export async function getSession(source: Request | string | undefined | null): P
   }
 }
 
+/**
+ * Comprueba si la sesión tiene alguno de los roles indicados.
+ * Uso: requireRole(payload, "ADMIN", "ROOT")
+ */
+export function requireRole(payload: SessionPayload | null, ...roles: string[]): boolean {
+  if (!payload?.rol) return false;
+  return roles.includes(payload.rol);
+}
+
+/**
+ * Normaliza un nombre de usuario: minúsculas, sin acentos, sin espacios extremos.
+ * Debe usarse SIEMPRE que se cree o busque un usuario para que login y alta
+ * apliquen la misma regla.
+ */
+export function normalizeUsername(usuario: string): string {
+  return usuario.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+}
+
 const warned = new Set<string>();
+
+/** Comparación en tiempo constante para no filtrar la llave por timing. */
+function safeCompare(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
+}
 
 function checkApiKey(request: Request, envVar: string, endpoints: string): boolean {
   const expectedKey = process.env[envVar];
@@ -54,7 +81,8 @@ function checkApiKey(request: Request, envVar: string, endpoints: string): boole
     }
     return true;
   }
-  return request.headers.get("x-api-key") === expectedKey;
+  const provided = request.headers.get("x-api-key");
+  return provided !== null && safeCompare(provided, expectedKey);
 }
 
 /**

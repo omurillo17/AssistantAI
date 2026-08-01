@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
-import { ENV } from "@/lib/env";
 import { z } from "zod";
-import { jwtVerify } from "jose";
-import { cookies } from "next/headers";
+import { getSession } from '@/lib/auth';
 import { pool } from '@/lib/db';
 
 const querySchema = z.object({
@@ -15,29 +13,18 @@ const querySchema = z.object({
 // ─── GET /api/db/candidatos ────────────────────────────────
 // Parámetros opcionales: ?estado=NUEVO&vacante=...&q=nombre
 export async function GET(request: Request) {
-  let rol = "USER";
-  let reclutador_id: string | null = null;
-  let jwt_empresa_id: string | null = null;
-  
-  try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get("tci_session")?.value;
-    if (!token) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
-    const secret = new TextEncoder().encode(ENV.JWT_SECRET);
-    const { payload } = await jwtVerify(token, secret);
-    rol = payload.rol as string;
-    reclutador_id = payload.reclutador_id as string;
-    jwt_empresa_id = payload.empresa_id as string;
-  } catch (err) {
-    return NextResponse.json({ error: "Token inválido o expirado" }, { status: 401 });
+  const payload = await getSession(request);
+  if (!payload) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
+  const rol = (payload.rol as string) || "USER";
+  const reclutador_id = (payload.reclutador_id as string | null) ?? null;
+  const jwt_empresa_id = (payload.empresa_id as string | null) ?? null;
 
   const { searchParams } = new URL(request.url);
   
   let filter_empresa_id = searchParams.get("empresa_id");
-  let filter_nave_id = searchParams.get("nave_id");
+  const filter_nave_id = searchParams.get("nave_id");
   if (rol !== "ROOT") {
     filter_empresa_id = jwt_empresa_id;
   }

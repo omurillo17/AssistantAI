@@ -3,9 +3,7 @@ export const dynamic = 'force-dynamic';
 import { z } from "zod";
 
 import { pool } from '@/lib/db';
-import { jwtVerify } from "jose";
-import { ENV } from "@/lib/env";
-import { cookies } from "next/headers";
+import { getSession } from '@/lib/auth';
 
 const postSchema = z.object({
   candidato_id: z.string().uuid("ID de candidato inválido").optional(),
@@ -23,31 +21,16 @@ const postSchema = z.object({
 export async function GET(request: Request) {
 
   try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get("tci_session")?.value;
-    if (!token) {
+    const payload = await getSession(request);
+    if (!payload) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
-    
-    let rol = "USER";
-    let reclutador_id = null;
-    let usuario = null;
-    let jwt_empresa_id: string | null = null;
-
-    try {
-      const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
-      const { payload } = await jwtVerify(token, secretKey);
-      rol = payload.rol as string;
-      reclutador_id = payload.reclutador_id as string | null;
-      usuario = payload.usuario as string;
-      jwt_empresa_id = payload.empresa_id as string | null;
-    } catch (err) {
-      return NextResponse.json({ error: "Token inválido" }, { status: 401 });
-    }
+    const rol = (payload.rol as string) || "USER";
+    const jwt_empresa_id = (payload.empresa_id as string | null) ?? null;
 
     const { searchParams } = new URL(request.url);
     let filter_empresa_id = searchParams.get('empresa_id');
-    let filter_nave_id = searchParams.get('nave_id');
+    const filter_nave_id = searchParams.get('nave_id');
     
     // Si no es ROOT, forzamos su empresa_id del JWT
     if (rol !== "ROOT") {
@@ -62,7 +45,7 @@ export async function GET(request: Request) {
            AND COALESCE(mb.ultimo_mensaje_at, c.ultima_interaccion) > NOW() - INTERVAL '72 hours'
          ))
     `;
-    let queryParams: any[] = [];
+    const queryParams: unknown[] = [];
     let paramIndex = 1;
 
     if (filter_empresa_id) {
@@ -117,21 +100,11 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
 
   try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get("tci_session")?.value;
-    if (!token) {
+    const payload = await getSession(request);
+    if (!payload) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
-    let jwt_empresa_id: string | null = null;
-    let rol = "USER";
-    try {
-      const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
-      const { payload } = await jwtVerify(token, secretKey);
-      jwt_empresa_id = payload.empresa_id as string;
-      rol = payload.rol as string;
-    } catch (err) {
-      return NextResponse.json({ error: "Token inválido" }, { status: 401 });
-    }
+    const jwt_empresa_id = (payload.empresa_id as string | null) ?? null;
     const body = await request.json();
     const parsed = postSchema.safeParse(body);
 
@@ -155,7 +128,7 @@ export async function POST(request: Request) {
       // Fallback: If no candidato_id is provided, try to find one by phone
       // IMPORTANT: In SaaS mode, N8N MUST send empresa_id (via JWT or URL) so we find the RIGHT candidate!
       const { searchParams } = new URL(request.url);
-      let target_empresa = searchParams.get('empresa_id') || jwt_empresa_id;
+      const target_empresa = searchParams.get('empresa_id') || jwt_empresa_id;
       
       let candRes;
       if (target_empresa) {
@@ -173,7 +146,7 @@ export async function POST(request: Request) {
 
     // Upsert en mensajes_bandeja
     const setClauses: string[] = ['updated_at = NOW()'];
-    const values: any[] = [
+    const values: unknown[] = [
       targetCandidatoId,
       telefono,
       ultimo_mensaje ?? '',
@@ -226,16 +199,9 @@ export async function POST(request: Request) {
 // Body: { telefono, asignado_a }
 export async function PATCH(request: Request) {
   try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get("tci_session")?.value;
-    if (!token) {
+    const payload = await getSession(request);
+    if (!payload) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
-    try {
-      const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
-      await jwtVerify(token, secretKey);
-    } catch (err) {
-      return NextResponse.json({ error: "Token inválido" }, { status: 401 });
     }
     const body = await request.json();
     const { candidato_id, telefono, asignado_a } = body;
