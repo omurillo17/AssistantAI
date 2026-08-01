@@ -474,8 +474,10 @@ export default function VacanteFiltrosPage() {
             </h3>
             <div className="space-y-3">
               <div>
-                <label className="text-xs font-medium text-slate-500 block mb-1">Tipo de filtro</label>
+                <label htmlFor="filtro-tipo" className="text-xs font-medium text-slate-500 block mb-1">Tipo de filtro</label>
                 <select
+                  id="filtro-tipo"
+                  name="filtro_tipo"
                   value={newFiltro.tipo}
                   onChange={(e) => setNewFiltro({ ...newFiltro, tipo: e.target.value as TipoFiltro })}
                   className="w-full p-2 text-sm border border-slate-200 rounded-lg bg-slate-50 focus:border-indigo-400 outline-none"
@@ -487,8 +489,10 @@ export default function VacanteFiltrosPage() {
                 </select>
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-500 block mb-1">Nombre (etiqueta)</label>
+                <label htmlFor="filtro-etiqueta" className="text-xs font-medium text-slate-500 block mb-1">Nombre (etiqueta)</label>
                 <input
+                  id="filtro-etiqueta"
+                  name="filtro_etiqueta"
                   type="text"
                   placeholder="Ej: Manejo de montacargas"
                   value={newFiltro.etiqueta}
@@ -497,8 +501,10 @@ export default function VacanteFiltrosPage() {
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-500 block mb-1">Pregunta que hará la IA</label>
+                <label htmlFor="filtro-pregunta" className="text-xs font-medium text-slate-500 block mb-1">Pregunta que hará la IA</label>
                 <textarea
+                  id="filtro-pregunta"
+                  name="filtro_pregunta"
                   placeholder="Ej: ¿Tienes experiencia con montacargas?"
                   value={newFiltro.pregunta}
                   onChange={(e) => setNewFiltro({ ...newFiltro, pregunta: e.target.value })}
@@ -513,6 +519,7 @@ export default function VacanteFiltrosPage() {
                     {["Sí", "No"].map((opt) => (
                       <label key={opt} className="flex items-center gap-2 cursor-pointer text-sm">
                         <input
+                          id={`filtro-requiere-${opt.toLowerCase()}`}
                           type="radio"
                           name="requiere_si"
                           checked={opt === "Sí" ? newFiltro.requiere_si === true : newFiltro.requiere_si === false}
@@ -529,14 +536,14 @@ export default function VacanteFiltrosPage() {
               {newFiltro.tipo === "rango_edad" && (
                 <div className="flex gap-2">
                   <div className="flex-1">
-                    <label className="text-xs font-medium text-slate-500 block mb-1">Edad mín.</label>
-                    <input type="number" min={0} placeholder="18" value={newFiltro.edad_min ?? ""}
+                    <label htmlFor="filtro-edad-min" className="text-xs font-medium text-slate-500 block mb-1">Edad mín.</label>
+                    <input id="filtro-edad-min" name="edad_min" type="number" min={0} placeholder="18" value={newFiltro.edad_min ?? ""}
                       onChange={(e) => setNewFiltro({ ...newFiltro, edad_min: Number(e.target.value) })}
                       className="w-full p-2 text-sm border border-slate-200 rounded-lg bg-slate-50 focus:border-indigo-400 outline-none" />
                   </div>
                   <div className="flex-1">
-                    <label className="text-xs font-medium text-slate-500 block mb-1">Edad máx.</label>
-                    <input type="number" min={0} placeholder="45" value={newFiltro.edad_max ?? ""}
+                    <label htmlFor="filtro-edad-max" className="text-xs font-medium text-slate-500 block mb-1">Edad máx.</label>
+                    <input id="filtro-edad-max" name="edad_max" type="number" min={0} placeholder="45" value={newFiltro.edad_max ?? ""}
                       onChange={(e) => setNewFiltro({ ...newFiltro, edad_max: Number(e.target.value) })}
                       className="w-full p-2 text-sm border border-slate-200 rounded-lg bg-slate-50 focus:border-indigo-400 outline-none" />
                   </div>
@@ -545,16 +552,20 @@ export default function VacanteFiltrosPage() {
 
               {newFiltro.tipo === "opcion" && (
                 <div>
-                  <label className="text-xs font-medium text-slate-500 block mb-1">Opciones (separadas por coma)</label>
+                  <label htmlFor="filtro-opciones" className="text-xs font-medium text-slate-500 block mb-1">Opciones (separadas por coma)</label>
                   <input
+                    id="filtro-opciones"
+                    name="filtro_opciones"
                     type="text"
                     placeholder="MASCULINO, FEMENINO"
                     value={(newFiltro.opciones || []).join(", ")}
                     onChange={(e) => setNewFiltro({ ...newFiltro, opciones: e.target.value.split(",").map((s) => s.trim().toUpperCase()) })}
                     className="w-full p-2 text-sm border border-slate-200 rounded-lg bg-slate-50 focus:border-indigo-400 outline-none"
                   />
-                  <label className="text-xs font-medium text-slate-500 block mb-1 mt-2">Valor requerido</label>
+                  <label htmlFor="filtro-valor-requerido" className="text-xs font-medium text-slate-500 block mb-1 mt-2">Valor requerido</label>
                   <input
+                    id="filtro-valor-requerido"
+                    name="filtro_valor_requerido"
                     type="text"
                     placeholder="MASCULINO"
                     value={newFiltro.valor_requerido || ""}
@@ -637,6 +648,8 @@ export default function VacanteFiltrosPage() {
                     <label key={pb.clave} className={`flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-colors ${isSelected ? "bg-indigo-50/50" : "hover:bg-slate-50"}`}>
                       <div className="mt-0.5">
                         <input
+                          id={`pregunta-base-${pb.clave}`}
+                          name={`pregunta_base_${pb.clave}`}
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => togglePreguntaBase(pb)}

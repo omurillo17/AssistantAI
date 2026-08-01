@@ -89,9 +89,11 @@ export default function NaveModal({
         </div>
         <div className="p-6 space-y-4">
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">Nombre / Identificador de la Nave</label>
-            <input 
-              type="text" 
+            <label htmlFor="nave-nombre" className="block text-sm font-bold text-slate-700 mb-1.5">Nombre / Identificador de la Nave</label>
+            <input
+              id="nave-nombre"
+              name="nombre"
+              type="text"
               className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium uppercase"
               placeholder="EJ. NAVE 1, PLANTA NORTE, CEDIS SUR..."
               value={nombre}
@@ -99,9 +101,11 @@ export default function NaveModal({
             />
           </div>
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">RFC de la Nave</label>
-            <input 
-              type="text" 
+            <label htmlFor="nave-rfc" className="block text-sm font-bold text-slate-700 mb-1.5">RFC de la Nave</label>
+            <input
+              id="nave-rfc"
+              name="rfc"
+              type="text"
               className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium uppercase"
               placeholder="EJ. XAXX010101000"
               value={rfc}
@@ -109,9 +113,11 @@ export default function NaveModal({
             />
           </div>
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">Enlace de Google Maps (Ubicación)</label>
-            <input 
-              type="text" 
+            <label htmlFor="nave-ubicacion" className="block text-sm font-bold text-slate-700 mb-1.5">Enlace de Google Maps (Ubicación)</label>
+            <input
+              id="nave-ubicacion"
+              name="ubicacion_maps"
+              type="text"
               className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
               placeholder="https://maps.app.goo.gl/..."
               value={ubicacionMaps}

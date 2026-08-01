@@ -86,8 +86,10 @@ export default function EmpresaModal({
         </div>
         <div className="p-6 space-y-4">
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">Nombre de la Empresa</label>
+            <label htmlFor="empresa-nombre" className="block text-sm font-bold text-slate-700 mb-1.5">Nombre de la Empresa</label>
             <input
+              id="empresa-nombre"
+              name="nombre"
               type="text"
               className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium uppercase"
               placeholder="EJ. GRUPO INDUSTRIAL M"
@@ -96,8 +98,10 @@ export default function EmpresaModal({
             />
           </div>
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">WhatsApp Principal (Opcional)</label>
+            <label htmlFor="empresa-whatsapp" className="block text-sm font-bold text-slate-700 mb-1.5">WhatsApp Principal (Opcional)</label>
             <input
+              id="empresa-whatsapp"
+              name="telefono_whatsapp"
               type="text"
               className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium uppercase"
               placeholder="EJ. 5213322114455"
@@ -106,8 +110,10 @@ export default function EmpresaModal({
             />
           </div>
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">System Prompt de la Empresa (Opcional)</label>
+            <label htmlFor="empresa-prompt" className="block text-sm font-bold text-slate-700 mb-1.5">System Prompt de la Empresa (Opcional)</label>
             <textarea
+              id="empresa-prompt"
+              name="prompt_ia"
               className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-mono text-sm resize-none h-32"
               placeholder="Sobreescribe el prompt global de Virgo para esta empresa en específico..."
               value={promptIa}

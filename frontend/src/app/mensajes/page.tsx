@@ -192,14 +192,14 @@ function MensajesInner() {
           <div className="px-3 py-2 bg-[#f0f2f5] border-b border-slate-200 flex flex-col gap-2">
             <div className="relative">
               <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
-              <input type="text" placeholder="Buscar candidato..." className="w-full pl-8 pr-3 py-1.5 bg-white border-none rounded-lg text-sm focus:outline-none transition-colors" value={m.search} onChange={e => m.setSearch(e.target.value)} />
+              <input id="mensajes-search" name="search" type="text" placeholder="Buscar candidato..." className="w-full pl-8 pr-3 py-1.5 bg-white border-none rounded-lg text-sm focus:outline-none transition-colors" value={m.search} onChange={e => m.setSearch(e.target.value)} />
             </div>
             <div className="flex flex-col gap-2">
-              <select className="w-full bg-white border-none rounded-lg text-xs py-1.5 px-2 focus:outline-none text-slate-600" value={m.filterVacante} onChange={e => m.setFilterVacante(e.target.value)}>
+              <select id="mensajes-vacante-filter" name="vacante_filter" className="w-full bg-white border-none rounded-lg text-xs py-1.5 px-2 focus:outline-none text-slate-600" value={m.filterVacante} onChange={e => m.setFilterVacante(e.target.value)}>
                 <option value="">Todas las vacantes</option>
                 {m.uniqueVacantes.map(v => <option key={v} value={v}>{v}</option>)}
               </select>
-              <select className="w-full bg-white border-none rounded-lg text-xs py-1.5 px-2 focus:outline-none text-slate-600" value={m.filterNave} onChange={e => m.setFilterNave(e.target.value)}>
+              <select id="mensajes-nave-filter" name="nave_filter" className="w-full bg-white border-none rounded-lg text-xs py-1.5 px-2 focus:outline-none text-slate-600" value={m.filterNave} onChange={e => m.setFilterNave(e.target.value)}>
                 <option value="">Todas las naves</option>
                 {m.uniqueNaves.map(n => <option key={n} value={n}>{n}</option>)}
               </select>
@@ -326,7 +326,7 @@ function MensajesInner() {
                   </div>
                 )}
                 <div className="flex items-center gap-3">
-                  <textarea value={m.texto} onChange={e => m.setTexto(e.target.value)} onKeyDown={m.handleKeyDown} disabled={(!m.candidatoActivo?.escalado || m.estaAtendidoPorOtro) || m.sending} className="flex-1 p-2.5 bg-white border-none rounded-lg text-sm focus:outline-none transition-colors disabled:opacity-50 resize-none max-h-32" rows={1} placeholder={!m.candidatoActivo?.escalado ? "Toma el control para escribir" : m.estaAtendidoPorOtro ? `Atendido por ${m.convActiva?.asignado_a}` : "Escribe un mensaje"} />
+                  <textarea id="mensajes-chat-input" name="chat_message" value={m.texto} onChange={e => m.setTexto(e.target.value)} onKeyDown={m.handleKeyDown} disabled={(!m.candidatoActivo?.escalado || m.estaAtendidoPorOtro) || m.sending} className="flex-1 p-2.5 bg-white border-none rounded-lg text-sm focus:outline-none transition-colors disabled:opacity-50 resize-none max-h-32" rows={1} placeholder={!m.candidatoActivo?.escalado ? "Toma el control para escribir" : m.estaAtendidoPorOtro ? `Atendido por ${m.convActiva?.asignado_a}` : "Escribe un mensaje"} />
                   <button onClick={m.enviarMensaje} disabled={m.sending || !m.texto.trim() || (!m.candidatoActivo?.escalado || m.estaAtendidoPorOtro)} className="w-10 h-10 bg-transparent text-[#54656f] hover:text-[#00a884] disabled:opacity-50 rounded-full flex items-center justify-center transition-colors">
                     {m.sending ? <Loader2 size={24} className="animate-spin" /> : <Send size={24} />}
                   </button>
@@ -352,7 +352,7 @@ function MensajesInner() {
             </div>
             <div className="p-6">
               <p className="text-sm text-slate-600 mb-4">Selecciona al reclutador al que deseas transferir este candidato. Se le notificará automáticamente por WhatsApp.</p>
-              <select className="w-full border border-slate-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" value={m.selectedReclutador} onChange={e => m.setSelectedReclutador(e.target.value)}>
+              <select id="mensajes-transfer-target" name="transfer_target" className="w-full border border-slate-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" value={m.selectedReclutador} onChange={e => m.setSelectedReclutador(e.target.value)}>
                 {m.reclutadores.map((grupo, idx) => (
                   <optgroup key={idx} label={grupo.grupo_nombre ? `${grupo.grupo_nombre} (${grupo.empresa_nombre || 'Local'})` : 'Reclutadores'}>
                     {grupo.reclutadores?.map((rec: any) => (

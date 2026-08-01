@@ -643,6 +643,8 @@ export default function CalendarioPage() {
                 <Users size={14} className="text-indigo-600" /> Nave:
               </span>
               <select
+                id="calendario-nave-filter"
+                name="nave_filter"
                 value={selectedNave}
                 onChange={(e) => setSelectedNave(e.target.value)}
                 className="px-3.5 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 text-xs font-bold focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer shadow-xs"
@@ -847,6 +849,8 @@ export default function CalendarioPage() {
                   Motivo / Explicación para el candidato
                 </label>
                 <textarea
+                  id="cancel-reason"
+                  name="cancel_reason"
                   rows={2}
                   value={cancelReason}
                   onChange={(e) => setCancelReason(e.target.value)}
@@ -860,6 +864,8 @@ export default function CalendarioPage() {
                   Teléfono del Reclutador (para aclaraciones)
                 </label>
                 <input
+                  id="cancel-recruiter-phone"
+                  name="recruiter_phone"
                   type="text"
                   value={recruiterPhone}
                   onChange={(e) => setRecruiterPhone(e.target.value)}
@@ -869,10 +875,12 @@ export default function CalendarioPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                <label htmlFor="cancel-password" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                   Contraseña de confirmación
                 </label>
                 <input
+                  id="cancel-password"
+                  name="cancel_password"
                   type="password"
                   value={cancelPassword}
                   onChange={(e) => { setCancelPassword(e.target.value); setCancelError(""); }}
@@ -1009,8 +1017,10 @@ export default function CalendarioPage() {
 
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Nueva Fecha</label>
+                <label htmlFor="reschedule-date" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Nueva Fecha</label>
                 <input
+                  id="reschedule-date"
+                  name="reschedule_date"
                   type="date"
                   value={newDate}
                   onChange={(e) => setNewDate(e.target.value)}
@@ -1019,8 +1029,10 @@ export default function CalendarioPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Nueva Hora</label>
+                <label htmlFor="reschedule-time" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Nueva Hora</label>
                 <input
+                  id="reschedule-time"
+                  name="reschedule_time"
                   type="time"
                   value={newTime}
                   onChange={(e) => setNewTime(e.target.value)}
@@ -1035,6 +1047,8 @@ export default function CalendarioPage() {
                   Motivo / Explicación del cambio
                 </label>
                 <textarea
+                  id="reschedule-reason"
+                  name="reschedule_reason"
                   rows={2}
                   value={rescheduleReason}
                   onChange={(e) => setRescheduleReason(e.target.value)}
@@ -1048,6 +1062,8 @@ export default function CalendarioPage() {
                   Teléfono del Reclutador (para aclaraciones)
                 </label>
                 <input
+                  id="reschedule-recruiter-phone"
+                  name="recruiter_phone"
                   type="text"
                   value={recruiterPhone}
                   onChange={(e) => setRecruiterPhone(e.target.value)}
@@ -1092,8 +1108,10 @@ export default function CalendarioPage() {
             </p>
 
             <div className="mb-4">
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Motivo / Título del Bloqueo</label>
+              <label htmlFor="block-title" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Motivo / Título del Bloqueo</label>
               <input
+                id="block-title"
+                name="block_title"
                 type="text"
                 value={blockTitle}
                 onChange={(e) => setBlockTitle(e.target.value)}
@@ -1108,6 +1126,8 @@ export default function CalendarioPage() {
                   📅 Fecha y Hora de Inicio
                 </label>
                 <input
+                  id="block-start"
+                  name="block_start"
                   type="datetime-local"
                   value={blockStartStr}
                   onChange={(e) => setBlockStartStr(e.target.value)}
@@ -1120,6 +1140,8 @@ export default function CalendarioPage() {
                   🏁 Fecha y Hora de Fin
                 </label>
                 <input
+                  id="block-end"
+                  name="block_end"
                   type="datetime-local"
                   value={blockEndStr}
                   onChange={(e) => setBlockEndStr(e.target.value)}

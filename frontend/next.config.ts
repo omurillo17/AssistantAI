@@ -19,7 +19,7 @@ const securityHeaders = [
   },
   {
     key: 'Content-Security-Policy',
-    value: "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http://localhost:3000; media-src 'self' blob: http://localhost:3000; connect-src 'self' http://localhost:3000;",
+    value: "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http://localhost:3000 https://static.whatsapp.net; media-src 'self' blob: http://localhost:3000; connect-src 'self' http://localhost:3000;",
   },
 ];
 

@@ -98,22 +98,26 @@ export default function GroupsModal({
             <h3 className="font-bold text-slate-700 mb-4">Nuevo Grupo</h3>
             <form onSubmit={crearGrupo} className="space-y-4">
               <div>
-                <label className="block text-sm font-semibold mb-1">Nombre del Grupo</label>
-                <input 
-                  required 
-                  type="text" 
-                  className="w-full p-2 border rounded uppercase" 
-                  value={grupoNombreInput} 
-                  onChange={e => setGrupoNombreInput(e.target.value.toUpperCase())} 
+                <label htmlFor="groups-nombre" className="block text-sm font-semibold mb-1">Nombre del Grupo</label>
+                <input
+                  id="groups-nombre"
+                  name="grupo_nombre"
+                  required
+                  type="text"
+                  className="w-full p-2 border rounded uppercase"
+                  value={grupoNombreInput}
+                  onChange={e => setGrupoNombreInput(e.target.value.toUpperCase())}
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-semibold mb-1">Empresa</label>
-                <select 
-                  required 
-                  className="w-full p-2 border rounded" 
-                  value={grupoEmpresaInput} 
+                <label htmlFor="groups-empresa" className="block text-sm font-semibold mb-1">Empresa</label>
+                <select
+                  id="groups-empresa"
+                  name="empresa"
+                  required
+                  className="w-full p-2 border rounded"
+                  value={grupoEmpresaInput}
                   onChange={e => {
                     setGrupoEmpresaInput(e.target.value);
                     setGrupoNavesInput([]);
@@ -130,13 +134,15 @@ export default function GroupsModal({
                   {grupoEmpresaInput ? (
                     naves.filter(n => String(n.empresa_id) === String(grupoEmpresaInput)).map(n => (
                       <label key={n.id} className="flex items-center gap-2 text-sm cursor-pointer mb-1">
-                        <input 
-                          type="checkbox" 
-                          checked={grupoNavesInput.includes(n.id)} 
+                        <input
+                          id={`groups-nave-${n.id}`}
+                          name="grupo_naves"
+                          type="checkbox"
+                          checked={grupoNavesInput.includes(n.id)}
                           onChange={e => {
                             if(e.target.checked) setGrupoNavesInput([...grupoNavesInput, n.id]);
                             else setGrupoNavesInput(grupoNavesInput.filter(id => id !== n.id));
-                          }} 
+                          }}
                         />
                         {n.nombre}
                       </label>

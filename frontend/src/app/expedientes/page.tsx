@@ -73,6 +73,8 @@ function KanbanCard({ cand, onClick, onStatusChange }: { cand: Candidato, onClic
       )}
       <div className="mt-2 pt-2 border-t border-slate-50 flex gap-1" onClick={e => e.stopPropagation()}>
         <select
+          id={`kanban-status-${cand.telefono}`}
+          name="kanban_status"
           className="text-[9px] font-bold px-1.5 py-0.5 rounded-full cursor-pointer appearance-none bg-slate-50 text-slate-600 border border-slate-200 hover:border-slate-300 transition-colors flex-1"
           value={cand.estado}
           onChange={(e) => onStatusChange(cand.telefono, e.target.value)}
@@ -410,17 +412,17 @@ function ExpedientesPageInner() {
               <div className="flex gap-2 w-full xl:w-auto flex-wrap">
                 <div className="relative flex-1 min-w-[200px]">
                   <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
-                  <input type="text" placeholder="Buscar por nombre o teléfono..." className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+                  <input id="expedientes-search" name="search" type="text" placeholder="Buscar por nombre o teléfono..." className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                 </div>
-                <select className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer min-w-[140px]" value={naveFilter} onChange={e => setNaveFilter(e.target.value)}>
+                <select id="expedientes-nave-filter" name="nave_filter" className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer min-w-[140px]" value={naveFilter} onChange={e => setNaveFilter(e.target.value)}>
                   <option value="TODAS">Todas las Naves</option>
                   {uniqueNaves.map(n => <option key={String(n)} value={String(n)}>{n}</option>)}
                 </select>
-                <select className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer min-w-[140px]" value={vacanteFilter} onChange={e => setVacanteFilter(e.target.value)}>
+                <select id="expedientes-vacante-filter" name="vacante_filter" className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer min-w-[140px]" value={vacanteFilter} onChange={e => setVacanteFilter(e.target.value)}>
                   <option value="TODAS">Todas las Vacantes</option>
                   {uniqueVacantes.map(v => <option key={String(v)} value={String(v)}>{v}</option>)}
                 </select>
-                <select className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer min-w-[140px]" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+                <select id="expedientes-status-filter" name="status_filter" className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer min-w-[140px]" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                   <option value="TODOS">Todos los estados</option>
                   <optgroup label="── En Proceso ──">
                     {GRUPOS.pipeline.estados.map((k: EstadoKey) => <option key={k} value={k}>{ESTADOS[k].emoji} {ESTADOS[k].label}</option>)}

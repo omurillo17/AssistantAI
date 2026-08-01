@@ -51,10 +51,12 @@ export default function VacancyModal({
               Nombre de la Vacante
             </label>
             <input
+              id="vacancy-nombre"
+              name="nombre"
               type="text"
               className={`w-full p-3 rounded-lg border border-black/10 outline-none uppercase transition-all shadow-sm ${
-                isEditing 
-                  ? "bg-slate-100 text-slate-500 cursor-not-allowed" 
+                isEditing
+                  ? "bg-slate-100 text-slate-500 cursor-not-allowed"
                   : "bg-slate-50 focus:bg-white focus:border-indigo-500"
               }`}
               placeholder="EJ: OPERADOR GENERAL"
@@ -81,6 +83,8 @@ export default function VacancyModal({
                     className="flex items-center gap-2 cursor-pointer text-sm font-medium text-slate-700"
                   >
                     <input
+                      id={`vacancy-nave-${n.id}`}
+                      name="vacancy_naves"
                       type="checkbox"
                       className="w-4 h-4 accent-indigo-500"
                       checked={vNaves.includes(n.id)}
@@ -100,6 +104,8 @@ export default function VacancyModal({
               Palabras Clave (Separadas por comas)
             </label>
             <input
+              id="vacancy-palabras-clave"
+              name="palabras_clave"
               type="text"
               className="w-full p-3 rounded-lg border border-black/10 bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none transition-all shadow-sm"
               placeholder="Ej: Chofer, Repartidor, Moto"
@@ -117,6 +123,8 @@ export default function VacancyModal({
               Detalles (Sueldo, Horario, Requisitos)
             </label>
             <textarea
+              id="vacancy-detalles"
+              name="detalles"
               className="w-full p-3 rounded-lg border border-black/10 bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none font-mono text-sm h-32 resize-y transition-all shadow-sm"
               placeholder={`-[REQUISITO EXCLUSIVO]\n-*Prestaciones de ley*\n-*$2,500 Semanales*...`}
               value={vDetalles}

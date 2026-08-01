@@ -63,8 +63,10 @@ export default function LigarModal({
         </div>
         <div className="p-6 space-y-4">
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">Empresa A</label>
-            <select 
+            <label htmlFor="ligar-empresa-a" className="block text-sm font-bold text-slate-700 mb-1.5">Empresa A</label>
+            <select
+              id="ligar-empresa-a"
+              name="empresa_a"
               className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 transition-all font-medium text-slate-800"
               value={empresaA}
               onChange={(e) => {
@@ -78,8 +80,10 @@ export default function LigarModal({
           </div>
           <div className="flex justify-center text-slate-400 my-2">↔</div>
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">Empresa B</label>
-            <select 
+            <label htmlFor="ligar-empresa-b" className="block text-sm font-bold text-slate-700 mb-1.5">Empresa B</label>
+            <select
+              id="ligar-empresa-b"
+              name="empresa_b"
               className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 transition-all font-medium text-slate-800"
               value={empresaB}
               onChange={(e) => setEmpresaB(e.target.value)}

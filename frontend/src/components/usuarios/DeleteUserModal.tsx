@@ -64,8 +64,10 @@ export default function DeleteUserModal({
         </p>
 
         <div className="mb-6">
-          <label className="block text-sm font-semibold mb-2 text-slate-700">Transferir chats activos a:</label>
-          <select 
+          <label htmlFor="delete-user-transfer" className="block text-sm font-semibold mb-2 text-slate-700">Transferir chats activos a:</label>
+          <select
+            id="delete-user-transfer"
+            name="transfer_to"
             className="w-full p-2 border rounded-lg focus:outline-none focus:border-red-500 bg-slate-50 transition-colors"
             value={deleteTransferTo}
             onChange={e => setDeleteTransferTo(e.target.value)}

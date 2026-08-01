@@ -136,6 +136,8 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
             <div>
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Estado del Proceso</label>
               <select
+                id="candidate-estado"
+                name="estado"
                 className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer shadow-sm transition-colors"
                 value={cand.estado}
                 onChange={(e) => {

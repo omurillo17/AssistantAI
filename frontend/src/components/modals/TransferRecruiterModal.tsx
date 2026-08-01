@@ -70,6 +70,8 @@ export default function TransferRecruiterModal({
                 Transferir a:
               </label>
               <select
+                id="transfer-recruiter-target"
+                name="target_recruiter"
                 value={targetRecruiterId}
                 onChange={(e) => setTargetRecruiterId(e.target.value)}
                 className="w-full p-2 text-sm border border-slate-200 rounded-lg bg-slate-50 focus:border-indigo-400 outline-none"
