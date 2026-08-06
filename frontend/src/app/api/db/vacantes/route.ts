@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { pool } from '@/lib/db';
 import { syncPromptContextDisk } from '@/lib/syncPromptContext';
+import { resolveGrupoNaveIds } from '@/lib/grupos';
 
 export async function GET(request: Request) {
   const session = await getSession(request);
@@ -16,10 +17,21 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   let filter_empresa_id = searchParams.get("empresa_id");
   const filter_nave_id = searchParams.get("nave_id");
+  // Filtro por grupo de reclutamiento (naves_asignadas), usado por el selector
+  // Nave/Grupo del TopNavbar (rol ADMIN) y, automáticamente, por el propio
+  // grupo del usuario (ENCARGADO/RECLUTADOR vía usuarios.grupo_id) en Calendario.
+  let filter_grupo_id = searchParams.get("grupo_id");
 
   // Si no es ROOT, forzamos su propia empresa_id
   if (rol !== "ROOT") {
     filter_empresa_id = jwt_empresa_id;
+  }
+  // Solo ADMIN/ROOT pueden pedir el grupo de otra persona por query param.
+  // Ojo: esto NO debe inyectar un grupo_id cuando el cliente no mandó uno
+  // (p.ej. Vacantes, que filtra solo por nave y nunca envía grupo_id) — solo
+  // corrige el caso en que alguien mande un grupo_id ajeno al suyo.
+  if (filter_grupo_id && rol !== "ROOT" && rol !== "ADMIN" && filter_grupo_id !== jwt_grupo_id) {
+    filter_grupo_id = jwt_grupo_id;
   }
 
   try {
@@ -33,7 +45,9 @@ export async function GET(request: Request) {
       paramIndex++;
     }
 
-    if (rol === "RECLUTADOR" && reclutador_id) {
+    // Si el reclutador pertenece a un grupo (filter_grupo_id), debe ver a todo
+    // su equipo (p.ej. en Calendario), no solo a sí mismo.
+    if (rol === "RECLUTADOR" && reclutador_id && !filter_grupo_id) {
       whereClause += whereClause ? ` AND r.id = $${paramIndex}` : `WHERE r.id = $${paramIndex}`;
       params.push(reclutador_id);
       paramIndex++;
@@ -47,16 +61,33 @@ export async function GET(request: Request) {
       paramIndex++;
     }
 
-    if (filter_nave_id) {
-      whereClause += whereClause ? ` AND (v.nave_id = $${paramIndex} OR v.naves::jsonb @> '["' || (SELECT nombre FROM naves WHERE id = $${paramIndex}) || '"]'::jsonb)` : `WHERE (v.nave_id = $${paramIndex} OR v.naves::jsonb @> '["' || (SELECT nombre FROM naves WHERE id = $${paramIndex}) || '"]'::jsonb)`;
+    // El filtro de nave/grupo se aplica en el ON del JOIN a vacantes_def, no en
+    // el WHERE de reclutadores: así un reclutador sin vacantes en esa nave/grupo
+    // sigue apareciendo en la respuesta (con vacantes: []), en vez de desaparecer
+    // por completo de la lista — permite mostrar su tarjeta vacía para agregar una.
+    let vacancyJoinCondition = "r.id = v.reclutador_id";
+
+    if (filter_grupo_id) {
+      const grupoNaveIds = await resolveGrupoNaveIds(filter_grupo_id);
+      if (grupoNaveIds && grupoNaveIds.length > 0) {
+        vacancyJoinCondition += ` AND (v.nave_id = ANY($${paramIndex}::uuid[]) OR v.naves::jsonb ?| $${paramIndex}::text[])`;
+        params.push(grupoNaveIds);
+        paramIndex++;
+      } else {
+        vacancyJoinCondition += ` AND FALSE`;
+      }
+    } else if (filter_nave_id) {
+      // vacantes_def.naves guarda IDs de nave (ver VacancyModal.tsx), no nombres:
+      // hay que comparar contra el id directamente, no contra naves.nombre.
+      vacancyJoinCondition += ` AND (v.nave_id = $${paramIndex} OR v.naves::jsonb @> jsonb_build_array($${paramIndex}::text))`;
       params.push(filter_nave_id);
       paramIndex++;
     }
 
     const res = await pool.query(`
-      SELECT 
-        r.id AS reclutador_id, 
-        r.nombre AS reclutador_nombre, 
+      SELECT
+        r.id AS reclutador_id,
+        r.nombre AS reclutador_nombre,
         r.activo AS reclutador_activo,
         r.telefono AS reclutador_telefono,
         r.calendar_id AS reclutador_calendar,
@@ -71,7 +102,7 @@ export async function GET(request: Request) {
         v.activa AS vacante_activa
       FROM reclutadores r
       LEFT JOIN usuarios u ON r.id = u.reclutador_id
-      LEFT JOIN vacantes_def v ON r.id = v.reclutador_id
+      LEFT JOIN vacantes_def v ON ${vacancyJoinCondition}
       ${whereClause}
       ORDER BY r.created_at ASC, v.orden ASC, v.created_at ASC
     `, params);
@@ -173,8 +204,8 @@ export async function POST(request: Request) {
     if ((rol === "ADMIN" || rol === "ENCARGADO") && transfer_map.length > 0) {
       for (const t of transfer_map) {
         if (t.from && t.to) {
-          await client.query(`UPDATE mensajes_bandeja SET asignado_a = $1 WHERE asignado_a = $2`, [t.to, t.from]);
-          await client.query(`UPDATE candidatos SET asignado_a = $1 WHERE asignado_a = $2`, [t.to, t.from]);
+          await client.query(`UPDATE mensajes_bandeja SET asignado_a_id = $1 WHERE asignado_a_id = $2`, [t.to, t.from]);
+          await client.query(`UPDATE candidatos SET asignado_a_id = $1 WHERE asignado_a_id = $2`, [t.to, t.from]);
         }
       }
     }

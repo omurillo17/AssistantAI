@@ -17,19 +17,19 @@ export default function EmpresaModal({
   showToast,
 }: EmpresaModalProps) {
   const [nombre, setNombre] = useState("");
-  const [telefonoWhatsapp, setTelefonoWhatsapp] = useState("");
   const [promptIa, setPromptIa] = useState("");
+  const [retencionDias, setRetencionDias] = useState("30");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (empresa && isOpen) {
       setNombre(empresa.nombre || "");
-      setTelefonoWhatsapp(empresa.telefono_whatsapp || "");
       setPromptIa(empresa.prompt_ia || "");
+      setRetencionDias(String(empresa.retencion_archivos_dias ?? 30));
     } else if (!isOpen) {
       setNombre("");
-      setTelefonoWhatsapp("");
       setPromptIa("");
+      setRetencionDias("30");
     }
   }, [empresa, isOpen]);
 
@@ -44,11 +44,12 @@ export default function EmpresaModal({
       const url = "/api/db/empresas";
       const method = isEditing ? "PATCH" : "POST";
 
+      const parsedRetencion = parseInt(retencionDias, 10);
       const payload = {
         id: empresa?.id,
         nombre: nombre.toUpperCase(),
-        telefono_whatsapp: telefonoWhatsapp.toUpperCase(),
         prompt_ia: promptIa,
+        retencion_archivos_dias: Number.isFinite(parsedRetencion) && parsedRetencion > 0 ? parsedRetencion : 30,
       };
 
       const res = await fetch(url, {
@@ -98,18 +99,6 @@ export default function EmpresaModal({
             />
           </div>
           <div>
-            <label htmlFor="empresa-whatsapp" className="block text-sm font-bold text-slate-700 mb-1.5">WhatsApp Principal (Opcional)</label>
-            <input
-              id="empresa-whatsapp"
-              name="telefono_whatsapp"
-              type="text"
-              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium uppercase"
-              placeholder="EJ. 5213322114455"
-              value={telefonoWhatsapp}
-              onChange={(e) => setTelefonoWhatsapp(e.target.value.toUpperCase())}
-            />
-          </div>
-          <div>
             <label htmlFor="empresa-prompt" className="block text-sm font-bold text-slate-700 mb-1.5">System Prompt de la Empresa (Opcional)</label>
             <textarea
               id="empresa-prompt"
@@ -119,6 +108,21 @@ export default function EmpresaModal({
               value={promptIa}
               onChange={(e) => setPromptIa(e.target.value)}
             />
+          </div>
+          <div>
+            <label htmlFor="empresa-retencion" className="block text-sm font-bold text-slate-700 mb-1.5">Retención de archivos de candidatos (días)</label>
+            <input
+              id="empresa-retencion"
+              name="retencion_archivos_dias"
+              type="number"
+              min={1}
+              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
+              value={retencionDias}
+              onChange={(e) => setRetencionDias(e.target.value)}
+            />
+            <p className="text-xs text-slate-400 mt-1">
+              CV/INE/RFC se borran automáticamente cuando un candidato lleva este tiempo en estado Rechazado, Contratado o Inactivo. El candidato y su historial se conservan.
+            </p>
           </div>
         </div>
         <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">

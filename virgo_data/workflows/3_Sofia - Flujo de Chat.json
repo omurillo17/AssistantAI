@@ -630,7 +630,7 @@
         "operation": "getAll",
         "calendar": {
           "__rl": true,
-          "value": "={{ $('ResolverReclutador').first().json.calendar_id }}",
+          "value": "={{ $('ResolverReclutador').first().json?.calendar_id || 'talreclutamiento01@gmail.com' }}",
           "mode": "list"
         },
         "limit": 10,
@@ -641,7 +641,7 @@
       "type": "n8n-nodes-base.googleCalendarTool",
       "typeVersion": 1.3,
       "position": [
-        -944,
+        -928,
         416
       ],
       "id": "8cec9aa8-0ed1-4333-951c-ca4a7cfd86b3",
@@ -672,12 +672,12 @@
             "calendar_id": "={{ $('ResolverReclutador').first().json?.calendar_id || '' }}",
             "telefono": "={{ $('Recibido desde Analizador').first().json._candidato?.telefono || '' }}",
             "resumen_ia": "={{ $fromAI('resumen_corto', 'Resumen corto de la cita', 'string') }}",
-            "notas_ia": "={{ $('Recibido desde Analizador').first().json._candidato?.resumen_ia || '' }}",
             "nombre": "={{ $('Recibido desde Analizador').first().json._candidato?.nombre || '' }}",
             "nave_interes": "={{ $('Recibido desde Analizador').first().json._candidato?.nave_interes || '' }}",
             "vacante_interes": "={{ $('Recibido desde Analizador').first().json._candidato?.vacante_interes || '' }}",
             "ine_nombre": "={{ $('Recibido desde Analizador').first().json._candidato?.datos_ine?.nombre_completo || '' }}",
-            "ine_curp": "={{ $('Recibido desde Analizador').first().json._candidato?.datos_ine?.curp || '' }}"
+            "ine_curp": "={{ $('Recibido desde Analizador').first().json._candidato?.datos_ine?.curp || '' }}",
+            "empresa_id": "={{ $('Recibido desde Analizador').first().json._candidato?.empresa_id || '' }}"
           },
           "matchingColumns": [],
           "schema": [
@@ -702,16 +702,6 @@
             {
               "id": "resumen_ia",
               "displayName": "resumen_ia",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "canBeUsedToMatch": true,
-              "type": "string",
-              "removed": false
-            },
-            {
-              "id": "notas_ia",
-              "displayName": "notas_ia",
               "required": false,
               "defaultMatch": false,
               "display": true,
@@ -786,6 +776,15 @@
               "canBeUsedToMatch": true,
               "type": "string",
               "removed": false
+            },
+            {
+              "id": "empresa_id",
+              "displayName": "empresa_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
             }
           ],
           "attemptToConvertTypes": false,
@@ -1277,7 +1276,7 @@
     "binaryMode": "separate",
     "availableInMCP": false
   },
-  "versionId": "6f784e41-f7b2-46be-a6cc-b6370940a6e5",
+  "versionId": "9c588068-631e-4673-bd36-c388e7f2adc5",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "dee31bcf1d2327582c0e4156e13b587f5779996960582a36461518ee5fc3826e"

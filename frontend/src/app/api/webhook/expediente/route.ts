@@ -4,6 +4,8 @@ import { candidatoMachine } from '@/lib/stateMachine';
 import { createActor } from 'xstate';
 import { verifyWebhookApiKey } from '@/lib/auth';
 import { WAHA_BASE, WAHA_API_KEY, WAHA_SESSION } from '@/lib/waha';
+import { resolveEmpresaYGrupo } from '@/lib/empresaResolution';
+import { asignarReclutadorPorVacante } from '@/lib/asignacionReclutador';
 
 export async function POST(request: Request) {
   if (!verifyWebhookApiKey(request)) {
@@ -32,8 +34,24 @@ export async function POST(request: Request) {
       curp_ine,
       curp_rfc,
       nombre_reclutador,
-      telefono_reclutador
+      telefono_reclutador,
+      telefono_destino
     } = data;
+
+    // Se guarda la CURP tal cual la leyó la IA (recortada a 50 chars como tope de
+    // seguridad) aunque no tenga el formato de 18 caracteres esperado, para que la
+    // reclutadora la valide visualmente desde el modal de alerta de identidad en vez
+    // de perder el dato. curp_ine/curp_rfc son VARCHAR(50) para dar margen.
+    const normalizeCurp = (value: unknown): string | null => {
+      if (typeof value !== 'string') return null;
+      const clean = value.trim().toUpperCase().slice(0, 50);
+      return clean || null;
+    };
+    const CURP_REGEX = /^[A-Z0-9]{18}$/;
+    const safe_curp_ine = normalizeCurp(curp_ine);
+    const safe_curp_rfc = normalizeCurp(curp_rfc);
+    const curpIneFormatoInvalido = !!safe_curp_ine && !CURP_REGEX.test(safe_curp_ine);
+    const curpRfcFormatoInvalido = !!safe_curp_rfc && !CURP_REGEX.test(safe_curp_rfc);
 
     let safe_nombre_chat = (nombre_chat || '').replace(/[\uFE0F\u200B-\u200D\u200E\u200F\uFEFF]/g, '').trim();
     if (!safe_nombre_chat || safe_nombre_chat === telefono || safe_nombre_chat === 'Candidato' || /^\+?\d+$/.test(safe_nombre_chat)) {
@@ -45,7 +63,7 @@ export async function POST(request: Request) {
     }
 
     // 1. Obtener estado actual
-    const res = await pool.query('SELECT estado, tiene_cv, cv_manual as db_cv_manual, fecha_entrevista as db_fecha, privacidad_aceptada, escalado, datos_ine, datos_rfc, nombre_constancia, curp_ine, curp_rfc, alerta_identidad_estado, alerta_identidad_motivo, asignado_a FROM candidatos WHERE telefono = $1', [telefono]);
+    const res = await pool.query('SELECT estado, tiene_cv, cv_manual as db_cv_manual, fecha_entrevista as db_fecha, privacidad_aceptada, escalado, datos_ine, datos_rfc, nombre_constancia, curp_ine, curp_rfc, alerta_identidad_estado, alerta_identidad_motivo, asignado_a_id FROM candidatos WHERE telefono = $1', [telefono]);
     let currentState = 'NUEVO';
     let dbCandidato: any = {};
 
@@ -108,16 +126,31 @@ export async function POST(request: Request) {
       estado_final = 'CV_RECIBIDO';
       resumen_ia_final = 'CV Recibido y Analizado por Gemini';
     } else if (esINE || esConstancia) {
-      // La CURP recién comparada ya no muestra discrepancia (o no había una previa): se limpia la alerta.
-      alertaIdentidadEstadoFinal = null;
-      alertaIdentidadMotivoFinal = null;
-      const tieneIne = esINE || !!dbCandidato.datos_ine || !!dbCandidato.curp_ine || !!dbCandidato.nombre_ine;
-      const tieneRfc = esConstancia || !!dbCandidato.datos_rfc || !!dbCandidato.curp_rfc || !!dbCandidato.nombre_constancia;
-      if (tieneIne && tieneRfc) {
-        estado_final = 'INE_VALIDADA';
-        resumen_ia_final = 'El candidato completó su INE y RFC. El siguiente paso es agendar la cita.';
+      const curpMalFormada = (esINE && curpIneFormatoInvalido) || (esConstancia && curpRfcFormatoInvalido);
+
+      if (curpMalFormada) {
+        // La CURP extraída no mide 18 caracteres: no se descarta, se guarda igual
+        // (abajo, en el upsert) y se manda a revisión manual por el mismo camino
+        // que la discrepancia INE/RFC (modal urgente + campana de notificaciones).
+        estado_final = 'DOCUMENTOS_NO_COINCIDEN';
+        resumen_ia_final = `La CURP extraída del documento ${tipo_origen} no tiene el formato esperado (18 caracteres). Requiere revisión manual del reclutador.`;
+        alertaIdentidadMotivoFinal = `CURP con formato inválido en documento ${tipo_origen}: "${esINE ? safe_curp_ine : safe_curp_rfc}". Verifica el documento manualmente.`;
+        if (dbCandidato.alerta_identidad_estado !== 'PENDIENTE') {
+          debeNotificarReclutador = true;
+        }
+        alertaIdentidadEstadoFinal = 'PENDIENTE';
       } else {
-        resumen_ia_final = `Candidato entregó documento parcial (${tipo_origen}). Esperando el faltante.`;
+        // La CURP recién comparada ya no muestra discrepancia (o no había una previa): se limpia la alerta.
+        alertaIdentidadEstadoFinal = null;
+        alertaIdentidadMotivoFinal = null;
+        const tieneIne = esINE || !!dbCandidato.datos_ine || !!dbCandidato.curp_ine || !!dbCandidato.nombre_ine;
+        const tieneRfc = esConstancia || !!dbCandidato.datos_rfc || !!dbCandidato.curp_rfc || !!dbCandidato.nombre_constancia;
+        if (tieneIne && tieneRfc) {
+          estado_final = 'INE_VALIDADA';
+          resumen_ia_final = 'El candidato completó su INE y RFC. El siguiente paso es agendar la cita.';
+        } else {
+          resumen_ia_final = `Candidato entregó documento parcial (${tipo_origen}). Esperando el faltante.`;
+        }
       }
     }
 
@@ -150,12 +183,23 @@ export async function POST(request: Request) {
       safe_nombre = nombreDocExtrahido || 'Candidato';
     }
 
-    // Obtener empresa_id si viene en el payload o usar la empresa por defecto de la BD
+    // Obtener empresa_id si viene en el payload o resolverlo por el número que recibió el mensaje
     let targetEmpresaId = data.empresa_id || null;
     if (!targetEmpresaId) {
-      const defaultEmpresaRes = await pool.query('SELECT id FROM empresas ORDER BY created_at ASC LIMIT 1');
-      if (defaultEmpresaRes.rowCount && defaultEmpresaRes.rowCount > 0) {
-        targetEmpresaId = defaultEmpresaRes.rows[0].id;
+      const resuelto = await resolveEmpresaYGrupo(telefono_destino, 'webhook/expediente');
+      targetEmpresaId = resuelto.empresa_id;
+    }
+
+    // Resolver nombre_reclutador (nombre de texto que manda n8n) -> reclutador_id real,
+    // para asignar por FK en vez de por nombre.
+    let reclutadorAsignadoId: string | null = null;
+    if (nombre_reclutador) {
+      const recRes = await pool.query(
+        `SELECT id FROM reclutadores WHERE UPPER(nombre) = UPPER($1) AND activo = true LIMIT 1`,
+        [nombre_reclutador]
+      );
+      if (recRes.rowCount && recRes.rowCount > 0) {
+        reclutadorAsignadoId = recRes.rows[0].id;
       }
     }
 
@@ -166,7 +210,7 @@ export async function POST(request: Request) {
         ultima_interaccion, datos_ine, datos_rfc, cv_manual, nombre_confirmado,
         veredicto, motivo_analisis, link_cv, nombre_chat, edad, correo,
         filtros_tecnicos, nombre_ine, nombre_constancia, nombre_solicitud, empresa_id, vacante_solicitada,
-        curp_ine, curp_rfc, alerta_identidad_estado, alerta_identidad_motivo, asignado_a
+        curp_ine, curp_rfc, alerta_identidad_estado, alerta_identidad_motivo, asignado_a_id
       ) VALUES (
         $1,
         CAST($2 AS text),
@@ -176,8 +220,8 @@ export async function POST(request: Request) {
         CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN TRUE ELSE FALSE END,
         $7, -- estado final
         NOW(),
-        CASE WHEN $15 = 'true' THEN NULL WHEN $4 = 'INE' THEN CAST($8 AS jsonb) ELSE NULL END,
-        CASE WHEN $15 = 'true' THEN NULL WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN CAST($18 AS text) ELSE NULL END,
+        CASE WHEN $4 = 'INE' THEN CAST($8 AS jsonb) ELSE NULL END,
+        CASE WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN CAST($18 AS text) ELSE NULL END,
         CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN CAST($8 AS jsonb) ELSE NULL END,
         CASE WHEN $15 = 'true' THEN FALSE WHEN $4 IN ('INE', 'CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN TRUE ELSE FALSE END,
         CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN COALESCE($9, 'VIABLE') ELSE NULL END,
@@ -191,8 +235,8 @@ export async function POST(request: Request) {
         NULLIF($13, ''),
         NULLIF($14, ''),
         CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $17 ELSE NULL END,
-        CASE WHEN $15 = 'true' THEN NULL WHEN $4 = 'INE' THEN CAST($2 AS text) ELSE NULL END,
-        CASE WHEN $15 = 'true' THEN NULL WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN CAST($2 AS text) ELSE NULL END,
+        CASE WHEN $4 = 'INE' THEN CAST($2 AS text) ELSE NULL END,
+        CASE WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN CAST($2 AS text) ELSE NULL END,
         CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN CAST($2 AS text) ELSE NULL END,
         $19,
         COALESCE(NULLIF($3, ''), 'General'),
@@ -200,7 +244,7 @@ export async function POST(request: Request) {
         CASE WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN NULLIF($21, '') ELSE NULL END,
         $22,
         $23,
-        CASE WHEN $15 = 'true' THEN NULLIF($24, '') ELSE NULL END
+        CASE WHEN $15 = 'true' THEN $24 ELSE NULL END
       )
       ON CONFLICT (telefono, empresa_id) DO UPDATE SET
         ultima_interaccion = NOW(),
@@ -224,10 +268,10 @@ export async function POST(request: Request) {
         link_cv = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN COALESCE($11, candidatos.link_cv) ELSE candidatos.link_cv END,
         filtros_tecnicos = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN COALESCE($17, candidatos.filtros_tecnicos) ELSE candidatos.filtros_tecnicos END,
         nombre_confirmado = CASE WHEN $15 = 'true' THEN FALSE WHEN $4 IN ('INE', 'CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN TRUE ELSE candidatos.nombre_confirmado END,
-        datos_ine = CASE WHEN $15 = 'true' THEN candidatos.datos_ine WHEN $4 = 'INE' THEN CAST($8 AS jsonb) ELSE candidatos.datos_ine END,
-        datos_rfc = CASE WHEN $15 = 'true' THEN candidatos.datos_rfc WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN CAST($18 AS text) ELSE candidatos.datos_rfc END,
-        nombre_ine = CASE WHEN $15 = 'true' THEN candidatos.nombre_ine WHEN $4 = 'INE' THEN CAST($2 AS text) ELSE candidatos.nombre_ine END,
-        nombre_constancia = CASE WHEN $15 = 'true' THEN candidatos.nombre_constancia WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN CAST($2 AS text) ELSE candidatos.nombre_constancia END,
+        datos_ine = CASE WHEN $4 = 'INE' THEN CAST($8 AS jsonb) ELSE candidatos.datos_ine END,
+        datos_rfc = CASE WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN CAST($18 AS text) ELSE candidatos.datos_rfc END,
+        nombre_ine = CASE WHEN $4 = 'INE' THEN CAST($2 AS text) ELSE candidatos.nombre_ine END,
+        nombre_constancia = CASE WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN CAST($2 AS text) ELSE candidatos.nombre_constancia END,
         nombre_solicitud = CASE WHEN $4 IN ('CV', 'SOLICITUD') AND candidatos.nombre_solicitud IS NULL THEN CAST($2 AS text) ELSE candidatos.nombre_solicitud END,
         nombre_chat = COALESCE(NULLIF($12, ''), candidatos.nombre_chat),
         edad = COALESCE(NULLIF($13, ''), candidatos.edad),
@@ -236,12 +280,13 @@ export async function POST(request: Request) {
         curp_rfc = CASE WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN COALESCE(NULLIF($21, ''), candidatos.curp_rfc) ELSE candidatos.curp_rfc END,
         alerta_identidad_estado = $22,
         alerta_identidad_motivo = $23,
-        asignado_a = CASE WHEN $15 = 'true' THEN COALESCE(candidatos.asignado_a, NULLIF($24, '')) ELSE candidatos.asignado_a END,
+        asignado_a_id = CASE WHEN $15 = 'true' THEN COALESCE(candidatos.asignado_a_id, $24) ELSE candidatos.asignado_a_id END,
         estado = $7,
         resumen_ia = $6
+      RETURNING id
     `;
 
-    await pool.query(upsertQuery, [
+    const upsertRes = await pool.query(upsertQuery, [
       telefono,                 // $1
       safe_nombre,              // $2
       vacante,                  // $3
@@ -261,12 +306,20 @@ export async function POST(request: Request) {
       filtros_tecnicos,           // $17
       datos_documento ? JSON.stringify(parsedDatos) : null, // $18
       targetEmpresaId,            // $19
-      curp_ine || null,           // $20
-      curp_rfc || null,           // $21
+      safe_curp_ine,               // $20
+      safe_curp_rfc,               // $21
       alertaIdentidadEstadoFinal, // $22
       alertaIdentidadMotivoFinal, // $23
-      nombre_reclutador || null   // $24
+      reclutadorAsignadoId        // $24
     ]);
+
+    // Asignación al reclutador dueño de la vacante elegida. Un candidato puede subir
+    // documentos (este endpoint) antes de que la IA etiquete la vacante en el chat
+    // (n8n-incoming) — el helper es idempotente, solo asigna si sigue sin reclutador.
+    const candidatoIdExpediente = upsertRes.rows[0]?.id;
+    if (candidatoIdExpediente) {
+      await asignarReclutadorPorVacante(candidatoIdExpediente, safe_vacante, null, targetEmpresaId);
+    }
 
     // Insertar el mensaje del usuario (usualmente un archivo adjunto enviado por WhatsApp)
     if (mensaje_usuario) {
@@ -280,11 +333,11 @@ export async function POST(request: Request) {
     if (debeNotificarReclutador && (nombre_reclutador || telefono_reclutador)) {
       const mensajeAlerta = `⚠️ *Verificación de identidad requerida*\n\nCandidato: ${safe_nombre}\nTel: wa.me/${telefono}\nVacante: ${safe_vacante}\n\n${alertaIdentidadMotivoFinal || 'La CURP del INE y del RFC no coinciden.'}\n\nRevisa el candidato en la plataforma para validar o rechazar.`;
 
-      if (nombre_reclutador) {
+      if (reclutadorAsignadoId) {
         try {
           await pool.query(
-            `INSERT INTO notificaciones (reclutador_id, mensaje) VALUES ((SELECT id FROM reclutadores WHERE nombre = $1 LIMIT 1), $2)`,
-            [nombre_reclutador, mensajeAlerta]
+            `INSERT INTO notificaciones (reclutador_id, mensaje) VALUES ($1, $2)`,
+            [reclutadorAsignadoId, mensajeAlerta]
           );
         } catch (notifyErr) {
           console.error('Error guardando notificación de identidad:', notifyErr);

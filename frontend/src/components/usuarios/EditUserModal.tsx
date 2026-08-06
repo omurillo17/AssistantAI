@@ -209,8 +209,8 @@ export default function EditUserModal({
                 onChange={e => setEditingTransferTo(e.target.value)}
               >
                 <option value="">No transferir (Perder chats)</option>
-                {usuarios.filter(u => u.id !== user.id && (u.rol === 'RECLUTADOR' || u.rol === 'ENCARGADO')).map(u => (
-                  <option key={u.id} value={u.usuario}>{u.usuario}</option>
+                {usuarios.filter(u => u.id !== user.id && u.reclutador_id && (u.rol === 'RECLUTADOR' || u.rol === 'ENCARGADO')).map(u => (
+                  <option key={u.id} value={u.reclutador_id}>{u.usuario}</option>
                 ))}
               </select>
             </div>

@@ -211,14 +211,32 @@ function MensajesInner() {
           </div>
 
           <div className="flex-1 overflow-y-auto">
-            {m.filtradas.map((conv, idx) => (
-              <TarjetaConversacion
-                key={conv.candidato_id || `${conv.telefono}_${idx}`}
-                conv={conv as any}
-                isActive={conv.telefono === m.activePhone}
-                onClick={() => { m.setActivePhone(conv.telefono); m.loadChat(conv.telefono, true, false); }}
-              />
-            ))}
+            {m.loading ? (
+              <div className="p-6 text-center text-xs text-slate-400">
+                <Loader2 size={18} className="animate-spin mx-auto mb-2 text-primary" />
+                Cargando conversaciones...
+              </div>
+            ) : m.filtradas.length === 0 ? (
+              <div className="p-6 text-center text-xs text-slate-500">
+                <p className="font-semibold mb-1">No hay conversaciones</p>
+                {m.activeTab === "mis_chats" ? (
+                  <button onClick={() => m.setActiveTab("compartida")} className="text-primary hover:underline text-xs mt-1 block w-full font-medium">
+                    Ver Bandeja General
+                  </button>
+                ) : (
+                  <p className="text-[11px] text-slate-400">Las nuevas interacciones por WhatsApp aparecerán aquí.</p>
+                )}
+              </div>
+            ) : (
+              m.filtradas.map((conv, idx) => (
+                <TarjetaConversacion
+                  key={conv.candidato_id || `${conv.telefono}_${idx}`}
+                  conv={conv as any}
+                  isActive={conv.telefono === m.activePhone}
+                  onClick={() => { m.setActivePhone(conv.telefono); m.loadChat(conv.telefono, true, false); }}
+                />
+              ))
+            )}
           </div>
         </aside>
 
@@ -228,7 +246,7 @@ function MensajesInner() {
             <div className="flex-1 flex items-center justify-center text-slate-400">Selecciona una conversación</div>
           ) : (
             <>
-              {(!m.convActiva?.asignado_a || m.convActiva.asignado_a === 'Equipo de Reclutamiento' || m.convActiva.asignado_a === 'Reclutador') && (
+              {!m.convActiva?.asignado_a_id && (
                 <div className="bg-primary text-white px-4 py-2 flex justify-between items-center z-20 shadow-sm">
                   <div className="text-sm">Este candidato está en la <strong>Bandeja General</strong>.</div>
                   <button onClick={m.tomarChat} disabled={m.actionLoading === "tomarChat"} className="bg-white text-primary font-bold text-xs px-4 py-1.5 rounded shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50">
@@ -298,7 +316,7 @@ function MensajesInner() {
                     <button
                       onClick={() => {
                         if (m.estaAtendidoPorOtro) {
-                          alert(`Este chat está siendo atendido por: ${m.convActiva?.asignado_a}`);
+                          alert(`Este chat está siendo atendido por: ${m.convActiva?.asignado_a_nombre}`);
                         } else {
                           m.tomarControl();
                         }
@@ -322,11 +340,11 @@ function MensajesInner() {
                 )}
                 {m.estaAtendidoPorOtro && (
                   <div className="mb-2 flex items-center justify-center gap-2 text-xs text-danger bg-danger/10 rounded-lg shadow-sm px-4 py-2 font-medium">
-                    <AlertTriangle size={14} /><span>Este chat está siendo atendido por {m.convActiva?.asignado_a}.</span>
+                    <AlertTriangle size={14} /><span>Este chat está siendo atendido por {m.convActiva?.asignado_a_nombre}.</span>
                   </div>
                 )}
                 <div className="flex items-center gap-3">
-                  <textarea id="mensajes-chat-input" name="chat_message" value={m.texto} onChange={e => m.setTexto(e.target.value)} onKeyDown={m.handleKeyDown} disabled={(!m.candidatoActivo?.escalado || m.estaAtendidoPorOtro) || m.sending} className="flex-1 p-2.5 bg-white border-none rounded-lg text-sm focus:outline-none transition-colors disabled:opacity-50 resize-none max-h-32" rows={1} placeholder={!m.candidatoActivo?.escalado ? "Toma el control para escribir" : m.estaAtendidoPorOtro ? `Atendido por ${m.convActiva?.asignado_a}` : "Escribe un mensaje"} />
+                  <textarea id="mensajes-chat-input" name="chat_message" value={m.texto} onChange={e => m.setTexto(e.target.value)} onKeyDown={m.handleKeyDown} disabled={(!m.candidatoActivo?.escalado || m.estaAtendidoPorOtro) || m.sending} className="flex-1 p-2.5 bg-white border-none rounded-lg text-sm focus:outline-none transition-colors disabled:opacity-50 resize-none max-h-32" rows={1} placeholder={!m.candidatoActivo?.escalado ? "Toma el control para escribir" : m.estaAtendidoPorOtro ? `Atendido por ${m.convActiva?.asignado_a_nombre}` : "Escribe un mensaje"} />
                   <button onClick={m.enviarMensaje} disabled={m.sending || !m.texto.trim() || (!m.candidatoActivo?.escalado || m.estaAtendidoPorOtro)} className="w-10 h-10 bg-transparent text-[#54656f] hover:text-[#00a884] disabled:opacity-50 rounded-full flex items-center justify-center transition-colors">
                     {m.sending ? <Loader2 size={24} className="animate-spin" /> : <Send size={24} />}
                   </button>
@@ -356,7 +374,7 @@ function MensajesInner() {
                 {m.reclutadores.map((grupo, idx) => (
                   <optgroup key={idx} label={grupo.grupo_nombre ? `${grupo.grupo_nombre} (${grupo.empresa_nombre || 'Local'})` : 'Reclutadores'}>
                     {grupo.reclutadores?.map((rec: any) => (
-                      <option key={rec.nombre} value={rec.nombre}>{rec.nombre} ({rec.rol})</option>
+                      <option key={rec.id} value={rec.id}>{rec.nombre} ({rec.rol})</option>
                     ))}
                   </optgroup>
                 ))}

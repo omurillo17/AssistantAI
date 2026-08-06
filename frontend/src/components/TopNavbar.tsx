@@ -20,9 +20,11 @@ export function TopNavbar() {
   const menuRef = useRef<HTMLDivElement>(null);
   const empresaMenuRef = useRef<HTMLDivElement>(null);
 
-  const { empresaId, naveId, setTenant } = useTenant();
+  const { empresaId, naveId, grupoId, setTenant } = useTenant();
   const [empresas, setEmpresas] = useState<any[]>([]);
   const [isEmpresaMenuOpen, setIsEmpresaMenuOpen] = useState(false);
+  // Solo para ADMIN: alterna entre filtrar por Nave o por Grupo de reclutamiento.
+  const [filterMode, setFilterMode] = useState<"nave" | "grupo">("nave");
 
   useEffect(() => {
     setUsername(localStorage.getItem("tci_username") || "Usuario");
@@ -53,7 +55,7 @@ export function TopNavbar() {
       .then(data => {
         if (data.success) {
           let fetchedEmpresas = data.empresas || [];
-          
+
           try {
             const navesAsignadasStr = localStorage.getItem("tci_naves_asignadas");
             if (role !== "ROOT" && role !== "ADMIN") {
@@ -210,8 +212,10 @@ export function TopNavbar() {
       {/* Right side items */}
       <div className="flex items-center gap-4 text-white">
         
-        {/* Empresa Selector */}
-        {true && (
+        {/* Empresa Selector — oculto en Calendario: ahí no hay filtro manual de
+            nave/grupo, cada quien ve automáticamente el calendario de su propio
+            grupo (o todo, si no pertenece a ninguno). */}
+        {!pathname.startsWith("/calendario") && (
           <div className="relative" ref={empresaMenuRef}>
             <button
               onClick={() => setIsEmpresaMenuOpen(!isEmpresaMenuOpen)}
@@ -219,25 +223,45 @@ export function TopNavbar() {
             >
               <Building2 size={18} className={!empresaId ? 'text-amber-400' : ''} />
               <div className="text-sm font-semibold hidden md:block max-w-[150px] truncate">
-                {naveId
-                  ? (empresas.flatMap(e => e.naves || []).find(n => n.id === naveId)?.nombre || "Nave Desconocida")
-                  : empresaId 
-                    ? (empresas.find(e => e.id === empresaId)?.nombre || "Empresa Desconocida")
-                    : role === "ROOT" ? "Vista Global" : "Selecciona Empresa"}
+                {grupoId
+                  ? (empresas.flatMap(e => e.grupos || []).find((g: any) => g.id === grupoId)?.nombre || "Grupo Desconocido")
+                  : naveId
+                    ? (empresas.flatMap(e => e.naves || []).find(n => n.id === naveId)?.nombre || "Nave Desconocida")
+                    : empresaId
+                      ? (empresas.find(e => e.id === empresaId)?.nombre || "Empresa Desconocida")
+                      : role === "ROOT" ? "Vista Global" : "Selecciona Empresa"}
               </div>
               <ChevronDown size={16} className="opacity-70" />
             </button>
 
             {isEmpresaMenuOpen && (
               <div className="absolute right-0 mt-2 w-72 bg-white rounded-xl shadow-xl py-2 z-50 text-slate-800 border border-slate-100 max-h-96 overflow-y-auto">
-                <div className="px-4 py-2 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wider">
-                  Seleccionar Vista
+                <div className="px-4 py-2 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between gap-2">
+                  <span>Seleccionar Vista</span>
+                  {role === "ADMIN" && (
+                    <div className="flex items-center bg-slate-100 rounded-lg p-0.5 text-[11px] font-bold normal-case">
+                      <button
+                        type="button"
+                        onClick={() => setFilterMode("nave")}
+                        className={`px-2 py-1 rounded-md transition-colors ${filterMode === "nave" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-400"}`}
+                      >
+                        Nave
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFilterMode("grupo")}
+                        className={`px-2 py-1 rounded-md transition-colors ${filterMode === "grupo" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-400"}`}
+                      >
+                        Grupo
+                      </button>
+                    </div>
+                  )}
                 </div>
-                
+
                 {role === "ROOT" && (
                   <button
-                    onClick={() => { setTenant(null, null); setIsEmpresaMenuOpen(false); window.location.reload(); }}
-                    className={`block w-full text-left px-4 py-3 text-sm transition-colors border-b border-slate-50 hover:bg-slate-50 ${!empresaId && !naveId ? 'bg-indigo-50 font-bold text-indigo-700' : 'text-slate-700'}`}
+                    onClick={() => { setTenant(null, null, null); setIsEmpresaMenuOpen(false); }}
+                    className={`block w-full text-left px-4 py-3 text-sm transition-colors border-b border-slate-50 hover:bg-slate-50 ${!empresaId && !naveId && !grupoId ? 'bg-indigo-50 font-bold text-indigo-700' : 'text-slate-700'}`}
                   >
                     <div className="flex items-center gap-2">
                       <Building2 size={16} />
@@ -249,26 +273,39 @@ export function TopNavbar() {
                 {empresas.map(emp => (
                   <div key={emp.id} className="border-b border-slate-50 last:border-0">
                     <button
-                      onClick={() => { setTenant(emp.id, null); setIsEmpresaMenuOpen(false); window.location.reload(); }}
-                      className={`block w-full text-left px-4 py-3 text-sm transition-colors hover:bg-slate-50 ${empresaId === emp.id && !naveId ? 'bg-indigo-50 font-bold text-indigo-700' : 'text-slate-700'}`}
+                      onClick={() => { setTenant(emp.id, null, role === "ADMIN" ? null : undefined); setIsEmpresaMenuOpen(false); }}
+                      className={`block w-full text-left px-4 py-3 text-sm transition-colors hover:bg-slate-50 ${empresaId === emp.id && !naveId && !grupoId ? 'bg-indigo-50 font-bold text-indigo-700' : 'text-slate-700'}`}
                     >
                       <div className="flex items-center gap-2">
-                        <Building2 size={16} className={empresaId === emp.id && !naveId ? "text-indigo-600" : "text-slate-400"} />
+                        <Building2 size={16} className={empresaId === emp.id && !naveId && !grupoId ? "text-indigo-600" : "text-slate-400"} />
                         <span className="truncate">{emp.nombre} (Todo)</span>
                       </div>
                     </button>
-                    {emp.naves && emp.naves.map((nave: any) => (
-                      <button
-                        key={nave.id}
-                        onClick={() => { setTenant(emp.id, nave.id); setIsEmpresaMenuOpen(false); window.location.reload(); }}
-                        className={`block w-full text-left pl-8 pr-4 py-2 text-sm transition-colors hover:bg-slate-50 ${naveId === nave.id ? 'bg-indigo-50 font-bold text-indigo-700' : 'text-slate-600'}`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <div className={`w-1.5 h-1.5 rounded-full ${naveId === nave.id ? 'bg-indigo-600' : 'bg-slate-300'}`}></div>
-                          <span className="truncate">{nave.nombre}</span>
-                        </div>
-                      </button>
-                    ))}
+                    {role === "ADMIN" && filterMode === "grupo"
+                      ? (emp.grupos || []).map((grupo: any) => (
+                        <button
+                          key={grupo.id}
+                          onClick={() => { setTenant(emp.id, null, grupo.id); setIsEmpresaMenuOpen(false); }}
+                          className={`block w-full text-left pl-8 pr-4 py-2 text-sm transition-colors hover:bg-slate-50 ${grupoId === grupo.id ? 'bg-indigo-50 font-bold text-indigo-700' : 'text-slate-600'}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className={`w-1.5 h-1.5 rounded-full ${grupoId === grupo.id ? 'bg-indigo-600' : 'bg-slate-300'}`}></div>
+                            <span className="truncate">{grupo.nombre}</span>
+                          </div>
+                        </button>
+                      ))
+                      : (emp.naves || []).map((nave: any) => (
+                        <button
+                          key={nave.id}
+                          onClick={() => { setTenant(emp.id, nave.id, role === "ADMIN" ? null : undefined); setIsEmpresaMenuOpen(false); }}
+                          className={`block w-full text-left pl-8 pr-4 py-2 text-sm transition-colors hover:bg-slate-50 ${naveId === nave.id ? 'bg-indigo-50 font-bold text-indigo-700' : 'text-slate-600'}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className={`w-1.5 h-1.5 rounded-full ${naveId === nave.id ? 'bg-indigo-600' : 'bg-slate-300'}`}></div>
+                            <span className="truncate">{nave.nombre}</span>
+                          </div>
+                        </button>
+                      ))}
                   </div>
                 ))}
               </div>

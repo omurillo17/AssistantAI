@@ -34,9 +34,9 @@ export default function DeleteUserModal({
     setDeleting(true);
 
     try {
-      const url = `/api/db/usuarios?id=${userId}&username=${username}` + 
+      const url = `/api/db/usuarios?id=${userId}` +
                   (deleteTransferTo ? `&transferTo=${deleteTransferTo}` : '');
-                  
+
       const res = await fetch(url, { method: "DELETE" });
 
       if (res.ok) {
@@ -73,8 +73,8 @@ export default function DeleteUserModal({
             onChange={e => setDeleteTransferTo(e.target.value)}
           >
             <option value="">No transferir (Perder chats)</option>
-            {usuarios.filter(u => u.id !== userId).map(u => (
-              <option key={u.id} value={u.usuario}>{u.usuario} ({u.rol})</option>
+            {usuarios.filter(u => u.id !== userId && u.reclutador_id).map(u => (
+              <option key={u.id} value={u.reclutador_id}>{u.usuario} ({u.rol})</option>
             ))}
           </select>
         </div>

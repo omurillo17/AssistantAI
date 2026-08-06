@@ -17,10 +17,13 @@ export async function GET(request: Request) {
 
   try {
     let query = `
-      SELECT e.id, e.nombre, e.telefono_whatsapp, e.prompt_ia, e.created_at,
+      SELECT e.id, e.nombre, e.prompt_ia, e.retencion_archivos_dias, e.created_at,
         (SELECT json_agg(row_to_json(n.*)) FROM (
           SELECT id, nombre, ubicacion_maps, rfc, created_at, empresa_id FROM naves WHERE empresa_id = e.id ORDER BY created_at ASC
-        ) n) as naves
+        ) n) as naves,
+        (SELECT json_agg(row_to_json(g.*)) FROM (
+          SELECT id, nombre, naves_asignadas, empresa_id FROM grupos_reclutamiento WHERE empresa_id = e.id ORDER BY created_at ASC
+        ) g) as grupos
       FROM empresas e
     `;
 
@@ -48,15 +51,15 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { nombre, telefono_whatsapp, prompt_ia } = body;
+    const { nombre, prompt_ia, retencion_archivos_dias } = body;
 
     if (!nombre) {
       return NextResponse.json({ error: "El nombre es obligatorio" }, { status: 400 });
     }
 
     const res = await pool.query(
-      `INSERT INTO empresas (nombre, telefono_whatsapp, prompt_ia) VALUES ($1, $2, $3) RETURNING *`,
-      [nombre, telefono_whatsapp || '', prompt_ia || '']
+      `INSERT INTO empresas (nombre, prompt_ia, retencion_archivos_dias) VALUES ($1, $2, $3) RETURNING *`,
+      [nombre, prompt_ia || '', Number.isInteger(retencion_archivos_dias) && retencion_archivos_dias > 0 ? retencion_archivos_dias : 30]
     );
 
     return NextResponse.json({ success: true, empresa: res.rows[0] });
@@ -73,15 +76,15 @@ export async function PATCH(request: Request) {
 
   try {
     const body = await request.json();
-    const { id, nombre, telefono_whatsapp, prompt_ia } = body;
+    const { id, nombre, prompt_ia, retencion_archivos_dias } = body;
 
     if (!id || !nombre) {
       return NextResponse.json({ error: "ID y nombre son obligatorios" }, { status: 400 });
     }
 
     const res = await pool.query(
-      `UPDATE empresas SET nombre = $1, telefono_whatsapp = $2, prompt_ia = $3 WHERE id = $4 RETURNING *`,
-      [nombre, telefono_whatsapp || '', prompt_ia || '', id]
+      `UPDATE empresas SET nombre = $1, prompt_ia = $2, retencion_archivos_dias = $3 WHERE id = $4 RETURNING *`,
+      [nombre, prompt_ia || '', Number.isInteger(retencion_archivos_dias) && retencion_archivos_dias > 0 ? retencion_archivos_dias : 30, id]
     );
 
     return NextResponse.json({ success: true, empresa: res.rows[0] });

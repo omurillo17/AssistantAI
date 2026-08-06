@@ -3,8 +3,8 @@
 import { useState, useEffect, useRef } from "react";
 import { Candidato, ChatMessage } from "@/types";
 import { getEstado, ESTADOS_CRM, ESTADOS, EstadoKey } from "@/lib/estados";
-import { getCandidateDisplayName } from "@/lib/formatters";
-import { X, ExternalLink, Calendar, Briefcase, FileText, CheckCircle, AlertCircle, Bot, User, MessageSquare } from "lucide-react";
+import { getCandidateDisplayName, formatNaveName } from "@/lib/formatters";
+import { X, ExternalLink, Calendar, Briefcase, FileText, CheckCircle, AlertCircle, Bot, User, MessageSquare, Sparkles } from "lucide-react";
 
 interface CandidateModalProps {
   candidato: Candidato;
@@ -18,10 +18,38 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
   const [validating, setValidating] = useState(false);
   const [mensajes, setMensajes] = useState<ChatMessage[]>([]);
   const [loadingChat, setLoadingChat] = useState(true);
+  const [justUpdated, setJustUpdated] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  const prevCandidatoRef = useRef(candidato);
+  const isFirstCandidatoRef = useRef(true);
+  // Se activa justo antes de un cambio local (estado/validación) hecho por
+  // el propio usuario desde este modal, para no mostrarle el aviso de
+  // "actualización" cuando el candidato que vuelve a bajar desde el padre
+  // es simplemente la confirmación de su propia edición.
+  const suppressNextUpdateRef = useRef(false);
 
+  // Detecta cuando la actualización automática de Expedientes trae nueva
+  // información para este candidato (no en la carga inicial del modal, ni
+  // en la confirmación de una edición propia) y muestra un aviso breve.
   useEffect(() => {
     setCand(candidato);
+    if (isFirstCandidatoRef.current) {
+      isFirstCandidatoRef.current = false;
+      prevCandidatoRef.current = candidato;
+      return;
+    }
+    if (suppressNextUpdateRef.current) {
+      suppressNextUpdateRef.current = false;
+      prevCandidatoRef.current = candidato;
+      return;
+    }
+    if (JSON.stringify(candidato) !== JSON.stringify(prevCandidatoRef.current)) {
+      prevCandidatoRef.current = candidato;
+      setJustUpdated(true);
+      const t = setTimeout(() => setJustUpdated(false), 4000);
+      return () => clearTimeout(t);
+    }
+    prevCandidatoRef.current = candidato;
   }, [candidato]);
 
   const nombre = getCandidateDisplayName(cand);
@@ -39,6 +67,7 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
         const data = await res.json();
         const newStatus = decision === "validar" ? "INE_VALIDADA" : "DOCUMENTOS_NO_COINCIDEN";
         const newAlertaState = decision === "validar" ? "VALIDADO" : "RECHAZADO";
+        suppressNextUpdateRef.current = true;
         setCand(prev => ({
           ...prev,
           estado: newStatus,
@@ -95,6 +124,13 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
         className="bg-white rounded-2xl w-full max-w-6xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden animate-fade-in"
         onClick={e => e.stopPropagation()}
       >
+        {/* AVISO DE ACTUALIZACIÓN AUTOMÁTICA */}
+        {justUpdated && (
+          <div className="px-6 py-2 bg-indigo-600 text-white text-xs font-bold flex items-center gap-2 flex-shrink-0 animate-fade-in">
+            <Sparkles size={13} /> Se actualizó por nueva información
+          </div>
+        )}
+
         {/* HEADER */}
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 flex-shrink-0">
           <div>
@@ -108,7 +144,7 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
               )}
               {cand.nave_interes && (
                 <span className="flex items-center gap-1 font-semibold text-slate-600 bg-slate-200 px-2 py-0.5 rounded">
-                  {cand.nave_interes}
+                  {formatNaveName(cand.nave_interes)}
                 </span>
               )}
             </div>
@@ -142,11 +178,14 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                 value={cand.estado}
                 onChange={(e) => {
                   const newStatus = e.target.value;
+                  suppressNextUpdateRef.current = true;
                   setCand(prev => ({ ...prev, estado: newStatus }));
                   onStatusChange(cand.telefono, newStatus);
                 }}
               >
-                {ESTADOS_CRM.map(k => (
+                <option value={cand.estado}>{getEstado(cand.estado).emoji} {getEstado(cand.estado).label}</option>
+                <option disabled>── Mover a ──</option>
+                {ESTADOS_CRM.filter(k => k !== cand.estado).map(k => (
                   <option key={k} value={k}>{ESTADOS[k as EstadoKey].emoji} {ESTADOS[k as EstadoKey].label}</option>
                 ))}
               </select>
@@ -155,7 +194,7 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
             {/* IA SUMMARY */}
             {(() => {
               const parseResumenIa = (text?: string | null) => {
-                if (!text) return { items: [], notes: "" };
+                if (!text || typeof text !== "string") return { items: [], notes: typeof text === "object" ? JSON.stringify(text) : String(text || "") };
                 if (text.includes(":") && (text.includes(".") || text.includes("\n"))) {
                   const rawParts = text.split(/(?=[A-Z][a-zA-ZÁÉÍÓÚáéíóúñÑ_0-9\s]+:)/g);
                   const items: { label: string; value: string }[] = [];
@@ -209,11 +248,11 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                       </div>
                       <div className="flex flex-wrap gap-2">
                         {items.map((it, idx) => {
-                          const valLower = it.value.toLowerCase();
+                          const valLower = String(it.value || '').toLowerCase();
                           const isOk = valLower.includes('aceptad') || valLower.includes('verificad') || valLower.includes('recibid') || valLower.includes('agendad') || valLower.includes('sí') || valLower.includes('si');
 
-                          const formatValue = (v: string) => {
-                            if (!v) return v;
+                          const formatValue = (v: any) => {
+                            if (!v || typeof v !== 'string') return String(v || '');
                             const isoMatch = v.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?/);
                             if (isoMatch) {
                               try {
@@ -256,18 +295,18 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
               const ineData = typeof cand.datos_ine === 'string' ? (() => { try { return JSON.parse(cand.datos_ine); } catch (e) { return null; } })() : cand.datos_ine;
               const csfData = typeof cand.datos_rfc === 'string' ? (() => { try { return JSON.parse(cand.datos_rfc); } catch (e) { return null; } })() : cand.datos_rfc;
 
-              const ineName = (ineData?.nombre_completo || ineData?.nombre || cand.nombre_ine || "").trim();
-              const rfcName = (csfData?.nombre_completo || csfData?.nombre || csfData?.razon_social || cand.nombre_constancia || "").trim();
+              const ineName = String(ineData?.nombre_completo || ineData?.nombre || cand.nombre_ine || "").trim();
+              const rfcName = String(csfData?.nombre_completo || csfData?.nombre || csfData?.razon_social || cand.nombre_constancia || "").trim();
 
-              const ineCurp = (ineData?.curp || cand.curp_ine || "").trim();
-              const rfcCurp = (csfData?.curp || cand.curp_rfc || "").trim();
+              const ineCurp = String(ineData?.curp || cand.curp_ine || "").trim();
+              const rfcCurp = String(csfData?.curp || cand.curp_rfc || "").trim();
 
               const ineUrl = ineData?.url || ineData?.link || (cand as any).link_ine;
               const csfUrl = csfData?.url || csfData?.link || (cand as any).link_csf || (cand as any).link_rfc;
 
               // Calcular distancia Levenshtein entre nombres
-              const getLevenshtein = (s1: string, s2: string) => {
-                if (!s1 || !s2) return 0;
+              const getLevenshtein = (s1: any, s2: any) => {
+                if (!s1 || !s2 || typeof s1 !== "string" || typeof s2 !== "string") return 0;
                 const a = s1.toUpperCase();
                 const b = s2.toUpperCase();
                 if (a === b) return 0;
@@ -361,7 +400,6 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                           <div><span className="font-bold text-slate-500 block text-[10px] uppercase">Nombre / Razón Social:</span> <span className="font-extrabold">{rfcName || '—'}</span></div>
                           <div className="grid grid-cols-2 gap-1">
                             <div><span className="font-bold text-slate-500 block text-[10px] uppercase">RFC:</span> <span className="font-mono">{csfData?.rfc || '—'}</span></div>
-                            <br></br>
                             <div><span className="font-bold text-slate-500 block text-[10px] uppercase">CURP:</span> <span className="font-mono">{rfcCurp || '—'}</span></div>
                           </div>
                         </div>
@@ -382,10 +420,10 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
 
                     return (
                       <div className={`rounded-2xl p-4 space-y-3 border transition-all ${hasActivePendingError
-                          ? 'bg-amber-50/70 border-amber-200 shadow-sm'
-                          : isAlreadyValidated
-                            ? 'bg-emerald-50/60 border-emerald-200'
-                            : 'bg-slate-50 border-slate-200 opacity-80'
+                        ? 'bg-amber-50/70 border-amber-200 shadow-sm'
+                        : isAlreadyValidated
+                          ? 'bg-emerald-50/60 border-emerald-200'
+                          : 'bg-slate-50 border-slate-200 opacity-80'
                         }`}>
                         <div className="flex items-center justify-between">
                           <div className="text-xs font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
@@ -397,7 +435,7 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                             </span>
                           ) : cand.alerta_identidad_estado ? (
                             <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${cand.alerta_identidad_estado === 'RECHAZADO' ? 'bg-rose-100 text-rose-800 border-rose-300' :
-                                'bg-amber-100 text-amber-800 border-amber-300'
+                              'bg-amber-100 text-amber-800 border-amber-300'
                               }`}>
                               {cand.alerta_identidad_estado === 'RECHAZADO' && '🚫 Rechazado'}
                               {cand.alerta_identidad_estado === 'PENDIENTE' && '⚠️ Pendiente de revisión'}
@@ -449,13 +487,19 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
             {/* INFO EXTRA */}
             {(cand.edad || cand.correo || cand.fecha_entrevista) && (
               <div className="bg-slate-50 border border-slate-100 rounded-xl p-5 shadow-sm space-y-3">
-                {cand.fecha_entrevista && (
-                  <div className="flex items-center gap-2 text-sm text-slate-700">
-                    <Calendar size={16} className="text-amber-500" />
-                    <span className="font-bold">Entrevista:</span>
-                    {new Date(cand.fecha_entrevista).toLocaleString("es-MX", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                  </div>
-                )}
+                {cand.fecha_entrevista && (() => {
+                  try {
+                    const d = new Date(cand.fecha_entrevista);
+                    if (isNaN(d.getTime())) return null;
+                    return (
+                      <div className="flex items-center gap-2 text-sm text-slate-700">
+                        <Calendar size={16} className="text-amber-500" />
+                        <span className="font-bold">Entrevista:</span>
+                        {d.toLocaleString("es-MX", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </div>
+                    );
+                  } catch { return null; }
+                })()}
                 {cand.edad && (
                   <div className="flex items-center gap-2 text-sm text-slate-700">
                     <User size={16} className="text-slate-400" />
@@ -510,7 +554,7 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                         }`}>
                         <div className="whitespace-pre-wrap leading-relaxed break-words">{m.content}</div>
                         <div className={`text-[10px] mt-1 text-right font-medium ${isUser ? 'text-slate-400' : 'text-[#4b5e48]'}`}>
-                          {m.timestamp ? new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                          {m.timestamp && !isNaN(new Date(m.timestamp).getTime()) ? new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
                         </div>
                       </div>
                     </div>

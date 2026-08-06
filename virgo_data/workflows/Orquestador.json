@@ -136,7 +136,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Normalizar el body del webhook (n8n puede meter los datos en .body o directamente)\nconst raw = $input.first().json;\nconst body = raw.body || raw;\n\nconst event_id = body.event_id || '';\nconst calendar_id = body.calendar_id || '';\nconst telefono = body.telefono || '';\nconst motivo = body.motivo || 'Por reorganización de agenda de entrevista';\nconst telefono_reclutador = body.telefono_reclutador || '5213323379399';\nconst nombre_reclutador = body.nombre_reclutador || 'Equipo de Reclutamiento';\nconst nombre_candidato = body.nombre_candidato || 'Candidato';\n\nif (!telefono) {\n  throw new Error('Falta el campo telefono');\n}\n\nreturn [{ json: { event_id, calendar_id, telefono, motivo, telefono_reclutador, nombre_reclutador, nombre_candidato } }];"
+        "jsCode": "// Normalizar el body del webhook (n8n puede meter los datos en .body o directamente)\nconst raw = $input.first().json;\nconst body = raw.body || raw;\n\nconst event_id = body.event_id || '';\nconst calendar_id = body.calendar_id || '';\nconst telefono = body.telefono || '';\n\nif (!telefono) {\n  throw new Error('Falta el campo telefono');\n}\n\nreturn [{ json: { event_id, calendar_id, telefono } }];"
       },
       "id": "c558d24b-211b-478d-9cc1-4d6735b554ae",
       "name": "Normalizar Datos",
@@ -194,30 +194,6 @@
         "postgres": {
           "id": "9eErJ1KWRv74SFiT",
           "name": "Postgres account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "resource": "Chatting",
-        "operation": "Send Text",
-        "session": "default",
-        "chatId": "={{ $('Normalizar Datos').first().json.telefono.replace('@c.us','') + '@c.us' }}",
-        "text": "={{ `🚫 *TU ENTREVISTA HA SIDO CANCELADA*\n\nHola ${$('Normalizar Datos').first().json.nombre_candidato || ''}, te informamos que tu cita de entrevista ha sido cancelada.\n\n${$('Normalizar Datos').first().json.motivo ? '📌 *Motivo:* ' + $('Normalizar Datos').first().json.motivo + '\n\n' : ''}Si tienes alguna duda o deseas reprogramar, puedes comunicarte directamente con tu reclutador (${$('Normalizar Datos').first().json.nombre_reclutador || 'Reclutamiento'}) al número:\n📱 wa.me/${$('Normalizar Datos').first().json.telefono_reclutador || '5213323379399'}` }}",
-        "requestOptions": {}
-      },
-      "id": "e8812a02-c940-4217-a2f0-109c84918239",
-      "name": "Notificar Cancelacion WAHA",
-      "type": "@devlikeapro/n8n-nodes-waha.WAHA",
-      "typeVersion": 202502,
-      "position": [
-        352,
-        416
-      ],
-      "credentials": {
-        "wahaApi": {
-          "id": "kzWfdhUZ4FU6jVEa",
-          "name": "WAHA account"
         }
       }
     },
@@ -392,7 +368,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const raw = $input.first().json;\nconst body = raw.body || raw;\nif (!body.telefono) throw new Error('Falta telefono');\nconst motivo = body.motivo || '';\nconst telefono_reclutador = body.telefono_reclutador || '5213323379399';\nconst nombre_reclutador = body.nombre_reclutador || 'Equipo de Reclutamiento';\nconst nombre_candidato = body.nombre_candidato || 'Candidato';\nreturn [{ json: { ...body, motivo, telefono_reclutador, nombre_reclutador, nombre_candidato } }];"
+        "jsCode": "const raw = $input.first().json;\nconst body = raw.body || raw;\nif (!body.telefono) throw new Error('Falta telefono');\nreturn [{ json: body }];"
       },
       "id": "3afd133d-b789-4857-8dfc-3220e1a18414",
       "name": "Normalizar Datos Reagendar",
@@ -461,7 +437,7 @@
         "operation": "Send Text",
         "session": "default",
         "chatId": "={{ $('Normalizar Datos Reagendar').first().json.telefono }}@c.us",
-        "text": "={{ `📅 *TU ENTREVISTA HA SIDO REAGENDADA*\n\nHola ${$('Normalizar Datos Reagendar').first().json.nombre_candidato || ''}, tu cita ha sido reprogramada para el *${$('Normalizar Datos Reagendar').first().json.start.split('T')[0]}* a las *${$('Normalizar Datos Reagendar').first().json.start.split('T')[1].substring(0,5)} hrs*.\n\n${$('Normalizar Datos Reagendar').first().json.motivo ? '📌 *Motivo:* ' + $('Normalizar Datos Reagendar').first().json.motivo + '\n\n' : ''}Si tienes alguna duda o aclaración, puedes comunicarte con tu reclutador (${$('Normalizar Datos Reagendar').first().json.nombre_reclutador || 'Reclutamiento'}) al número:\n📱 wa.me/${$('Normalizar Datos Reagendar').first().json.telefono_reclutador || '5213323379399'}` }}",
+        "text": "={{ `Hola! Tu entrevista ha sido REAGENDADA para el ${$('Normalizar Datos Reagendar').first().json.start.split('T')[0]} a las ${$('Normalizar Datos Reagendar').first().json.start.split('T')[1].substring(0,5)}.` }}",
         "requestOptions": {}
       },
       "id": "5331b641-e7c6-4f59-94fa-9c804421eacd",
@@ -638,17 +614,6 @@
       ]
     },
     "Postgres: Cancelar Cita": {
-      "main": [
-        [
-          {
-            "node": "Notificar Cancelacion WAHA",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Notificar Cancelacion WAHA": {
       "main": [
         [
           {

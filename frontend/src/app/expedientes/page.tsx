@@ -9,7 +9,8 @@ import {
 import { ESTADOS, ESTADOS_CRM, GRUPOS, getEstado, KANBAN_COLUMNAS, type EstadoKey } from "@/lib/estados";
 import type { Candidato } from "@/types";
 import { CandidateModal } from "@/components/CandidateModal";
-import { getCandidateDisplayName as getNombre } from "@/lib/formatters";
+import { getCandidateDisplayName as getNombre, formatNaveName } from "@/lib/formatters";
+import { useTenantChange } from "@/hooks/useTenant";
 
 // ─── COMPONENTE: TARJETA KANBAN ────────────────────────────────
 function KanbanCard({ cand, onClick, onStatusChange }: { cand: Candidato, onClick: () => void, onStatusChange: (t: string, s: string) => void }) {
@@ -52,7 +53,7 @@ function KanbanCard({ cand, onClick, onStatusChange }: { cand: Candidato, onClic
         )}
         {cand.nave_interes && (
           <span className="text-[9px] font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
-            {cand.nave_interes}
+            {formatNaveName(cand.nave_interes)}
           </span>
         )}
       </div>
@@ -118,41 +119,73 @@ function ExpedientesPageInner() {
   const [naveFilter, setNaveFilter] = useState("TODAS");
 
   const [selectedCandidate, setSelectedCandidate] = useState<Candidato | null>(null);
+  // Ref con el candidato abierto actualmente, para que loadData (useCallback
+  // con deps []) siempre lea el valor más reciente sin tener que recrearse.
+  const selectedCandidateRef = useRef<Candidato | null>(null);
+  useEffect(() => {
+    selectedCandidateRef.current = selectedCandidate;
+  }, [selectedCandidate]);
 
   // Lista de Naves y Vacantes desde BD para filtros
   const [dbNaves, setDbNaves] = useState<{ id: string; nombre: string }[]>([]);
   const [dbVacantes, setDbVacantes] = useState<string[]>([]);
   const [rawVacantesData, setRawVacantesData] = useState<any[]>([]);
 
-  const loadData = useCallback(async () => {
-    setLoading(true);
+  const loadData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const storedEmpresaId = localStorage.getItem("tci_empresa_id");
       const storedNaveId = localStorage.getItem("tci_nave_id");
+      const storedGrupoId = localStorage.getItem("tci_grupo_id");
 
       let queryCand = "";
       if (storedEmpresaId) queryCand += `&empresa_id=${storedEmpresaId}`;
-      if (storedNaveId) queryCand += `&nave_id=${storedNaveId}`;
+      if (storedGrupoId) queryCand += `&grupo_id=${storedGrupoId}`;
+      else if (storedNaveId) queryCand += `&nave_id=${storedNaveId}`;
 
       let queryMensajes = "";
       if (storedEmpresaId) queryMensajes += `?empresa_id=${storedEmpresaId}`;
-      if (storedNaveId) queryMensajes += (queryMensajes ? `&` : `?`) + `nave_id=${storedNaveId}`;
+      if (storedGrupoId) queryMensajes += (queryMensajes ? `&` : `?`) + `grupo_id=${storedGrupoId}`;
+      else if (storedNaveId) queryMensajes += (queryMensajes ? `&` : `?`) + `nave_id=${storedNaveId}`;
+
+      let queryVac = "";
+      if (storedEmpresaId) queryVac += `?empresa_id=${storedEmpresaId}`;
+      if (storedGrupoId) queryVac += (queryVac ? `&` : `?`) + `grupo_id=${storedGrupoId}`;
+      else if (storedNaveId) queryVac += (queryVac ? `&` : `?`) + `nave_id=${storedNaveId}`;
 
       const [candRes, msgsRes, empRes, vacRes] = await Promise.all([
         fetch(`/api/db/candidatos?limit=2000${queryCand}`),
         fetch(`/api/db/mensajes${queryMensajes}`),
         fetch(`/api/db/empresas`),
-        fetch(`/api/db/vacantes`),
+        fetch(`/api/db/vacantes${queryVac}`),
       ]);
       const candData = await candRes.json();
       const msgsData = await msgsRes.json();
-      setCandidatos(Array.isArray(candData) ? candData : []);
+      const newCandidatos: Candidato[] = Array.isArray(candData) ? candData : [];
+      setCandidatos(newCandidatos);
       setMensajes(Array.isArray(msgsData) ? msgsData : []);
+
+      // Si hay un expediente abierto y llegó información nueva para ese
+      // candidato (p.ej. desde un webhook de WhatsApp), refrescamos el modal
+      // con los datos frescos para que muestre el aviso de actualización.
+      // No tocamos selectedCandidate si no hay cambios reales, para no
+      // disparar el aviso sin motivo en cada poll silencioso.
+      const openCand = selectedCandidateRef.current;
+      if (openCand) {
+        const fresh = newCandidatos.find((c) => c.telefono === openCand.telefono);
+        if (fresh && JSON.stringify(fresh) !== JSON.stringify(openCand)) {
+          setSelectedCandidate(fresh);
+        }
+      }
 
       if (empRes.ok) {
         const empData = await empRes.json();
+        const empList = empData.empresas || [];
+        const scopedEmpresas = storedEmpresaId
+          ? empList.filter((e: any) => e.id === storedEmpresaId)
+          : empList;
         const naves: { id: string; nombre: string }[] = [];
-        (empData.empresas || []).forEach((e: any) => {
+        scopedEmpresas.forEach((e: any) => {
           (e.naves || []).forEach((n: any) => {
             if (n.nombre) naves.push({ id: n.id, nombre: n.nombre });
           });
@@ -170,13 +203,24 @@ function ExpedientesPageInner() {
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     document.title = "Expedientes | Grupo Virgo";
     loadData();
+  }, [loadData]);
+
+  // Re-cargar (sin recargar la página) cuando el usuario cambia de empresa/nave en el TopNavbar
+  useTenantChange(loadData);
+
+  // Actualización automática en segundo plano: refresca candidatos/mensajes
+  // cada 20s sin mostrar el spinner de carga completo (silent=true), para no
+  // perder el scroll ni los filtros que el usuario ya tenía puestos.
+  useEffect(() => {
+    const interval = setInterval(() => loadData(true), 20000);
+    return () => clearInterval(interval);
   }, [loadData]);
 
   // Abrir perfil directamente si llega ?tel=
@@ -481,7 +525,7 @@ function ExpedientesPageInner() {
                             <td className="p-4 font-mono text-xs text-slate-500">{cand.telefono}</td>
                             <td className="p-4">
                               <div className="font-semibold text-slate-700 text-xs">{cand.vacante_interes || "—"}</div>
-                              <div className="text-xs text-slate-400">{cand.nave_interes || "—"}</div>
+                              <div className="text-xs text-slate-400">{formatNaveName(cand.nave_interes) || "—"}</div>
                             </td>
                             <td className="p-4">
                               <div className="flex gap-1.5 items-center">

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { Recruiter, Vacante } from "@/types";
 import { COUNTRY_CODES } from "@/types";
+import { useTenantChange } from "./useTenant";
 
 const API_URL = `/api/db/vacantes`;
 
@@ -59,6 +60,12 @@ export function useVacantes() {
     loadData();
     loadNaves();
   }, [router]);
+
+  // Re-cargar (sin recargar la página) cuando el usuario cambia de empresa/nave en el TopNavbar
+  useTenantChange(() => {
+    loadData();
+    loadNaves();
+  });
 
   const loadNaves = async () => {
     try {
@@ -231,7 +238,7 @@ export function useVacantes() {
           ...recToDelete.vacantes
         ];
         // Record the chat transfer mapping
-        setTransferMap(prev => [...prev, { from: recToDelete.nombre, to: updated[targetIndex].nombre }]);
+        setTransferMap(prev => [...prev, { from: recToDelete.reclutador_id, to: updated[targetIndex].reclutador_id }]);
       }
     }
 
@@ -270,7 +277,10 @@ export function useVacantes() {
       setVNombre("");
       setVDetalles("");
       setVPalabrasClave("");
-      setVNaves([]);
+      // Si hay una nave filtrada en el TopNavbar, la preseleccionamos: lo más
+      // probable es que quieran agregar la vacante justo para esa nave.
+      const storedNaveId = localStorage.getItem("tci_nave_id");
+      setVNaves(storedNaveId ? [storedNaveId] : []);
     }
     setIsModalOpen(true);
   };

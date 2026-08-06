@@ -3,6 +3,8 @@ import { pool } from '@/lib/db';
 import { candidatoMachine } from '@/lib/stateMachine';
 import { createActor } from 'xstate';
 import { verifyWebhookApiKey } from '@/lib/auth';
+import { resolveEmpresaYGrupo } from '@/lib/empresaResolution';
+import { asignarReclutadorPorVacante } from '@/lib/asignacionReclutador';
 
 export async function POST(request: Request) {
   if (!verifyWebhookApiKey(request)) {
@@ -13,6 +15,7 @@ export async function POST(request: Request) {
     const data = await request.json();
     const {
       telefono,
+      telefono_destino,
       nombre,
       cita_creada,
       vacante,
@@ -35,9 +38,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Falta telefono' }, { status: 400 });
     }
 
-    // 1. Obtener estado actual (buscamos por telefono, asumiendo por ahora la primera empresa o la mas reciente si hay varias)
-    // En el futuro, n8n debe enviar el empresa_id
-    const res = await pool.query('SELECT id, estado, tiene_cv, cv_manual as db_cv_manual, fecha_entrevista as db_fecha, privacidad_aceptada, escalado, vacante_interes, asignado_a FROM candidatos WHERE telefono = $1 ORDER BY updated_at DESC LIMIT 1', [telefono]);
+    // 1. Obtener estado actual (buscamos por telefono; puede haber una fila por empresa)
+    const res = await pool.query('SELECT id, estado, tiene_cv, cv_manual as db_cv_manual, fecha_entrevista as db_fecha, privacidad_aceptada, escalado, vacante_interes, asignado_a_id FROM candidatos WHERE telefono = $1 ORDER BY updated_at DESC LIMIT 1', [telefono]);
     let currentState = 'NUEVO';
     let context = {
       telefono,
@@ -159,9 +161,9 @@ export async function POST(request: Request) {
       motivoEscalamiento = `ALERTA GLOBAL: Este candidato fue RECHAZADO previamente en la nave: ${naveRechazo || 'Desconocida'}.`;
     }
 
-    // Buscamos una empresa_id default para no romper el UNIQUE constraint
-    const defaultEmpresaRes = await pool.query('SELECT id FROM empresas LIMIT 1');
-    const empresaId = (defaultEmpresaRes.rowCount && defaultEmpresaRes.rowCount > 0) ? defaultEmpresaRes.rows[0].id : null;
+    // Resolver empresa_id real a partir del número que recibió el mensaje (telefono_destino),
+    // vía grupos_reclutamiento. Fallback de una sola empresa mientras n8n no lo mande.
+    const { empresa_id: empresaId } = await resolveEmpresaYGrupo(telefono_destino, 'n8n-incoming');
 
     const upsertQuery = `
       INSERT INTO candidatos (
@@ -231,61 +233,11 @@ export async function POST(request: Request) {
 
     const candidatoId = upsertRes.rows[0].id;
 
-    // 4.5 Asignación temprana al reclutador de la vacante elegida
-    // Se dispara solo la primera vez que el candidato elige una vacante real
-    // (antes no tenía una, o estaba en 'General') y todavía no tiene reclutador asignado.
-    const vacanteEntrante = (vacante || '').trim();
-    const vacantePreviaVacia = !res.rowCount || !res.rows[0].vacante_interes || res.rows[0].vacante_interes === 'General';
-    const yaAsignado = !!(res.rowCount && res.rows[0].asignado_a);
-
-    if (vacanteEntrante && vacanteEntrante !== 'General' && vacantePreviaVacia && !yaAsignado) {
-      try {
-        const equipoRes = await pool.query(
-          `SELECT r.id AS reclutador_id, r.nombre AS reclutador_nombre, v.nombre AS vacante_nombre, v.naves
-           FROM reclutadores r
-           JOIN vacantes_def v ON v.reclutador_id = r.id AND v.activa = true
-           WHERE r.activo = true AND ($1::uuid IS NULL OR r.empresa_id = $1)`,
-          [empresaId]
-        );
-
-        const cleanStr = (s: string) => s ? s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim() : '';
-        const vacanteClean = cleanStr(vacanteEntrante);
-        const naveClean = nave ? String(nave).trim() : null;
-
-        const matches = equipoRes.rows.filter((row) => {
-          if (cleanStr(row.vacante_nombre) !== vacanteClean) return false;
-          if (!naveClean) return true;
-          let navesArr: string[] = [];
-          try { navesArr = typeof row.naves === 'string' ? JSON.parse(row.naves) : (row.naves || []); } catch { navesArr = []; }
-          return navesArr.length === 0 || navesArr.includes(naveClean);
-        });
-
-        let reclutadorAsignado: { reclutador_id: string; reclutador_nombre: string } | null = null;
-        if (matches.length === 1) {
-          reclutadorAsignado = matches[0];
-        } else if (matches.length === 0) {
-          const gerenteRes = await pool.query(
-            `SELECT id AS reclutador_id, nombre AS reclutador_nombre FROM reclutadores WHERE nombre = 'Gerente de Reclutamiento' AND activo = true LIMIT 1`
-          );
-          if (gerenteRes.rowCount) reclutadorAsignado = gerenteRes.rows[0];
-        }
-        // Si hay varios reclutadores para la misma vacante/nave, no forzamos una asignación
-        // individual aquí — el sistema de turnos que ya existe en el agendado de entrevista se encarga.
-
-        if (reclutadorAsignado) {
-          await pool.query(
-            `UPDATE candidatos SET asignado_a = $1 WHERE id = $2 AND (asignado_a IS NULL OR asignado_a = '')`,
-            [reclutadorAsignado.reclutador_nombre, candidatoId]
-          );
-          await pool.query(
-            `INSERT INTO notificaciones (reclutador_id, mensaje) VALUES ($1, $2)`,
-            [reclutadorAsignado.reclutador_id, `🆕 Nuevo candidato en proceso: ${finalNombre} — ${vacanteEntrante}`]
-          );
-        }
-      } catch (asignarErr) {
-        console.error('Error asignando candidato al reclutador de la vacante:', asignarErr);
-      }
-    }
+    // Asignación al reclutador dueño de la vacante elegida. Se intenta en cada
+    // mensaje (no solo "la primera vez que llega vacante") porque la IA no siempre
+    // etiqueta la vacante en el mismo turno en que la menciona en el chat — el
+    // helper es idempotente, solo asigna si `asignado_a_id` sigue en NULL.
+    await asignarReclutadorPorVacante(candidatoId, finalVacante, nave, empresaId);
 
     // 5. Insertar historial de mensajes
     // Mensaje del usuario

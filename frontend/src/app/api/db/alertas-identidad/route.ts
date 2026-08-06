@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     let filter = "WHERE c.alerta_identidad_estado = 'PENDIENTE'";
     const params: string[] = [];
     if (rol !== 'ADMIN' && rol !== 'ROOT') {
-      filter += ' AND c.asignado_a = (SELECT nombre FROM reclutadores WHERE id = $1)';
+      filter += ' AND c.asignado_a_id = $1';
       params.push(reclutador_id as string);
     }
 

@@ -208,6 +208,11 @@ export default function RecruiterCard({
             </div>
           </div>
         ))}
+        {rec.vacantes.length === 0 && (
+          <div className="flex-1 flex items-center justify-center text-center text-sm text-slate-400 italic py-4">
+            Sin vacantes {isEditable ? "— agrega la primera" : "registradas"}
+          </div>
+        )}
       </div>
 
       {/* Add Vacancy Footer */}

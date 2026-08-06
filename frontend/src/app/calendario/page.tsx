@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Calendar, dateFnsLocalizer, View, Views } from "react-big-calendar";
 import { format, parse, startOfWeek, getDay, addMonths, subMonths, addWeeks, subWeeks, addDays, subDays, startOfMonth } from "date-fns";
 import { es } from "date-fns/locale";
-import { MessageSquare, ChevronDown, ChevronRight, XCircle, ChevronLeft, RefreshCw, Calendar as CalendarIcon, LayoutList, Users } from "lucide-react";
+import { MessageSquare, ChevronDown, ChevronRight, XCircle, ChevronLeft, RefreshCw, Calendar as CalendarIcon, LayoutList } from "lucide-react";
 import "react-big-calendar/lib/css/react-big-calendar.css";
+import { useTenantChange } from "@/hooks/useTenant";
 
 const locales = { es };
 const localizer = dateFnsLocalizer({
@@ -19,13 +20,6 @@ const localizer = dateFnsLocalizer({
 
 const N8N_BASE_URL = "/api/n8n";
 const CANCEL_PASSWORD = "virgo2024"; // contraseña para confirmar cancelación
-
-const normalizeStr = (str: string) =>
-  String(str || "")
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .toLowerCase()
-    .trim();
 
 import type { Candidato, ChatMessage } from "@/types";
 
@@ -121,15 +115,14 @@ export default function CalendarioPage() {
   const router = useRouter();
   const [candidatos, setCandidatos] = useState<Candidato[]>([]);
   const [googleEvents, setGoogleEvents] = useState<any[]>([]);
+  const [gcalRange, setGcalRange] = useState<{ start: Date; end: Date } | null>(null);
+  const reconciledRef = useRef<Set<string>>(new Set());
   const [recruiterColors, setRecruiterColors] = useState<Record<string, string>>({});
   const [recruiterNames, setRecruiterNames] = useState<Record<string, string>>({});
   const [recruiterIdToEmail, setRecruiterIdToEmail] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{ msg: string; isError: boolean } | null>(null);
   const [myCalId, setMyCalId] = useState("");
-  const [navesList, setNavesList] = useState<{ id: string; nombre: string }[]>([]);
-  const [misNaveIds, setMisNaveIds] = useState<Set<string>>(new Set());
-  const [selectedNave, setSelectedNave] = useState<string>("TODOS");
 
   // Panel lateral
   const [expandedRecruiters, setExpandedRecruiters] = useState<Record<string, boolean>>({});
@@ -173,6 +166,9 @@ export default function CalendarioPage() {
     loadData();
   }, [router]);
 
+  // Re-cargar (sin recargar la página) cuando el usuario cambia de empresa/grupo en el TopNavbar
+  useTenantChange(() => loadData());
+
   const showToast = (msg: string, isError: boolean) => {
     setToast({ msg, isError });
     setTimeout(() => setToast(null), 3500);
@@ -181,41 +177,46 @@ export default function CalendarioPage() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${N8N_BASE_URL}/webhook/crm-candidatos-get`);
+      const storedEmpresaId = localStorage.getItem("tci_empresa_id");
+      const storedGrupoId = localStorage.getItem("tci_grupo_id");
+      const tenantParams = new URLSearchParams();
+      if (storedEmpresaId) tenantParams.set("empresa_id", storedEmpresaId);
+      if (storedGrupoId) tenantParams.set("grupo_id", storedGrupoId);
+      const tenantQuery = tenantParams.toString() ? `?${tenantParams.toString()}` : "";
+
+      // Candidatos con cita: usamos el endpoint de BD (ya filtrado por empresa a nivel SQL),
+      // no el webhook de n8n, que no tiene forma de aplicar ese scope de forma confiable.
+      // No hay filtro por nave en Calendario: se muestran todas. El filtro por grupo
+      // (propio del usuario, o elegido por ADMIN en otro módulo) sí va a nivel SQL,
+      // porque abarca varias naves a la vez.
+      const candidatosParams = new URLSearchParams();
+      if (storedEmpresaId) candidatosParams.set("empresa_id", storedEmpresaId);
+      if (storedGrupoId) candidatosParams.set("grupo_id", storedGrupoId);
+      candidatosParams.set("limit", "2000");
+      const res = await fetch(`/api/db/candidatos?${candidatosParams.toString()}`);
       if (!res.ok) throw new Error("Error API DB");
       const data = await res.json();
       setCandidatos(Array.isArray(data) ? data : data.data || []);
 
-      // Cargar Naves de la empresa
       try {
-        const resE = await fetch("/api/db/empresas");
-        if (resE.ok) {
-          const eData = await resE.json();
-          const empList = eData.empresas || [];
-          const allNaves: { id: string; nombre: string }[] = [];
-          empList.forEach((e: any) => {
-            (e.naves || []).forEach((n: any) => {
-              allNaves.push({ id: n.id, nombre: n.nombre || "" });
-            });
-          });
-          setNavesList(allNaves);
-        }
-      } catch (err) {
-        console.error("Error cargando naves:", err);
-      }
-
-      try {
-        const startStr = subMonths(new Date(), 2).toISOString();
-        const endStr = addMonths(new Date(), 3).toISOString();
-        const resGcal = await fetch(`${N8N_BASE_URL}/webhook/google-calendar?start=${startStr}&end=${endStr}`);
+        const rangeStart = subMonths(new Date(), 2);
+        const rangeEnd = addMonths(new Date(), 3);
+        const resGcal = await fetch(`${N8N_BASE_URL}/webhook/google-calendar?start=${rangeStart.toISOString()}&end=${rangeEnd.toISOString()}`);
         if (resGcal.ok) {
           const gcalData = await resGcal.json();
-          setGoogleEvents(Array.isArray(gcalData) ? gcalData : gcalData.events || gcalData.data || []);
+          const rawEvents: Record<string, unknown>[] = Array.isArray(gcalData) ? gcalData : gcalData.events || gcalData.data || [];
+          // El webhook de n8n consulta el calendario de cada reclutador en un loop;
+          // si alguno tiene un calendar_id invalido/vacio, Google Calendar responde
+          // con un objeto de error que se cuela en el arreglo en vez de un evento real.
+          // Filtramos cualquier item que no sea un evento genuino (sin id, o con "error").
+          const realEvents = rawEvents.filter((ge) => ge && typeof ge.id === "string" && ge.id.length > 0 && !ge.error);
+          setGoogleEvents(realEvents);
+          setGcalRange({ start: rangeStart, end: rangeEnd });
         }
       } catch { }
 
       try {
-        const resRec = await fetch(`/api/db/vacantes`);
+        const resRec = await fetch(`/api/db/vacantes${tenantQuery}`);
         if (resRec.ok) {
           const recData = await resRec.json();
           const recs: any[] = Array.isArray(recData) ? recData : recData.data || [];
@@ -225,8 +226,6 @@ export default function CalendarioPage() {
           const palette = ["#6366f1", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
           let myCalIdLocal = "";
           const myRecruiterId = localStorage.getItem("tci_reclutador_id");
-
-          const misNaves = new Set<string>();
 
           recs.forEach((r: any, i: number) => {
             const calId = (r.calendar_id || "").toLowerCase();
@@ -238,18 +237,11 @@ export default function CalendarioPage() {
                 myCalIdLocal = calId;
               }
             }
-            if (r.reclutador_id == myRecruiterId) {
-              // vacantes_def.naves guarda IDs de nave (no nombres), ver VacancyModal.tsx
-              (r.vacantes || []).forEach((v: any) => {
-                (v.naves || []).forEach((navId: string) => misNaves.add(navId));
-              });
-            }
           });
           setRecruiterColors(colorMap);
           setRecruiterNames(nameMap);
           setRecruiterIdToEmail(idToEmailMap);
           if (myCalIdLocal) setMyCalId(myCalIdLocal);
-          setMisNaveIds(misNaves);
         }
       } catch { }
 
@@ -261,10 +253,59 @@ export default function CalendarioPage() {
     }
   };
 
+  // ── Citas huérfanas ──────────────────────────────────────────────────────
+  // Detecta candidatos que quedaron en CITA_AGENDADA/RECORDATORIO_ENVIADO con
+  // un event_id que ya no existe en Google Calendar (p.ej. alguien borró el
+  // evento directo desde Google, sin pasar por el CRM ni por el chatbot).
+  const orphanedCandidatoIds = useMemo(() => {
+    if (!gcalRange) return new Set<string>();
+    const liveIds = new Set(googleEvents.map((ge) => ge.id).filter(Boolean));
+    const ids = new Set<string>();
+    for (const c of candidatos) {
+      if (!c.id || !c.event_id) continue;
+      if (!["CITA_AGENDADA", "RECORDATORIO_ENVIADO"].includes(c.estado)) continue;
+      if (liveIds.has(c.event_id)) continue;
+      const fechaStr = c.fecha_entrevista;
+      if (!fechaStr?.trim()) continue;
+      let d = new Date(fechaStr);
+      if (isNaN(d.getTime())) d = parse(fechaStr, "dd/MM/yyyy HH:mm", new Date());
+      if (isNaN(d.getTime())) d = parse(fechaStr, "dd/MM/yyyy", new Date());
+      if (isNaN(d.getTime())) continue;
+      if (d >= gcalRange.start && d <= gcalRange.end) ids.add(c.id);
+    }
+    return ids;
+  }, [candidatos, googleEvents, gcalRange]);
+
+  // Manda a corregir en BD las citas huérfanas detectadas (una sola vez por id)
+  useEffect(() => {
+    const pendientes = Array.from(orphanedCandidatoIds).filter((id) => !reconciledRef.current.has(id));
+    if (pendientes.length === 0) return;
+    pendientes.forEach((id) => reconciledRef.current.add(id));
+
+    fetch("/api/db/citas/reconciliar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ candidato_ids: pendientes }),
+    })
+      .then((res) => {
+        if (!res.ok) return;
+        setCandidatos((prev) =>
+          prev.map((c) =>
+            c.id && pendientes.includes(c.id)
+              ? { ...c, estado: "CITA_CANCELADA", event_id: undefined, fecha_entrevista: null }
+              : c
+          )
+        );
+      })
+      .catch(() => {
+        pendientes.forEach((id) => reconciledRef.current.delete(id));
+      });
+  }, [orphanedCandidatoIds]);
+
   // ── Events ──────────────────────────────────────────────────────────────
   const events: CalendarEvent[] = useMemo(() => {
     const dbEvents = candidatos
-      .filter((c) => c.fecha_entrevista?.trim())
+      .filter((c) => c.fecha_entrevista?.trim() && !(c.id && orphanedCandidatoIds.has(c.id)))
       .map((c) => {
         const fechaStr = c.fecha_entrevista!;
         let startDate = new Date(fechaStr);
@@ -281,7 +322,7 @@ export default function CalendarioPage() {
           end: new Date(startDate.getTime() + 60 * 60 * 1000),
           resource: {
             ...c,
-            creator_email: c.asignado_a ? (recruiterIdToEmail[c.asignado_a] || "sin_asignar") : "sin_asignar",
+            creator_email: c.asignado_a_id ? (recruiterIdToEmail[c.asignado_a_id] || "sin_asignar") : "sin_asignar",
           },
         };
       }).filter(Boolean) as CalendarEvent[];
@@ -347,6 +388,19 @@ export default function CalendarioPage() {
 
     let allEvents: CalendarEvent[] = [...dbEvents, ...Array.from(uniqueGcalEventsMap.values())];
 
+    // El webhook de Google Calendar recorre TODOS los reclutadores sin filtrar por empresa.
+    // Como recruiterColors ya viene de /api/db/vacantes escopeado por empresa/nave, lo usamos
+    // para descartar eventos de reclutadores fuera de la empresa seleccionada en el navbar.
+    const storedEmpresaId = typeof window !== "undefined" ? localStorage.getItem("tci_empresa_id") : null;
+    if (storedEmpresaId) {
+      const allowedCalIds = new Set(Object.keys(recruiterColors));
+      allEvents = allEvents.filter((ev) => {
+        if (!ev.resource.es_google_calendar) return true; // eventos de BD ya vienen escopeados
+        const email = (ev.resource.creator_email || "").toLowerCase();
+        return allowedCalIds.has(email);
+      });
+    }
+
     // Filter by role if not ADMIN or ENCARGADO
     const role = typeof window !== "undefined" ? localStorage.getItem("tci_role") : "USER";
     if (role !== "ADMIN" && role !== "ENCARGADO" && role !== "ROOT") {
@@ -354,79 +408,13 @@ export default function CalendarioPage() {
       allEvents = allEvents.filter((ev) => {
         const evEmail = (ev.resource.creator_email || "").toLowerCase();
         const matchesEmail = myCalId && evEmail === myCalId;
-        const matchesId = myRecruiterId && ev.resource.asignado_a === myRecruiterId;
+        const matchesId = myRecruiterId && ev.resource.asignado_a_id === myRecruiterId;
         return matchesEmail || matchesId;
       });
     }
 
-    // Filter by selectedNave if not 'TODOS'
-    if (selectedNave !== "TODOS") {
-      const naveTarget = navesList.find((n) => n.id === selectedNave);
-      const targetClean = normalizeStr(naveTarget?.nombre || "");
-      const targetDigits = targetClean.match(/\d+/g) || [];
-      const targetWords = targetClean
-        .replace(/sucursal\s*/gi, "")
-        .replace(/nave\s*/gi, "")
-        .split(/[\s:-]+/)
-        .filter((w) => w.length > 2);
-
-      allEvents = allEvents.filter((ev: CalendarEvent) => {
-        const resObj = ev.resource as any;
-
-        // 1. Coincidencia por ID directo de Nave
-        if (resObj.nave_id && resObj.nave_id === selectedNave) return true;
-
-        // 2. Coincidencia por candidato en DB (por teléfono)
-        const rawTelStr = String(resObj.telefono || resObj.summary || ev.title || "");
-        const eventTel = rawTelStr.replace(/\D/g, "");
-        if (eventTel.length >= 8) {
-          const candMatch = candidatos.find((c) => {
-            const cTel = String(c.telefono || "").replace(/\D/g, "");
-            return cTel.length >= 8 && cTel.slice(-10) === eventTel.slice(-10);
-          });
-          if (candMatch) {
-            const candObj = candMatch as any;
-            if (candObj.nave_id && candObj.nave_id === selectedNave) return true;
-            const candNaveClean = normalizeStr(candMatch.nave_interes || "");
-            if (candNaveClean) {
-              if (candNaveClean.includes(targetClean) || targetClean.includes(candNaveClean)) return true;
-              if (targetWords.length > 0 && targetWords.some((w) => candNaveClean.includes(w))) return true;
-            }
-          }
-        }
-
-        // 3. Coincidencia por texto del evento (nave_interes, nave, titulo, descripcion)
-        const fullText = normalizeStr(
-          `${resObj.nave_interes || ""} ${resObj.nave || ""} ${ev.title || ""} ${resObj.resumen_ia || ""}`
-        );
-
-        if (fullText) {
-          if (fullText.includes(targetClean)) return true;
-          const matchesWord = targetWords.length > 0 && targetWords.some((w) => fullText.includes(w));
-          const matchesDigit = targetDigits.length > 0 && targetDigits.some((d) => fullText.includes(d));
-          if (matchesWord && (targetDigits.length === 0 || matchesDigit)) return true;
-        }
-
-        return false;
-      });
-    }
-
     return allEvents;
-  }, [candidatos, googleEvents, myCalId, selectedNave, navesList]);
-
-  // Naves que el usuario actual puede usar para filtrar (segun su rol)
-  const naveOptions = useMemo(() => {
-    if (typeof window === "undefined") return [];
-    const role = localStorage.getItem("tci_role");
-    if (role === "ADMIN" || role === "ROOT") return navesList;
-    if (role === "ENCARGADO") {
-      let asignadas: string[] = [];
-      try { asignadas = JSON.parse(localStorage.getItem("tci_naves_asignadas") || "[]"); } catch { }
-      return navesList.filter((n) => asignadas.includes(n.id));
-    }
-    // RECLUTADOR: solo las naves de sus propias vacantes
-    return navesList.filter((n) => misNaveIds.has(n.id));
-  }, [navesList, misNaveIds]);
+  }, [candidatos, googleEvents, myCalId, orphanedCandidatoIds, recruiterColors]);
 
   const formatVisualDate = (d: Date) => format(d, "dd/MM/yyyy HH:mm");
 
@@ -548,7 +536,8 @@ export default function CalendarioPage() {
         motivo: rescheduleReason,
         telefono_reclutador: recruiterPhone,
         nombre_reclutador: myRecruiterName || getRecruiterDisplayName(rescheduleTarget.resource.creator_email || ""),
-        nombre_candidato: rescheduleTarget.resource.nombre_chat || rescheduleTarget.resource.nombre_solicitud || "Candidato"
+        nombre_candidato: rescheduleTarget.resource.nombre_chat || rescheduleTarget.resource.nombre_solicitud || "Candidato",
+        correo: rescheduleTarget.resource.correo || ""
       };
       const res = await fetch(`${N8N_BASE_URL}/webhook/crm-reagendar-cita`, {
         method: "POST",
@@ -636,28 +625,6 @@ export default function CalendarioPage() {
             {totalProximas} próximas
           </span>
 
-          {/* FILTRO DE NAVE/SUCURSAL */}
-          {naveOptions.length > 0 && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider hidden sm:inline-flex items-center gap-1">
-                <Users size={14} className="text-indigo-600" /> Nave:
-              </span>
-              <select
-                id="calendario-nave-filter"
-                name="nave_filter"
-                value={selectedNave}
-                onChange={(e) => setSelectedNave(e.target.value)}
-                className="px-3.5 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 text-xs font-bold focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all cursor-pointer shadow-xs"
-              >
-                <option value="TODOS">Todas mis Naves</option>
-                {naveOptions.map((n) => (
-                  <option key={n.id} value={n.id}>
-                    {n.nombre}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
         </div>
 
         <button
