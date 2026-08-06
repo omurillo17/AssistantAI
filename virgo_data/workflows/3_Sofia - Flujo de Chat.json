@@ -656,310 +656,60 @@
     },
     {
       "parameters": {
-        "description": "=Utiliza esta herramienta para gestionar el calendario.\n⚠️ CONTEXTO TEMPORAL CRÍTICO:\n- La fecha y hora actual EXACTA es: {{ $now.setZone('America/Mexico_City').toString() }}\n- El día de la semana es: {{ $now.setZone('America/Mexico_City').toFormat('cccc') }}\n- El año actual es: {{ $now.setZone('America/Mexico_City').year }}\n\nINSTRUCCIONES:\n1. Calcula todas las fechas relativas (\"mañana\", \"el viernes\", \"próxima semana\") basándote en la FECHA ACTUAL de arriba.\n2. JAMÁS agendes citas en el pasado (años 2024, 2025).\n3. Si el usuario dice \"viernes\" y hoy es lunes 16, el viernes es 20 (del mismo mes y año).\n4. DURACIÓN ESTRICTA: El evento debe durar exactamente 1 hora. El parámetro 'end' debe ser exactamente 60 minutos después del parámetro 'start'.",
-        "workflowId": {
-          "__rl": true,
-          "value": "G1Ow8lsap2BQkeJB",
-          "mode": "list",
-          "cachedResultUrl": "/workflow/G1Ow8lsap2BQkeJB",
-          "cachedResultName": "EventosCalendario"
+        "descriptionType": "manual",
+        "toolDescription": "=Utiliza esta herramienta para gestionar el calendario.\n⚠️ CONTEXTO TEMPORAL CRÍTICO:\n- La fecha y hora actual EXACTA es: {{ $now.setZone('America/Mexico_City').toString() }}\n- El día de la semana es: {{ $now.setZone('America/Mexico_City').toFormat('cccc') }}\n- El año actual es: {{ $now.setZone('America/Mexico_City').year }}\n\nINSTRUCCIONES:\n1. Calcula todas las fechas relativas (\"mañana\", \"el viernes\", \"próxima semana\") basándote en la FECHA ACTUAL de arriba.\n2. JAMÁS agendes citas en el pasado (años 2024, 2025).\n3. Si el usuario dice \"viernes\" y hoy es lunes 16, el viernes es 20 (del mismo mes y año).\n4. DURACIÓN ESTRICTA: El evento debe durar exactamente 1 hora. El parámetro 'end' debe ser exactamente 60 minutos después del parámetro 'start'.",
+        "method": "POST",
+        "url": "={{ ($env.BACKEND_API_BASE || 'http://backend:8000') + '/internal/eventos-calendario/crear' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $env.PYTHON_SERVICE_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
         },
-        "workflowInputs": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "start": "={{ $fromAI('start', 'Fecha de inicio en formato ISO', 'string') }}",
-            "end": "={{ $fromAI('end', 'Fecha de fin en formato ISO', 'string') }}",
-            "calendar_id": "={{ $('ResolverReclutador').first().json?.calendar_id || '' }}",
-            "telefono": "={{ $('Recibido desde Analizador').first().json._candidato?.telefono || '' }}",
-            "resumen_ia": "={{ $fromAI('resumen_corto', 'Resumen corto de la cita', 'string') }}",
-            "nombre": "={{ $('Recibido desde Analizador').first().json._candidato?.nombre || '' }}",
-            "nave_interes": "={{ $('Recibido desde Analizador').first().json._candidato?.nave_interes || '' }}",
-            "vacante_interes": "={{ $('Recibido desde Analizador').first().json._candidato?.vacante_interes || '' }}",
-            "ine_nombre": "={{ $('Recibido desde Analizador').first().json._candidato?.datos_ine?.nombre_completo || '' }}",
-            "ine_curp": "={{ $('Recibido desde Analizador').first().json._candidato?.datos_ine?.curp || '' }}",
-            "empresa_id": "={{ $('Recibido desde Analizador').first().json._candidato?.empresa_id || '' }}"
-          },
-          "matchingColumns": [],
-          "schema": [
-            {
-              "id": "start",
-              "displayName": "start",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "canBeUsedToMatch": true,
-              "type": "string"
-            },
-            {
-              "id": "end",
-              "displayName": "end",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "canBeUsedToMatch": true,
-              "type": "string"
-            },
-            {
-              "id": "resumen_ia",
-              "displayName": "resumen_ia",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "canBeUsedToMatch": true,
-              "type": "string",
-              "removed": false
-            },
-            {
-              "id": "calendar_id",
-              "displayName": "calendar_id",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "canBeUsedToMatch": true,
-              "type": "string"
-            },
-            {
-              "id": "telefono",
-              "displayName": "telefono",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "canBeUsedToMatch": true,
-              "type": "string"
-            },
-            {
-              "id": "nombre",
-              "displayName": "nombre",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "canBeUsedToMatch": true,
-              "type": "string",
-              "removed": false
-            },
-            {
-              "id": "nave_interes",
-              "displayName": "nave_interes",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "canBeUsedToMatch": true,
-              "type": "string",
-              "removed": false
-            },
-            {
-              "id": "vacante_interes",
-              "displayName": "vacante_interes",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "canBeUsedToMatch": true,
-              "type": "string",
-              "removed": false
-            },
-            {
-              "id": "ine_nombre",
-              "displayName": "ine_nombre",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "canBeUsedToMatch": true,
-              "type": "string",
-              "removed": false
-            },
-            {
-              "id": "ine_curp",
-              "displayName": "ine_curp",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "canBeUsedToMatch": true,
-              "type": "string",
-              "removed": false
-            },
-            {
-              "id": "empresa_id",
-              "displayName": "empresa_id",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "canBeUsedToMatch": true,
-              "type": "string"
-            }
-          ],
-          "attemptToConvertTypes": false,
-          "convertFieldsToString": false
-        }
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ start: $fromAI('start', 'Fecha de inicio en formato ISO', 'string'), end: $fromAI('end', 'Fecha de fin en formato ISO', 'string'), calendar_id: $('ResolverReclutador').first().json?.calendar_id || '', telefono: $('Recibido desde Analizador').first().json._candidato?.telefono || '', resumen_ia: $fromAI('resumen_corto', 'Resumen corto de la cita', 'string'), nombre: $('Recibido desde Analizador').first().json._candidato?.nombre || '', nave_interes: $('Recibido desde Analizador').first().json._candidato?.nave_interes || '', vacante_interes: $('Recibido desde Analizador').first().json._candidato?.vacante_interes || '', ine_nombre: $('Recibido desde Analizador').first().json._candidato?.datos_ine?.nombre_completo || '', ine_curp: $('Recibido desde Analizador').first().json._candidato?.datos_ine?.curp || '', empresa_id: $('Recibido desde Analizador').first().json._candidato?.empresa_id || '' }) }}",
+        "options": {}
       },
-      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
-      "typeVersion": 2.2,
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 1.1,
       "position": [
         -1056,
         432
       ],
+      "retryOnFail": true,
+      "waitBetweenTries": 2000,
       "id": "81f06c43-0fd5-4b1d-99e4-6ef939cb7f40",
       "name": "Subflujo Crear Evento",
       "rewireOutputLogTo": "ai_tool"
     },
     {
       "parameters": {
-        "description": "=Herramienta para ELIMINAR/CANCELAR una cita en el calendario.",
-        "workflowId": {
-          "__rl": true,
-          "value": "G1Ow8lsap2BQkeJB",
-          "mode": "list",
-          "cachedResultUrl": "/workflow/G1Ow8lsap2BQkeJB",
-          "cachedResultName": "EventosCalendario"
+        "descriptionType": "manual",
+        "toolDescription": "=Herramienta para ELIMINAR/CANCELAR una cita en el calendario.",
+        "method": "POST",
+        "url": "={{ ($env.BACKEND_API_BASE || 'http://backend:8000') + '/internal/eventos-calendario/eliminar' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "={{ $env.PYTHON_SERVICE_API_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
         },
-        "workflowInputs": {
-          "mappingMode": "defineBelow",
-          "value": {
-            "action": "delete",
-            "calendar_id": "={{ $('ResolverReclutador').first().json?.calendar_id || '' }}",
-            "telefono": "={{ $('Recibido desde Analizador').first().json._candidato?.telefono || '' }}",
-            "event_id": "={{ $('Recibido desde Analizador').first().json._candidato?.event_id || '' }}"
-          },
-          "matchingColumns": [],
-          "schema": [
-            {
-              "id": "start",
-              "displayName": "start",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "canBeUsedToMatch": true,
-              "type": "string",
-              "removed": false
-            },
-            {
-              "id": "end",
-              "displayName": "end",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "canBeUsedToMatch": true,
-              "type": "string",
-              "removed": false
-            },
-            {
-              "id": "resumen_ia",
-              "displayName": "resumen_ia",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "canBeUsedToMatch": true,
-              "type": "string",
-              "removed": false
-            },
-            {
-              "id": "notas_ia",
-              "displayName": "notas_ia",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "canBeUsedToMatch": true,
-              "type": "string",
-              "removed": false
-            },
-            {
-              "id": "calendar_id",
-              "displayName": "calendar_id",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "canBeUsedToMatch": true,
-              "type": "string"
-            },
-            {
-              "id": "telefono",
-              "displayName": "telefono",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "canBeUsedToMatch": true,
-              "type": "string"
-            },
-            {
-              "id": "nombre",
-              "displayName": "nombre",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "canBeUsedToMatch": true,
-              "type": "string",
-              "removed": false
-            },
-            {
-              "id": "nave_interes",
-              "displayName": "nave_interes",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "canBeUsedToMatch": true,
-              "type": "string",
-              "removed": false
-            },
-            {
-              "id": "vacante_interes",
-              "displayName": "vacante_interes",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "canBeUsedToMatch": true,
-              "type": "string",
-              "removed": false
-            },
-            {
-              "id": "ine_nombre",
-              "displayName": "ine_nombre",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "canBeUsedToMatch": true,
-              "type": "string",
-              "removed": false
-            },
-            {
-              "id": "ine_curp",
-              "displayName": "ine_curp",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "canBeUsedToMatch": true,
-              "type": "string",
-              "removed": false
-            },
-            {
-              "id": "action",
-              "displayName": "action",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "canBeUsedToMatch": true,
-              "type": "string",
-              "removed": false
-            },
-            {
-              "id": "event_id",
-              "displayName": "event_id",
-              "required": false,
-              "defaultMatch": false,
-              "display": true,
-              "canBeUsedToMatch": true,
-              "type": "string",
-              "removed": false
-            }
-          ],
-          "attemptToConvertTypes": false,
-          "convertFieldsToString": false
-        }
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ calendar_id: $('ResolverReclutador').first().json?.calendar_id || '', telefono: $('Recibido desde Analizador').first().json._candidato?.telefono || '', event_id: $('Recibido desde Analizador').first().json._candidato?.event_id || '' }) }}",
+        "options": {}
       },
-      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
-      "typeVersion": 2.2,
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 1.1,
       "position": [
         -784,
         368
       ],
+      "retryOnFail": true,
+      "waitBetweenTries": 2000,
       "id": "b7f84ef9-52bc-435c-9ecf-fa88fa859afe",
       "name": "Subflujo Eliminar Evento"
     }

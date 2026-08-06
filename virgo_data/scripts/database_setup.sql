@@ -92,6 +92,29 @@ CREATE TRIGGER update_reclutadores_updated_at
     EXECUTE FUNCTION update_updated_at_column();
 
 -- ============================================
+-- TABLA: google_calendar_credentials
+-- Refresh tokens OAuth de Google Calendar por cuenta de reclutador
+-- (calendar_id = reclutadores.calendar_id), usados por el servicio
+-- backend/ que reemplaza progresivamente los workflows de n8n. Se llena
+-- con backend/scripts/authorize_recruiter.py (flujo manual, una vez por
+-- reclutador), no de forma programática.
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS google_calendar_credentials (
+    calendar_id VARCHAR(255) PRIMARY KEY,
+    refresh_token_encrypted TEXT NOT NULL,
+    scopes VARCHAR(500) NOT NULL DEFAULT 'https://www.googleapis.com/auth/calendar',
+    authorized_by VARCHAR(255) DEFAULT '',
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TRIGGER update_google_calendar_credentials_updated_at
+    BEFORE UPDATE ON google_calendar_credentials
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================
 -- TABLA: vacantes_def
 -- Definicion de vacantes por reclutador
 -- ============================================

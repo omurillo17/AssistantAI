@@ -45,11 +45,36 @@ services:
       - TCI_API_BASE=${TCI_API_BASE:-http://host.docker.internal:3001}
       - TCI_EMPRESA_ID=${TCI_EMPRESA_ID:-}
       - N8N_API_KEY=${N8N_API_KEY:-}
+      - BACKEND_API_BASE=${BACKEND_API_BASE:-http://backend:8000}
+      - PYTHON_SERVICE_API_KEY=${PYTHON_SERVICE_API_KEY:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - n8n_data_final:/home/node/.n8n
       - ./virgo_data:/home/node/virgo_files
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backend:
+    build:
+      context: ./backend
+    restart: always
+    networks:
+      - virgo_network
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://${DB_POSTGRESDB_USER}:${DB_POSTGRESDB_PASSWORD}@postgres:5432/${DB_POSTGRESDB_DATABASE}
+      - GOOGLE_TOKEN_ENCRYPTION_KEY=${GOOGLE_TOKEN_ENCRYPTION_KEY}
+      - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
+      - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET}
+      - PYTHON_SERVICE_API_KEY=${PYTHON_SERVICE_API_KEY:-}
+      - FRONTEND_API_BASE=${FRONTEND_API_BASE:-http://host.docker.internal:3001}
+      - N8N_API_KEY=${N8N_API_KEY:-}
+      - TZ=America/Mexico_City
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
