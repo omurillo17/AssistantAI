@@ -4,12 +4,13 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { Recruiter, Vacante } from "@/types";
 import { COUNTRY_CODES } from "@/types";
-import { useTenantChange } from "./useTenant";
+import { useTenant, useTenantChange } from "./useTenant";
 
 const API_URL = `/api/db/vacantes`;
 
 export function useVacantes() {
   const router = useRouter();
+  const { setTenant } = useTenant();
 
   const [recruiters, setRecruiters] = useState<Recruiter[]>([]);
   const [loading, setLoading] = useState(true);
@@ -55,8 +56,22 @@ export function useVacantes() {
   useEffect(() => {
     document.title = "Gestión de Vacantes | TCi";
     const role = localStorage.getItem("tci_role");
-    setIsAdmin(role === "ADMIN" || role === "ENCARGADO");
+    setIsAdmin(role === "ADMIN" || role === "ROOT" || role === "ENCARGADO");
     setMyRecId(localStorage.getItem("tci_reclutador_id"));
+
+    // ADMIN/ROOT administran TODA la empresa: si llegan aquí con una nave/grupo
+    // todavía seleccionado de otra página (Dashboards, Mensajes, etc.), Vacantes
+    // se veía recortado a esa nave sin que quedara claro por qué ("vacantes que
+    // nada que ver"). Al entrar aquí se resetea a "todas" -- el selector de
+    // Nave/Grupo del TopNavbar sigue funcionando normal después, para quien sí
+    // quiera filtrar mientras está en esta página.
+    // ENCARGADO no se toca: su grupo es fijo (asignado en el login), no un
+    // filtro opcional.
+    if (role === "ADMIN" || role === "ROOT") {
+      const storedEmpresaId = localStorage.getItem("tci_empresa_id");
+      setTenant(storedEmpresaId, null, null);
+    }
+
     loadData();
     loadNaves();
   }, [router]);

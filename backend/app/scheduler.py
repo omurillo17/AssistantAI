@@ -19,6 +19,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from app.config import ENV
 from app.db import get_pool
+from app.recordatorios import job_recordatorio_entrevista, job_vigilante
 
 logger = logging.getLogger("scheduler")
 
@@ -88,6 +89,8 @@ _JOBS = {
     "process_outbox": job_process_outbox,
     "limpiar_archivos": job_limpiar_archivos,
     "limpiar_bd": job_limpiar_bd,
+    "recordatorio_entrevista": job_recordatorio_entrevista,
+    "vigilante": job_vigilante,
 }
 
 _scheduler: AsyncIOScheduler | None = None
@@ -119,6 +122,22 @@ def start_scheduler() -> AsyncIOScheduler:
         job_limpiar_bd,
         trigger=CronTrigger(day_of_week="sun", hour=3, minute=0, timezone=_TZ),
         id="limpiar_bd",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        job_recordatorio_entrevista,
+        trigger=CronTrigger(hour=20, minute=0, timezone=_TZ),
+        id="recordatorio_entrevista",
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        job_vigilante,
+        trigger=IntervalTrigger(minutes=1),
+        id="vigilante",
         replace_existing=True,
         max_instances=1,
         coalesce=True,

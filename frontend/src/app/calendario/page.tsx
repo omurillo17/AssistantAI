@@ -19,7 +19,7 @@ const localizer = dateFnsLocalizer({
 });
 
 const N8N_BASE_URL = "/api/n8n";
-const CANCEL_PASSWORD = "virgo2024"; // contraseña para confirmar cancelación
+const BACKEND_BASE_URL = "/api/backend";
 
 import type { Candidato, ChatMessage } from "@/types";
 
@@ -98,8 +98,8 @@ function CustomToolbar({ date, view, onNavigate, onView }: any) {
             key={v.key}
             onClick={() => onView(v.key)}
             className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${view === v.key
-                ? "bg-white text-indigo-700 shadow-sm"
-                : "text-slate-500 hover:text-slate-700"
+              ? "bg-white text-indigo-700 shadow-sm"
+              : "text-slate-500 hover:text-slate-700"
               }`}
           >
             {v.label}
@@ -181,14 +181,8 @@ export default function CalendarioPage() {
       const storedGrupoId = localStorage.getItem("tci_grupo_id");
       const tenantParams = new URLSearchParams();
       if (storedEmpresaId) tenantParams.set("empresa_id", storedEmpresaId);
-      if (storedGrupoId) tenantParams.set("grupo_id", storedGrupoId);
       const tenantQuery = tenantParams.toString() ? `?${tenantParams.toString()}` : "";
 
-      // Candidatos con cita: usamos el endpoint de BD (ya filtrado por empresa a nivel SQL),
-      // no el webhook de n8n, que no tiene forma de aplicar ese scope de forma confiable.
-      // No hay filtro por nave en Calendario: se muestran todas. El filtro por grupo
-      // (propio del usuario, o elegido por ADMIN en otro módulo) sí va a nivel SQL,
-      // porque abarca varias naves a la vez.
       const candidatosParams = new URLSearchParams();
       if (storedEmpresaId) candidatosParams.set("empresa_id", storedEmpresaId);
       if (storedGrupoId) candidatosParams.set("grupo_id", storedGrupoId);
@@ -201,14 +195,10 @@ export default function CalendarioPage() {
       try {
         const rangeStart = subMonths(new Date(), 2);
         const rangeEnd = addMonths(new Date(), 3);
-        const resGcal = await fetch(`${N8N_BASE_URL}/webhook/google-calendar?start=${rangeStart.toISOString()}&end=${rangeEnd.toISOString()}`);
+        const resGcal = await fetch(`${BACKEND_BASE_URL}/internal/citas/google-calendar?start=${rangeStart.toISOString()}&end=${rangeEnd.toISOString()}`);
         if (resGcal.ok) {
           const gcalData = await resGcal.json();
           const rawEvents: Record<string, unknown>[] = Array.isArray(gcalData) ? gcalData : gcalData.events || gcalData.data || [];
-          // El webhook de n8n consulta el calendario de cada reclutador en un loop;
-          // si alguno tiene un calendar_id invalido/vacio, Google Calendar responde
-          // con un objeto de error que se cuela en el arreglo en vez de un evento real.
-          // Filtramos cualquier item que no sea un evento genuino (sin id, o con "error").
           const realEvents = rawEvents.filter((ge) => ge && typeof ge.id === "string" && ge.id.length > 0 && !ge.error);
           setGoogleEvents(realEvents);
           setGcalRange({ start: rangeStart, end: rangeEnd });
@@ -254,9 +244,6 @@ export default function CalendarioPage() {
   };
 
   // ── Citas huérfanas ──────────────────────────────────────────────────────
-  // Detecta candidatos que quedaron en CITA_AGENDADA/RECORDATORIO_ENVIADO con
-  // un event_id que ya no existe en Google Calendar (p.ej. alguien borró el
-  // evento directo desde Google, sin pasar por el CRM ni por el chatbot).
   const orphanedCandidatoIds = useMemo(() => {
     if (!gcalRange) return new Set<string>();
     const liveIds = new Set(googleEvents.map((ge) => ge.id).filter(Boolean));
@@ -387,10 +374,6 @@ export default function CalendarioPage() {
     });
 
     let allEvents: CalendarEvent[] = [...dbEvents, ...Array.from(uniqueGcalEventsMap.values())];
-
-    // El webhook de Google Calendar recorre TODOS los reclutadores sin filtrar por empresa.
-    // Como recruiterColors ya viene de /api/db/vacantes escopeado por empresa/nave, lo usamos
-    // para descartar eventos de reclutadores fuera de la empresa seleccionada en el navbar.
     const storedEmpresaId = typeof window !== "undefined" ? localStorage.getItem("tci_empresa_id") : null;
     if (storedEmpresaId) {
       const allowedCalIds = new Set(Object.keys(recruiterColors));
@@ -491,7 +474,7 @@ export default function CalendarioPage() {
         nombre_reclutador: myRecruiterName || getRecruiterDisplayName(cancelTarget.resource.creator_email || ""),
         nombre_candidato: cancelTarget.resource.nombre_chat || cancelTarget.resource.nombre_solicitud || "Candidato"
       };
-      const res = await fetch(`${N8N_BASE_URL}/webhook/crm-cancelar-cita`, {
+      const res = await fetch(`${BACKEND_BASE_URL}/internal/citas/cancelar`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -539,7 +522,7 @@ export default function CalendarioPage() {
         nombre_candidato: rescheduleTarget.resource.nombre_chat || rescheduleTarget.resource.nombre_solicitud || "Candidato",
         correo: rescheduleTarget.resource.correo || ""
       };
-      const res = await fetch(`${N8N_BASE_URL}/webhook/crm-reagendar-cita`, {
+      const res = await fetch(`${BACKEND_BASE_URL}/internal/citas/reagendar`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -577,7 +560,7 @@ export default function CalendarioPage() {
         summary: blockTitle,
         description: "Bloqueo manual creado desde CRM"
       };
-      const res = await fetch(`${N8N_BASE_URL}/webhook/crm-crear-bloqueo`, {
+      const res = await fetch(`${BACKEND_BASE_URL}/internal/citas/bloqueo`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -855,8 +838,8 @@ export default function CalendarioPage() {
                   placeholder="••••••••"
                   autoFocus
                   className={`w-full px-3 py-2 rounded-xl border outline-none text-xs transition-all ${cancelError
-                      ? "border-red-400 bg-red-50 focus:border-red-500"
-                      : "border-slate-200 bg-slate-50 focus:border-indigo-400 focus:bg-white"
+                    ? "border-red-400 bg-red-50 focus:border-red-500"
+                    : "border-slate-200 bg-slate-50 focus:border-indigo-400 focus:bg-white"
                     }`}
                 />
                 {cancelError && (

@@ -363,6 +363,22 @@ CREATE TABLE IF NOT EXISTS reclutadores_turno (
 );
 
 -- ============================================
+-- TABLA: n8n_chat_histories
+-- Memoria de conversación del agente de IA (backend/app/chat/memoria.py).
+-- Mismo nombre/esquema que usaba el nodo Postgres Chat Memory de n8n
+-- (formato jsonb compatible con LangChain) para no perder continuidad
+-- si algún día hay que revertir esa pieza a n8n.
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS n8n_chat_histories (
+    id SERIAL PRIMARY KEY,
+    session_id VARCHAR(255) NOT NULL,
+    message JSONB NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_histories_session ON n8n_chat_histories(session_id);
+
+-- ============================================
 -- TABLA: system_logs
 -- ============================================
 

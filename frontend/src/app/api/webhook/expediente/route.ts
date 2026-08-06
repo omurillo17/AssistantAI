@@ -30,6 +30,7 @@ export async function POST(request: Request) {
       correo,
       filtros_tecnicos,
       identidad_bloqueada,
+      identidad_alerta,
       identidad_motivo,
       curp_ine,
       curp_rfc,
@@ -75,6 +76,12 @@ export async function POST(request: Request) {
     // 2. Determinar evento para la máquina de estados
     let event: any = null;
     const esBloqueado = identidad_bloqueada === 'true';
+    // Discrepancia MENOR de CURP (1-2 caracteres, típico de OCR): a diferencia de
+    // esBloqueado, NO detiene el agendamiento -- solo deja la alerta pendiente en
+    // el modal del reclutador. chat_prompt.md ya distingue esto ("1-2 caracteres
+    // → PERMITIDO AGENDAR"); antes backend forzaba DOCUMENTOS_NO_COINCIDEN también
+    // en este caso, bloqueando algo que el propio prompt permitía.
+    const esAlertaIdentidad = identidad_alerta === 'true';
     const esCV = tipo_origen === 'CV' || tipo_origen === 'SOLICITUD';
     const esINE = tipo_origen === 'INE';
     const esConstancia = ['CONSTANCIA', 'CSF', 'RFC', 'SAT'].includes((tipo_origen || '').toUpperCase());
@@ -128,6 +135,9 @@ export async function POST(request: Request) {
     } else if (esINE || esConstancia) {
       const curpMalFormada = (esINE && curpIneFormatoInvalido) || (esConstancia && curpRfcFormatoInvalido);
 
+      const tieneIne = esINE || !!dbCandidato.datos_ine || !!dbCandidato.curp_ine || !!dbCandidato.nombre_ine;
+      const tieneRfc = esConstancia || !!dbCandidato.datos_rfc || !!dbCandidato.curp_rfc || !!dbCandidato.nombre_constancia;
+
       if (curpMalFormada) {
         // La CURP extraída no mide 18 caracteres: no se descarta, se guarda igual
         // (abajo, en el upsert) y se manda a revisión manual por el mismo camino
@@ -139,12 +149,25 @@ export async function POST(request: Request) {
           debeNotificarReclutador = true;
         }
         alertaIdentidadEstadoFinal = 'PENDIENTE';
+      } else if (esAlertaIdentidad) {
+        // Discrepancia menor (1-2 caracteres): queda pendiente de revisión para
+        // el reclutador, pero el candidato avanza normalmente -- SIN forzar
+        // DOCUMENTOS_NO_COINCIDEN ni tocar resumen_ia_final con un mensaje de bloqueo.
+        alertaIdentidadMotivoFinal = identidad_motivo || alertaIdentidadMotivoFinal;
+        if (dbCandidato.alerta_identidad_estado !== 'PENDIENTE') {
+          debeNotificarReclutador = true;
+        }
+        alertaIdentidadEstadoFinal = 'PENDIENTE';
+        if (tieneIne && tieneRfc) {
+          estado_final = 'INE_VALIDADA';
+          resumen_ia_final = 'El candidato completó su INE y RFC (con una discrepancia menor de CURP pendiente de revisión). El siguiente paso es agendar la cita.';
+        } else {
+          resumen_ia_final = `Candidato entregó documento parcial (${tipo_origen}). Esperando el faltante.`;
+        }
       } else {
         // La CURP recién comparada ya no muestra discrepancia (o no había una previa): se limpia la alerta.
         alertaIdentidadEstadoFinal = null;
         alertaIdentidadMotivoFinal = null;
-        const tieneIne = esINE || !!dbCandidato.datos_ine || !!dbCandidato.curp_ine || !!dbCandidato.nombre_ine;
-        const tieneRfc = esConstancia || !!dbCandidato.datos_rfc || !!dbCandidato.curp_rfc || !!dbCandidato.nombre_constancia;
         if (tieneIne && tieneRfc) {
           estado_final = 'INE_VALIDADA';
           resumen_ia_final = 'El candidato completó su INE y RFC. El siguiente paso es agendar la cita.';
