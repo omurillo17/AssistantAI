@@ -1,10 +1,20 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
-import { candidatoMachine } from '@/lib/stateMachine';
+import { candidatoMachine, ESTADOS_VALIDOS } from '@/lib/stateMachine';
 import { createActor } from 'xstate';
 import { verifyWebhookApiKey } from '@/lib/auth';
 import { resolveEmpresaYGrupo } from '@/lib/empresaResolution';
 import { asignarReclutadorPorVacante } from '@/lib/asignacionReclutador';
+
+/**
+ * Estas banderas llegaban de n8n como el STRING 'true' (todo en n8n viaja como
+ * texto), pero el backend de Python las manda como booleanos JSON reales. Las
+ * comparaciones `=== 'true'` que quedaron del puerto original nunca se cumplen
+ * con `true`, así que en producción `privacidad` y `cita_cancelada` se perdían
+ * en silencio: la cita se borraba de Google Calendar pero el expediente nunca
+ * pasaba a cancelado. Se acepta cualquiera de las dos formas.
+ */
+const esVerdadero = (v: unknown): boolean => v === true || v === 'true';
 
 export async function POST(request: Request) {
   if (!verifyWebhookApiKey(request)) {
@@ -57,6 +67,16 @@ export async function POST(request: Request) {
 
     if (res.rowCount && res.rowCount > 0) {
       currentState = res.rows[0].estado;
+      // `resolveState` lanza si el valor guardado no es un estado de la
+      // máquina, y como eso ocurre ANTES de responder, el candidato quedaba
+      // con todos sus mensajes devolviendo HTTP 500 (pasó con 'CITA_CANCELADA',
+      // que el backend escribía sin que existiera aquí). Un estado huérfano
+      // -- por dato viejo o por otro camino que escriba directo -- no debe
+      // volver a congelar el expediente: se degrada a NUEVO y se avisa.
+      if (!ESTADOS_VALIDOS.has(currentState)) {
+        console.warn(`[n8n-incoming] estado desconocido '${currentState}' para ${telefono}; se usa NUEVO`);
+        currentState = 'NUEVO';
+      }
       context = {
         telefono,
         tiene_cv: res.rows[0].tiene_cv || false,
@@ -70,17 +90,24 @@ export async function POST(request: Request) {
     // 2. Determinar el evento basado en la información entrante (emulando lo que hacía el CASE WHEN)
     let event: any = { type: 'INTERES' }; // default fallback
 
-    if (privacidad === 'true' && currentState === 'NUEVO') {
+    if (esVerdadero(privacidad) && currentState === 'NUEVO') {
       event = { type: 'INTERES' };
     }
-    if (es_cv === 'true' || cv_manual) {
+    if (esVerdadero(es_cv) || cv_manual) {
       event = { type: 'RECIBE_CV' };
     }
-    if (cita_creada === 'true' || fecha_entrevista) {
+    if (esVerdadero(cita_creada) || fecha_entrevista) {
       event = { type: 'AGENDA_CITA', fecha: fecha_entrevista || 'Por confirmar' };
     }
-    // Si cancela la cita o hay escalamiento explícito en resumen (ej. HUMAN_ALERT)
-    if (cita_cancelada === 'true' || (resumen && (resumen as string).includes('solicitó apoyo'))) {
+    // Cancelar NO es escalar: antes ambos casos mandaban ESCALA_HUMANO, así que
+    // un candidato que cancelaba su cita quedaba con escalado=true y el bot
+    // dejaba de responderle (procesar_turno corta en seco si escalado).
+    if (esVerdadero(cita_cancelada)) {
+      event = { type: 'CANCELA_CITA' };
+    }
+    // Escalamiento explícito en resumen (ej. HUMAN_ALERT) -- va al final porque
+    // es más severo y debe ganar si ambos vienen en el mismo turno.
+    if (resumen && (resumen as string).includes('solicitó apoyo')) {
       event = { type: 'ESCALA_HUMANO' };
     }
 
@@ -124,14 +151,21 @@ export async function POST(request: Request) {
       finalNombre = 'Candidato';
     }
 
-    // Extraer Vacante desde Resumen si viene como 'General' o vacía
-    let finalVacante = (vacante && vacante.trim() !== 'General') ? vacante.trim() : '';
-    if (!finalVacante || finalVacante === 'General') {
+    // Extraer Vacante desde Resumen si viene como 'General'/'GENERAL' (placeholder
+    // del backend mientras el candidato no ha elegido vacante) o vacía. Comparación
+    // insensible a mayúsculas: el backend de Python (parser.py) siempre manda este
+    // valor en MAYÚSCULAS, así que el check original (case-sensitive contra
+    // 'General') nunca lo atrapaba -- el placeholder se guardaba como si fuera una
+    // vacante real y, por el COALESCE del UPSERT de abajo, quedaba atorado ahí para
+    // siempre (rompiendo el match de vacante->reclutador en definir_agenda).
+    const esPlaceholderVacante = (v: string) => ['GENERAL', 'NINGUNA'].includes(v.trim().toUpperCase());
+    let finalVacante = (vacante && !esPlaceholderVacante(vacante)) ? vacante.trim() : '';
+    if (!finalVacante) {
       if (resumen && typeof resumen === 'string') {
         const vacMatch = resumen.match(/Vacante:\s*([^.\n|]+)/i);
         if (vacMatch && vacMatch[1]) {
           const extractedVac = vacMatch[1].trim();
-          if (extractedVac && !['General', 'Ninguna', 'Pendiente', 'Desconocida', 'X'].includes(extractedVac)) {
+          if (extractedVac && !['Pendiente', 'Desconocida', 'X'].includes(extractedVac) && !esPlaceholderVacante(extractedVac)) {
             finalVacante = extractedVac;
           }
         }
@@ -217,7 +251,7 @@ export async function POST(request: Request) {
       filtros,
       parsedCvManual ? JSON.stringify(parsedCvManual) : null,
       fecha_entrevista,
-      privacidad === 'true' || newState.context.privacidad_aceptada,
+      esVerdadero(privacidad) || newState.context.privacidad_aceptada,
       finalNombre,
       parsedCvManual?.nombre || null,
       parsedCvManual?.edad || null,

@@ -269,7 +269,12 @@ async def analizador_y_chat(body: dict, contacto: dict, candidato: dict) -> None
         candidato = await _obtener_candidato(contacto.get("number")) or candidato
 
     system_prompt = analizador.cargar_prompt(payload, contacto, candidato)
-    agenda = await analizador.definir_agenda(candidato.get("nave_interes"), candidato.get("vacante_interes"), candidato.get("empresa_id"))
+    agenda = await analizador.definir_agenda(
+        candidato.get("nave_interes"),
+        candidato.get("vacante_interes"),
+        candidato.get("empresa_id"),
+        candidato.get("asignado_a_id"),
+    )
 
     await agente.procesar_turno(
         webhook_body=body,

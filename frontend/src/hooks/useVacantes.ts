@@ -25,6 +25,7 @@ export function useVacantes() {
   const [modalVacancyId, setModalVacancyId] = useState<string | null>(null);
   const [vNombre, setVNombre] = useState("");
   const [vDetalles, setVDetalles] = useState("");
+  const [vFunciones, setVFunciones] = useState("");
   const [vPalabrasClave, setVPalabrasClave] = useState("");
   const [vNaves, setVNaves] = useState<string[]>([]);
 
@@ -285,12 +286,14 @@ export function useVacantes() {
       setModalVacancyId(vac.id);
       setVNombre(vac.nombre);
       setVDetalles(vac.detalles || "");
+      setVFunciones(vac.funciones || "");
       setVPalabrasClave(vac.palabras_clave || "");
       setVNaves(Array.isArray(vac.naves) ? vac.naves : typeof vac.naves === "string" ? [vac.naves] : []);
     } else {
       setModalVacancyId(null);
       setVNombre("");
       setVDetalles("");
+      setVFunciones("");
       setVPalabrasClave("");
       // Si hay una nave filtrada en el TopNavbar, la preseleccionamos: lo más
       // probable es que quieran agregar la vacante justo para esa nave.
@@ -336,6 +339,7 @@ export function useVacantes() {
           ...updated[recIndex].vacantes[vacIndex],
           nombre: normalizedName,
           detalles: vDetalles,
+          funciones: vFunciones,
           palabras_clave: vPalabrasClave,
           naves: vNaves,
         };
@@ -345,6 +349,7 @@ export function useVacantes() {
         id: "v_" + Date.now().toString(),
         nombre: normalizedName,
         detalles: vDetalles,
+        funciones: vFunciones,
         palabras_clave: vPalabrasClave,
         naves: vNaves,
         activa: true,
@@ -426,6 +431,8 @@ export function useVacantes() {
     setVNombre,
     vDetalles,
     setVDetalles,
+    vFunciones,
+    setVFunciones,
     vPalabrasClave,
     setVPalabrasClave,
     vNaves,

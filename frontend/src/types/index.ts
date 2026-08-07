@@ -23,6 +23,7 @@ export type Vacante = {
   naves: string[];
   detalles: string;
   activa: boolean;
+  funciones?: string;
   palabras_clave?: string;
   filtros?: Filtro[];
 };

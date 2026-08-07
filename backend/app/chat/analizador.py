@@ -18,6 +18,7 @@ import httpx
 
 from app import gemini_client, waha_client
 from app.config import ENV
+from app.db import get_pool
 
 logger = logging.getLogger("analizador")
 
@@ -309,10 +310,68 @@ def _clean_str(s) -> str:
     return _CLEAN_STR_RE.sub("", normalized).upper().strip()
 
 
-async def definir_agenda(nave_interes: str | None, vacante_interes: str | None, empresa_id: str | None) -> dict:
+async def _calendarios_con_credenciales() -> set[str]:
+    """calendar_id que sí tienen refresh_token guardado -- ver
+    oauth_store.py. Se usa para que el fallback de `definir_agenda` nunca
+    elija a un reclutador cuyo calendario todavía no está autorizado
+    (visto en producción: el fallback caía en el reclutador creado más
+    recientemente sin importar si ya tenía OAuth hecho, y `revisar_calendario`
+    tronaba con CredencialesNoEncontradas)."""
+    pool = get_pool()
+    try:
+        rows = await pool.fetch("SELECT calendar_id FROM google_calendar_credentials")
+        return {r["calendar_id"] for r in rows}
+    except Exception:
+        logger.exception("_calendarios_con_credenciales: query falló")
+        return set()
+
+
+def _elegir_gerente(equipo: list[dict], calendarios_ok: set[str]) -> dict:
+    """Elige un reclutador de respaldo determinista para cuando no hay
+    match de vacante, en vez del `equipo[-1]` original (el reclutador
+    creado más recientemente, arbitrario -- podía no tener ni siquiera
+    OAuth configurado). Orden de preferencia:
+    1. Reclutador explícitamente marcado como 'Gerente de Reclutamiento'.
+    2. Entre los que SÍ tienen credenciales de calendario: el ENCARGADO
+       del equipo (jefe de grupo real, ver usuarios.rol) si existe, si no
+       el primero por antigüedad (equipo ya viene ordenado por
+       created_at ASC desde /api/db/reclutador_vacantes).
+    3. Si NINGUNO tiene credenciales todavía, el primero por antigüedad
+       de todos modos (mismo comportamiento de antes, para no romper si
+       el equipo entero está sin autorizar) -- pero esto queda registrado
+       como warning para que se note en logs."""
+    explicito = next((r for r in equipo if r.get("nombre") == "Gerente de Reclutamiento"), None)
+    if explicito:
+        return explicito
+
+    con_calendario = [r for r in equipo if (r.get("calendar_id") or "").strip() in calendarios_ok]
+    if con_calendario:
+        encargado = next((r for r in con_calendario if r.get("es_encargado")), None)
+        return encargado or con_calendario[0]
+
+    if equipo:
+        logger.warning("_elegir_gerente: ningun reclutador del equipo tiene OAuth de calendario configurado")
+        return equipo[0]
+
+    return {"nombre": "Gerente de Reclutamiento", "telefono": "5213332012658", "calendar_id": "talreclutamiento01@gmail.com"}
+
+
+async def definir_agenda(
+    nave_interes: str | None,
+    vacante_interes: str | None,
+    empresa_id: str | None,
+    asignado_a_id: str | None = None,
+) -> dict:
     """Puerto de 'DefinirAgenda': resuelve el/los reclutadores candidatos
     para esta vacante/nave vía GET /api/db/reclutador_vacantes (ya
-    existe, no se reimplementa la lógica de asignación en Python)."""
+    existe, no se reimplementa la lógica de asignación en Python).
+
+    `asignado_a_id` es el reclutador que la plataforma ya tiene asignado al
+    candidato (`candidatos.asignado_a_id`). Se respeta cuando la vacante no
+    se puede resolver, en vez de irse al reclutador de respaldo: en
+    producción un candidato con MICHELLE asignada terminó agendado con el
+    "Equipo de Reclutamiento" porque su `vacante_interes` quedó en
+    'General' -- el CRM decía una cosa y el calendario otra."""
     nave_actual = (nave_interes or "").strip() or "1"
     vacante = (vacante_interes or "General").strip()
 
@@ -334,11 +393,8 @@ async def definir_agenda(nave_interes: str | None, vacante_interes: str | None, 
             "calendar_id": "talreclutamiento01@gmail.com", "naves": ["1", "2", "3"], "vacantes": [],
         }]
 
-    gerente = next((r for r in equipo if r.get("nombre") == "Gerente de Reclutamiento"), None)
-    if gerente is None:
-        gerente = equipo[-1] if equipo else {
-            "nombre": "Gerente de Reclutamiento", "telefono": "5213332012658", "calendar_id": "talreclutamiento01@gmail.com",
-        }
+    calendarios_ok = await _calendarios_con_credenciales()
+    gerente = _elegir_gerente(equipo, calendarios_ok)
 
     default_calendar = (gerente.get("calendar_id") or "").strip() or "talreclutamiento01@gmail.com"
 
@@ -346,6 +402,32 @@ async def definir_agenda(nave_interes: str | None, vacante_interes: str | None, 
     vacante_desconocida = not vacante_clean or vacante_clean == "GENERAL"
 
     if vacante_desconocida:
+        # Antes de caer al respaldo: si la plataforma ya le asignó un
+        # reclutador a este candidato y ese reclutador tiene calendario
+        # autorizado, la cita le corresponde a él.
+        asignado = next(
+            (
+                r for r in equipo
+                if asignado_a_id and r.get("reclutador_id") == asignado_a_id
+                and (r.get("calendar_id") or "").strip() in calendarios_ok
+            ),
+            None,
+        )
+        if asignado:
+            return {
+                "nombre_reclutador": asignado.get("nombre") or "Equipo de Reclutamiento",
+                "telefono_reclutador": asignado.get("telefono") or "5213323379399",
+                "calendar_id": (asignado.get("calendar_id") or "").strip() or default_calendar,
+                "vacante_detectada": vacante,
+                "nave_candidato": nave_actual,
+                "grupo_turno": None,
+                "turno_total": 1,
+                "candidatos_turno": None,
+            }
+        logger.warning(
+            "definir_agenda: vacante desconocida (%r) y sin reclutador asignado usable -- usando respaldo %r",
+            vacante, gerente.get("nombre"),
+        )
         return {
             "nombre_reclutador": "Equipo de Reclutamiento",
             "telefono_reclutador": gerente.get("telefono") or "5213323379399",

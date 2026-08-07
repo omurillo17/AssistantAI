@@ -177,14 +177,25 @@ export async function POST(request: Request) {
       }
     }
 
-    // Extraer vacante con fallbacks inteligentes
+    // Extraer vacante con fallbacks inteligentes.
+    // 'General'/'Ninguna' son PLACEHOLDERS, no vacantes: el analizador manda
+    // "General" por defecto cuando el documento no revela ninguna
+    // (analizador.py -> vacante_anuncio). Si tras los fallbacks seguimos con el
+    // placeholder hay que dejarlo VACÍO para que el UPSERT conserve lo que ya
+    // hubiera; si se guarda literal, definir_agenda lo lee como "vacante
+    // desconocida" y manda la cita al reclutador de respaldo (pasó en
+    // producción: se agendó "vacante de General" con el Equipo de Reclutamiento
+    // en vez de con la reclutadora dueña de la vacante).
+    const esPlaceholderVacante = (v: string) => ['GENERAL', 'NINGUNA'].includes(v.trim().toUpperCase());
     let safe_vacante = (vacante || '').trim();
-    if (!safe_vacante || safe_vacante === 'General') {
+    if (!safe_vacante || esPlaceholderVacante(safe_vacante)) {
       const matchVacanteResumen = (resumen_ia_final || '').match(/Vacante:\s*([^.\n]+)/i);
-      if (matchVacanteResumen) {
+      if (matchVacanteResumen && !esPlaceholderVacante(matchVacanteResumen[1])) {
         safe_vacante = matchVacanteResumen[1].trim();
-      } else if (dbCandidato.vacante_interes && dbCandidato.vacante_interes !== 'General') {
+      } else if (dbCandidato.vacante_interes && !esPlaceholderVacante(dbCandidato.vacante_interes)) {
         safe_vacante = dbCandidato.vacante_interes;
+      } else {
+        safe_vacante = '';
       }
     }
 

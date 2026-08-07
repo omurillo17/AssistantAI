@@ -125,6 +125,7 @@ export default function VacantesPage() {
           isEditing={!!v.modalVacancyId}
           vNombre={v.vNombre} setVNombre={v.setVNombre}
           vDetalles={v.vDetalles} setVDetalles={v.setVDetalles}
+          vFunciones={v.vFunciones} setVFunciones={v.setVFunciones}
           vPalabrasClave={v.vPalabrasClave} setVPalabrasClave={v.setVPalabrasClave}
           vNaves={v.vNaves} toggleNave={v.toggleNave}
           availableNaves={v.availableNaves}

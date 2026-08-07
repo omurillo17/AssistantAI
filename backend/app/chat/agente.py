@@ -177,7 +177,11 @@ async def _tool_crear_evento(candidato: dict, reclutador: dict, args: dict) -> d
         vacante_interes=candidato.get("vacante_interes") or "",
         ine_nombre=datos_ine.get("nombre_completo") or "",
         ine_curp=datos_ine.get("curp") or "",
-        empresa_id=candidato.get("empresa_id") or "",
+        # asyncpg devuelve las columnas `uuid` de Postgres como uuid.UUID, no str
+        # (a diferencia del driver `pg` de Node que usa el frontend) -- sin el
+        # str(), Pydantic rechaza el objeto UUID con un ValidationError porque
+        # CrearEventoRequest.empresa_id espera str.
+        empresa_id=str(candidato["empresa_id"]) if candidato.get("empresa_id") else "",
     )
     return await _crear_evento_endpoint(payload)
 
@@ -205,17 +209,25 @@ async def _ejecutar_tool(nombre: str, args: dict, candidato: dict, reclutador: d
         return {"error": str(e)}
 
 
-async def _ejecutar_agente(system_prompt: str, historial: list[dict], mensaje_usuario: str, candidato: dict, reclutador: dict) -> tuple[str, bool]:
-    """Devuelve (texto_final, evento_creado_ok). evento_creado_ok es True
-    solo si la tool `crear_evento` fue invocada en este turno Y devolvió
-    éxito -- red de seguridad para cuando el modelo redacta un mensaje de
-    confirmación de cita sin haber llamado realmente a la herramienta
-    (visto en producción: el texto decía "cita agendada" pero
-    `candidatos.event_id` seguía vacío)."""
+async def _ejecutar_agente(system_prompt: str, historial: list[dict], mensaje_usuario: str, candidato: dict, reclutador: dict) -> dict:
+    """Devuelve el texto final más lo que REALMENTE pasó con las tools en
+    este turno:
+
+    - `evento_creado_ok` / `evento_eliminado_ok`: la tool corrió y devolvió
+      éxito. Red de seguridad para cuando el modelo redacta el mensaje de
+      confirmación sin haber llamado la herramienta (visto en producción:
+      el texto decía "cita agendada" pero `candidatos.event_id` seguía vacío).
+    - `fecha_evento`: el `start` con el que se creó la cita. Es la fuente de
+      verdad de la fecha -- el parser la sacaba del texto con un regex que
+      también enganchaba la clave JSON `"cita_confirmada"` y guardaba basura
+      (`": "2026-08-08T09:00:00"}}`) en `candidatos.fecha_entrevista`.
+    """
     chat = await gemini_client.iniciar_chat(system_prompt, historial, datetime.now(_MX_TZ))
     response = await gemini_client.enviar_mensaje(chat, mensaje_usuario)
 
     evento_creado_ok = False
+    evento_eliminado_ok = False
+    fecha_evento: str | None = None
     for _ in range(_MAX_TOOL_ROUNDS):
         calls = gemini_client.extraer_function_calls(response)
         if not calls:
@@ -224,8 +236,12 @@ async def _ejecutar_agente(system_prompt: str, historial: list[dict], mensaje_us
         for fc in calls:
             args = dict(fc.args) if fc.args else {}
             resultado = await _ejecutar_tool(fc.name, args, candidato, reclutador)
-            if fc.name == "crear_evento" and isinstance(resultado, dict) and resultado.get("success") and not resultado.get("error"):
+            exito = isinstance(resultado, dict) and resultado.get("success") and not resultado.get("error")
+            if fc.name == "crear_evento" and exito:
                 evento_creado_ok = True
+                fecha_evento = args.get("start") or fecha_evento
+            if fc.name == "eliminar_evento" and exito:
+                evento_eliminado_ok = True
             parts.append(genai.protos.Part(function_response=genai.protos.FunctionResponse(
                 name=fc.name, response={"result": resultado},
             )))
@@ -241,7 +257,12 @@ async def _ejecutar_agente(system_prompt: str, historial: list[dict], mensaje_us
         response = await gemini_client.enviar_mensaje(chat, _INSTRUCCION_CORRECCION_RECHAZO)
         texto_final = gemini_client.extraer_texto(response)
 
-    return texto_final, evento_creado_ok
+    return {
+        "texto": texto_final,
+        "evento_creado_ok": evento_creado_ok,
+        "evento_eliminado_ok": evento_eliminado_ok,
+        "fecha_evento": fecha_evento,
+    }
 
 
 # --- Notificaciones a reclutadores ------------------------------------------
@@ -385,13 +406,27 @@ async def procesar_turno(webhook_body: dict, contacto: dict, candidato: dict, sy
     session_id = chat_id
     historial = await memoria.cargar_historial(session_id)
 
-    texto_ia, evento_creado_ok = await _ejecutar_agente(system_prompt, historial, mensaje_para_ia, candidato, reclutador)
+    ejecucion = await _ejecutar_agente(system_prompt, historial, mensaje_para_ia, candidato, reclutador)
+    texto_ia = ejecucion["texto"]
+    evento_creado_ok = ejecucion["evento_creado_ok"]
 
     items = parser.procesar_respuesta_ia(texto_ia, candidato)
     if not items:
         return
     primero = items[0]
     es_human_alert = any(c.get("code") == "HUMAN_ALERT" for c in primero.get("detected_codes", []))
+
+    # Lo que hicieron las tools manda sobre lo que el modelo haya escrito: el
+    # marcador de texto (CITA_CONFIRMADA / CITA_CANCELADA) se pierde cuando
+    # Gemini trunca el JSON de cola, y entonces la cita quedaba creada o
+    # borrada en Google Calendar pero sin registrarse en el expediente.
+    if evento_creado_ok and ejecucion["fecha_evento"]:
+        for item in items:
+            item["fecha_entrevista_detectada"] = ejecucion["fecha_evento"]
+            item["cita_creada"] = True
+    if ejecucion["evento_eliminado_ok"]:
+        for item in items:
+            item["cita_cancelada"] = True
 
     if primero.get("fecha_entrevista_detectada") and not evento_creado_ok:
         # El modelo redactó una confirmación de cita (CITA_CONFIRMADA /
@@ -413,19 +448,30 @@ async def procesar_turno(webhook_body: dict, contacto: dict, candidato: dict, sy
             "Dame un momento e intenta decirme de nuevo qué día y hora te gustaría, por favor. 🙏"
         )
 
+    # Se registra lo que REALMENTE se le mandó al candidato para guardarlo
+    # completo en la memoria (ver guardar_turno al final): antes solo se
+    # guardaba `items[0]`, así que en una respuesta partida con [SPLIT] el
+    # historial perdía todo lo posterior al primer mensaje. El modelo, al no
+    # verlo en su historial, creía que nunca lo había dicho y lo repetía en el
+    # siguiente turno (visto en producción con el bloque de actividades).
+    enviados: list[str] = []
+
     if es_human_alert:
         if primero.get("message_to_user"):
             await waha_client.send_text(session, chat_id, primero["message_to_user"])
+            enviados.append(primero["message_to_user"])
         alerta = _preparar_alerta_humano(candidato, contacto, payload, reclutador, primero.get("human_alert_nombre"), primero.get("human_alert_resumen"))
         await waha_client.send_text(session, f"{alerta['telefono_destino']}@c.us", alerta["mensaje_alerta"])
         await _marcar_escalado(alerta["telefono_candidato"], alerta["nombre_candidato"], alerta["vacante"])
     elif primero.get("es_cv_manual"):
         if primero.get("message_to_user"):
             await waha_client.send_text(session, chat_id, primero["message_to_user"])
+            enviados.append(primero["message_to_user"])
     elif primero.get("message_to_user"):
         for i, item in enumerate(items):
             if item.get("message_to_user"):
                 await waha_client.send_text(session, chat_id, item["message_to_user"])
+                enviados.append(item["message_to_user"])
             if i < len(items) - 1:
                 await asyncio.sleep(_ENTRE_MENSAJES_SEGUNDOS)
 
@@ -433,5 +479,9 @@ async def procesar_turno(webhook_body: dict, contacto: dict, candidato: dict, sy
         alerta_cita = _preparar_alerta_cita(candidato, contacto, reclutador, primero)
         await waha_client.send_text(session, f"{alerta_cita['telefono_destino']}@c.us", alerta_cita["mensaje_alerta"])
 
-    await memoria.guardar_turno(session_id, mensaje_para_ia, primero.get("message_to_user") or "")
+    await memoria.guardar_turno(
+        session_id,
+        mensaje_para_ia,
+        "\n\n".join(enviados) or primero.get("message_to_user") or "",
+    )
     await _almacenar_mensajes(contacto, candidato, primero, juntado, payload)
