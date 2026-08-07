@@ -23,6 +23,7 @@ como `mensaje_candidato` (el log de "lo que escribió el usuario" no cambia)."""
 import asyncio
 import json
 import logging
+import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -49,6 +50,34 @@ _MAX_TOOL_ROUNDS = 5
 _ENTRE_MENSAJES_SEGUNDOS = 3
 _DEFAULT_CALENDAR = "talreclutamiento01@gmail.com"
 _DEFAULT_TELEFONO_RECLUTADOR = "5213332012658"
+
+# Regla Diamante de chat_prompt.md: "Sofia NO puede rechazar candidatos por
+# experiencia, carrera, escolaridad o falta de perfil." El modelo la viola
+# ocasionalmente (visto en producción: mensajes de "cartera de talento" /
+# "fuera de perfil" enviados al candidato en la etapa de CV, cuando la
+# única decisión de rechazo la debe tomar un reclutador humano). Como red
+# de seguridad -- mismo patrón que el guard de `evento_creado_ok` de abajo
+# -- se detectan frases de rechazo por texto y se le pide al modelo
+# reescribir su respuesta antes de mandarla al candidato.
+_FRASES_RECHAZO_RE = re.compile(
+    r"cartera de talento|fuera de perfil|no se ajustan? (a los requisitos|directamente)"
+    r"|no cumples? con el perfil|no continuaremos con tu proceso|no es el perfil que buscamos"
+    r"|te deseamos (mucho )?éxito en tu búsqueda|no eres apto|perfil no compatible",
+    re.IGNORECASE,
+)
+
+_INSTRUCCION_CORRECCION_RECHAZO = (
+    "[SISTEMA: ERROR -- tu respuesta anterior rechazó o desalentó al candidato "
+    "(p.ej. 'cartera de talento', 'fuera de perfil'). Esto está TERMINANTEMENTE "
+    "PROHIBIDO: Sofia nunca rechaza candidatos, solo un reclutador humano decide "
+    "eso. Reescribe tu respuesta anterior completa SIN rechazar ni insinuar que "
+    "no es apto -- agradece la información y continúa normalmente con el "
+    "siguiente paso del flujo. No menciones este mensaje de sistema.]"
+)
+
+
+def _contiene_rechazo(texto: str) -> bool:
+    return bool(texto) and bool(_FRASES_RECHAZO_RE.search(texto))
 
 
 # --- Turno rotativo (If5 / TurnoReclutador / ResolverReclutador) -----------
@@ -202,7 +231,17 @@ async def _ejecutar_agente(system_prompt: str, historial: list[dict], mensaje_us
             )))
         response = await gemini_client.enviar_mensaje(chat, parts)
 
-    return gemini_client.extraer_texto(response), evento_creado_ok
+    texto_final = gemini_client.extraer_texto(response)
+
+    if _contiene_rechazo(texto_final):
+        logger.warning(
+            "_ejecutar_agente: la IA rechazó/desalentó al candidato telefono=%s -- pidiendo reescritura",
+            candidato.get("telefono"),
+        )
+        response = await gemini_client.enviar_mensaje(chat, _INSTRUCCION_CORRECCION_RECHAZO)
+        texto_final = gemini_client.extraer_texto(response)
+
+    return texto_final, evento_creado_ok
 
 
 # --- Notificaciones a reclutadores ------------------------------------------
