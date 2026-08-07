@@ -96,8 +96,14 @@ async def eliminar_evento(payload: EliminarEventoRequest) -> dict:
     await delete_event(calendar_id=payload.calendar_id, event_id=payload.event_id)
 
     pool = get_pool()
+    # fecha_entrevista también se limpia: el evento ya no existe en Google
+    # Calendar, y si se deja, el expediente sigue mostrando la entrevista al
+    # reclutador. El UPSERT de /api/webhook/n8n-incoming conserva el valor
+    # anterior cuando el entrante viene vacío (COALESCE), así que dejarlo en
+    # NULL aquí es lo que hace que se quede limpio.
     result = await pool.execute(
-        "UPDATE candidatos SET estado = 'CITA_CANCELADA', event_id = NULL WHERE telefono = $1",
+        "UPDATE candidatos SET estado = 'CITA_CANCELADA', event_id = NULL, fecha_entrevista = NULL "
+        "WHERE telefono = $1",
         payload.telefono,
     )
     if result == "UPDATE 0":

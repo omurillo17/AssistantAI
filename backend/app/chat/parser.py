@@ -41,6 +41,23 @@ _CLEANUP_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Bloque JSON de "cola" que el modelo pega DESPUÉS del texto visible
+# (`{"memoria_update": ..., "etiquetas_internas": {...}}`). El corte que ya
+# existía abajo solo reaccionaba a `"mensaje_al_usuario"`, así que una cola
+# que empieza por `"memoria_update"` se le escapaba y el candidato terminaba
+# leyendo el JSON crudo en WhatsApp (visto en producción). `[\s\S]*$` llega
+# hasta el final a propósito: cuando Gemini corta la respuesta a la mitad el
+# JSON queda truncado (sin llaves de cierre) y json.loads falla, que es
+# justo el caso en el que esta limpieza tiene que funcionar igual.
+_JSON_COLA_RE = re.compile(
+    r'\{\s*"(?:memoria_update|etiquetas_internas|mensaje_al_usuario)"[\s\S]*$'
+)
+
+# Rescate del resumen cuando ese JSON de cola viene truncado: json.loads no
+# puede parsearlo, pero `memoria_update` suele estar completo (es la primera
+# clave), así que se extrae con regex para no perder la memoria del candidato.
+_MEMORIA_UPDATE_RE = re.compile(r'"memoria_update"\s*:\s*"((?:[^"\\]|\\.)*)"')
+
 
 def _extract_code(text: str, code_name: str, code_config: dict) -> dict | None:
     match = code_config["pattern"].search(text)
@@ -235,8 +252,16 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
             result["database_updates"]["resumen_ia"] = json_parsed["memoria_update"]
 
         et = json_parsed.get("etiquetas_internas", json_parsed)
-        if et.get("actualizar_vacante") or et.get("vacante_interes") or et.get("vacante"):
-            result["vacante_detectada"] = str(et.get("actualizar_vacante") or et.get("vacante_interes") or et.get("vacante")).strip().upper()
+        et_vacante = et.get("actualizar_vacante") or et.get("vacante_interes") or et.get("vacante")
+        if et_vacante and str(et_vacante).strip().upper() not in ("GENERAL", "NINGUNA"):
+            # "General"/"Ninguna" es el placeholder que el modelo ecoa mientras el
+            # candidato no ha elegido vacante todavia (ver VACANTE_INTERES en
+            # chat_prompt.md) -- no es una vacante "detectada" de verdad. Sin este
+            # filtro (que el fallback de regex de abajo SI tiene), se guardaba como
+            # si fuera valida y candidatos.vacante_interes quedaba atorado en
+            # 'GENERAL' para siempre (el UPSERT de n8n-incoming solo sobreescribe
+            # con un valor no vacio), rompiendo el match de vacante->reclutador.
+            result["vacante_detectada"] = str(et_vacante).strip().upper()
         if et.get("actualizar_nave") or et.get("nave_interes") or et.get("nave"):
             result["nave_detectada"] = str(et.get("actualizar_nave") or et.get("nave_interes") or et.get("nave")).strip().upper()
         if et.get("actualizar_nombre") or et.get("nombre"):
@@ -271,6 +296,20 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
         if val and val not in ("Desconocido", "Candidato"):
             result["nombre_detectado"] = val
 
+    # Resumen desde un JSON de cola truncado (json.loads ya falló arriba, así
+    # que `resumen_generado` viene vacío aunque el modelo sí mandó memoria).
+    if not result.get("resumen_generado"):
+        mem_match = _MEMORIA_UPDATE_RE.search(ai_response_str)
+        if mem_match and mem_match.group(1):
+            try:
+                resumen_rescatado = json.loads(f'"{mem_match.group(1)}"')
+            except json.JSONDecodeError:
+                resumen_rescatado = mem_match.group(1)
+            if resumen_rescatado.strip():
+                result["resumen_generado"] = resumen_rescatado
+                result["database_updates"] = result.get("database_updates") or {}
+                result["database_updates"]["resumen_ia"] = resumen_rescatado
+
     if "PRIVACIDAD_ACEPTADA" in ai_response_str:
         result["acepto_privacidad"] = True
     if "CITA_CANCELADA" in ai_response_str:
@@ -280,7 +319,17 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
 
     cita_match = re.search(r"CITA_CONFIRMADA[\s:|]*(.*?)([|\n]|$)", ai_response_str, re.IGNORECASE)
     if cita_match and cita_match.group(1):
-        result["fecha_entrevista_detectada"] = cita_match.group(1).replace("|", "").strip()
+        crudo = cita_match.group(1).replace("|", "").strip()
+        # El patrón de arriba es IGNORECASE, así que también engancha la CLAVE
+        # JSON `"cita_confirmada": "2026-08-08T09:00:00"}}` y se lleva de paso
+        # las comillas y llaves de alrededor -- en producción eso acabó
+        # guardado tal cual en candidatos.fecha_entrevista. Se extrae solo la
+        # marca de tiempo ISO del fragmento capturado; si no hay ninguna, se
+        # descarta (mejor sin fecha que con basura, y el guard de
+        # evento_creado_ok en agente.py ya cubre ese caso).
+        iso = re.search(r"\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?", crudo)
+        if iso:
+            result["fecha_entrevista_detectada"] = iso.group(0)
 
     # HUMAN_ALERT
     human_alert_parts = re.split(r"HUMAN_ALERT", ai_response_str, flags=re.IGNORECASE)
@@ -359,6 +408,8 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
             start_b = result["message_to_user"].rfind("{", 0, json_key_idx)
             if start_b != -1:
                 result["message_to_user"] = result["message_to_user"][:start_b]
+
+        result["message_to_user"] = _JSON_COLA_RE.sub("", result["message_to_user"])
 
         result["message_to_user"] = _CLEANUP_RE.sub("", result["message_to_user"]).strip()
 

@@ -245,8 +245,22 @@ async def analizador_y_chat(body: dict, contacto: dict, candidato: dict) -> None
 
     mensaje_override = resultado_media["mensaje_para_agente"]
 
+    # analizar_mensaje() puede haber actualizado el expediente (p.ej. estado ->
+    # CV_RECIBIDO) en este mismo turno -- si no se relee, cargar_prompt() arma
+    # el system prompt con el ESTADO_ACTUAL de ANTES del documento recién
+    # recibido, y el modelo vuelve a pedir el CV/solicitud que el candidato
+    # acaba de mandar (visto en producción: bucle de "mándame tu CV" incluso
+    # después del adjunto).
+    if resultado_media["mensaje_para_agente"] is not None:
+        candidato = await _obtener_candidato(contacto.get("number")) or candidato
+
     system_prompt = analizador.cargar_prompt(payload, contacto, candidato)
-    agenda = await analizador.definir_agenda(candidato.get("nave_interes"), candidato.get("vacante_interes"), candidato.get("empresa_id"))
+    agenda = await analizador.definir_agenda(
+        candidato.get("nave_interes"),
+        candidato.get("vacante_interes"),
+        candidato.get("empresa_id"),
+        candidato.get("asignado_a_id"),
+    )
 
     await agente.procesar_turno(
         webhook_body=body,

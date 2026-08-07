@@ -15,6 +15,14 @@ from app.oauth_store import get_refresh_token
 _TOKEN_URI = "https://oauth2.googleapis.com/token"
 _SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
+# Google exige saber la zona horaria de start/end: si `dateTime` viene sin
+# offset (naive), la API responde 400 "Missing time zone definition for start
+# time." El agente de chat arma esas fechas con Gemini y a veces las manda
+# desnudas ("2026-08-09T12:00:00"), así que se declara la zona del negocio
+# explícitamente. Cuando el string SÍ trae offset, Google lo respeta y usa
+# este campo solo como zona de referencia -- es seguro mandarlo siempre.
+_CALENDAR_TZ = "America/Mexico_City"
+
 
 async def _build_service(calendar_id: str):
     refresh_token = await get_refresh_token(calendar_id)
@@ -39,8 +47,8 @@ async def create_event(calendar_id: str, summary: str, description: str, start: 
     body = {
         "summary": summary,
         "description": description,
-        "start": {"dateTime": start},
-        "end": {"dateTime": end},
+        "start": {"dateTime": start, "timeZone": _CALENDAR_TZ},
+        "end": {"dateTime": end, "timeZone": _CALENDAR_TZ},
     }
 
     def _insert():
@@ -65,7 +73,10 @@ async def update_event(calendar_id: str, event_id: str, start: str, end: str) ->
     patch en vez de update para no pisar summary/description, igual que
     hacía el nodo de n8n al mandar solo esos dos campos en updateFields."""
     service = await _build_service(calendar_id)
-    body = {"start": {"dateTime": start}, "end": {"dateTime": end}}
+    body = {
+        "start": {"dateTime": start, "timeZone": _CALENDAR_TZ},
+        "end": {"dateTime": end, "timeZone": _CALENDAR_TZ},
+    }
 
     def _patch():
         service.events().patch(calendarId=calendar_id, eventId=event_id, body=body).execute()
