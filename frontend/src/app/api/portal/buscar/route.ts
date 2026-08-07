@@ -48,7 +48,7 @@ export async function POST(request: Request) {
     let query = `
       SELECT id, telefono, nombre, nombre_chat, nombre_solicitud, 
              vacante_interes, nave_interes, estado, alerta_identidad_estado,
-             alerta_identidad_motivo, asignado_a, empresa_id, nave_id,
+             alerta_identidad_motivo, asignado_a_id, empresa_id, nave_id,
              tiene_cv, link_cv, cv_manual, datos_ine, datos_rfc
       FROM candidatos
       WHERE (telefono ILIKE $1 OR REPLACE(telefono, '+', '') ILIKE $1)

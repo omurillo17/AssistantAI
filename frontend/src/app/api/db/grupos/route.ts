@@ -1,26 +1,11 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
-import { cookies } from "next/headers";
-import { jwtVerify } from "jose";
-import { ENV } from "@/lib/env";
+import { getSession } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
-async function verifyAuthAndTenant() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("tci_session")?.value;
-  if (!token) return null;
-  try {
-    const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
-    const { payload } = await jwtVerify(token, secretKey);
-    return payload;
-  } catch (err) {
-    return null;
-  }
-}
-
 export async function GET(request: Request) {
-  const payload = await verifyAuthAndTenant();
+  const payload = await getSession(request);
   if (!payload || (payload.rol !== 'ADMIN' && payload.rol !== 'ENCARGADO' && payload.rol !== 'ROOT')) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
@@ -30,10 +15,10 @@ export async function GET(request: Request) {
     const empresaId = searchParams.get('empresaId');
 
     let query = `
-      SELECT id, empresa_id, nombre, naves_asignadas, created_at 
-      FROM grupos_reclutamiento 
+      SELECT id, empresa_id, nombre, naves_asignadas, telefono_whatsapp, whatsapp_phone_number_id, created_at
+      FROM grupos_reclutamiento
     `;
-    let params: any[] = [];
+    let params: unknown[] = [];
 
     if (empresaId) {
       query += ` WHERE empresa_id = $1 ORDER BY created_at ASC`;
@@ -51,14 +36,14 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const payload = await verifyAuthAndTenant();
+  const payload = await getSession(request);
   if (!payload || (payload.rol !== 'ADMIN' && payload.rol !== 'ENCARGADO' && payload.rol !== 'ROOT')) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
   try {
     const body = await request.json();
-    const { empresa_id, nombre, naves_asignadas, naves } = body;
+    const { empresa_id, nombre, naves_asignadas, naves, telefono_whatsapp } = body;
 
     if (!empresa_id || !nombre) {
       return NextResponse.json({ error: "empresa_id y nombre son obligatorios" }, { status: 400 });
@@ -67,8 +52,8 @@ export async function POST(request: Request) {
     const finalNaves = naves_asignadas || naves || [];
 
     const res = await pool.query(
-      `INSERT INTO grupos_reclutamiento (empresa_id, nombre, naves_asignadas) VALUES ($1, $2, $3::jsonb) RETURNING *`,
-      [empresa_id, nombre, JSON.stringify(finalNaves)]
+      `INSERT INTO grupos_reclutamiento (empresa_id, nombre, naves_asignadas, telefono_whatsapp) VALUES ($1, $2, $3::jsonb, $4) RETURNING *`,
+      [empresa_id, nombre, JSON.stringify(finalNaves), telefono_whatsapp || '']
     );
 
     return NextResponse.json({ success: true, grupo: res.rows[0] });
@@ -79,14 +64,14 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const payload = await verifyAuthAndTenant();
+  const payload = await getSession(request);
   if (!payload || (payload.rol !== 'ADMIN' && payload.rol !== 'ENCARGADO' && payload.rol !== 'ROOT')) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
   try {
     const body = await request.json();
-    const { id, nombre, naves_asignadas, naves } = body;
+    const { id, nombre, naves_asignadas, naves, telefono_whatsapp } = body;
 
     if (!id || !nombre) {
       return NextResponse.json({ error: "ID y nombre son obligatorios" }, { status: 400 });
@@ -95,8 +80,8 @@ export async function PATCH(request: Request) {
     const finalNaves = naves_asignadas || naves || [];
 
     const res = await pool.query(
-      `UPDATE grupos_reclutamiento SET nombre = $1, naves_asignadas = $2::jsonb WHERE id = $3 RETURNING *`,
-      [nombre, JSON.stringify(finalNaves), id]
+      `UPDATE grupos_reclutamiento SET nombre = $1, naves_asignadas = $2::jsonb, telefono_whatsapp = $3 WHERE id = $4 RETURNING *`,
+      [nombre, JSON.stringify(finalNaves), telefono_whatsapp ?? '', id]
     );
 
     return NextResponse.json({ success: true, grupo: res.rows[0] });
@@ -107,7 +92,7 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  const payload = await verifyAuthAndTenant();
+  const payload = await getSession(request);
   if (!payload || (payload.rol !== 'ADMIN' && payload.rol !== 'ENCARGADO' && payload.rol !== 'ROOT')) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }

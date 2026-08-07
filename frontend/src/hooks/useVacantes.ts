@@ -4,11 +4,13 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { Recruiter, Vacante } from "@/types";
 import { COUNTRY_CODES } from "@/types";
+import { useTenant, useTenantChange } from "./useTenant";
 
 const API_URL = `/api/db/vacantes`;
 
 export function useVacantes() {
   const router = useRouter();
+  const { setTenant } = useTenant();
 
   const [recruiters, setRecruiters] = useState<Recruiter[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,6 +25,7 @@ export function useVacantes() {
   const [modalVacancyId, setModalVacancyId] = useState<string | null>(null);
   const [vNombre, setVNombre] = useState("");
   const [vDetalles, setVDetalles] = useState("");
+  const [vFunciones, setVFunciones] = useState("");
   const [vPalabrasClave, setVPalabrasClave] = useState("");
   const [vNaves, setVNaves] = useState<string[]>([]);
 
@@ -54,11 +57,31 @@ export function useVacantes() {
   useEffect(() => {
     document.title = "Gestión de Vacantes | TCi";
     const role = localStorage.getItem("tci_role");
-    setIsAdmin(role === "ADMIN" || role === "ENCARGADO");
+    setIsAdmin(role === "ADMIN" || role === "ROOT" || role === "ENCARGADO");
     setMyRecId(localStorage.getItem("tci_reclutador_id"));
+
+    // ADMIN/ROOT administran TODA la empresa: si llegan aquí con una nave/grupo
+    // todavía seleccionado de otra página (Dashboards, Mensajes, etc.), Vacantes
+    // se veía recortado a esa nave sin que quedara claro por qué ("vacantes que
+    // nada que ver"). Al entrar aquí se resetea a "todas" -- el selector de
+    // Nave/Grupo del TopNavbar sigue funcionando normal después, para quien sí
+    // quiera filtrar mientras está en esta página.
+    // ENCARGADO no se toca: su grupo es fijo (asignado en el login), no un
+    // filtro opcional.
+    if (role === "ADMIN" || role === "ROOT") {
+      const storedEmpresaId = localStorage.getItem("tci_empresa_id");
+      setTenant(storedEmpresaId, null, null);
+    }
+
     loadData();
     loadNaves();
   }, [router]);
+
+  // Re-cargar (sin recargar la página) cuando el usuario cambia de empresa/nave en el TopNavbar
+  useTenantChange(() => {
+    loadData();
+    loadNaves();
+  });
 
   const loadNaves = async () => {
     try {
@@ -231,7 +254,7 @@ export function useVacantes() {
           ...recToDelete.vacantes
         ];
         // Record the chat transfer mapping
-        setTransferMap(prev => [...prev, { from: recToDelete.nombre, to: updated[targetIndex].nombre }]);
+        setTransferMap(prev => [...prev, { from: recToDelete.reclutador_id, to: updated[targetIndex].reclutador_id }]);
       }
     }
 
@@ -263,14 +286,19 @@ export function useVacantes() {
       setModalVacancyId(vac.id);
       setVNombre(vac.nombre);
       setVDetalles(vac.detalles || "");
+      setVFunciones(vac.funciones || "");
       setVPalabrasClave(vac.palabras_clave || "");
       setVNaves(Array.isArray(vac.naves) ? vac.naves : typeof vac.naves === "string" ? [vac.naves] : []);
     } else {
       setModalVacancyId(null);
       setVNombre("");
       setVDetalles("");
+      setVFunciones("");
       setVPalabrasClave("");
-      setVNaves([]);
+      // Si hay una nave filtrada en el TopNavbar, la preseleccionamos: lo más
+      // probable es que quieran agregar la vacante justo para esa nave.
+      const storedNaveId = localStorage.getItem("tci_nave_id");
+      setVNaves(storedNaveId ? [storedNaveId] : []);
     }
     setIsModalOpen(true);
   };
@@ -311,6 +339,7 @@ export function useVacantes() {
           ...updated[recIndex].vacantes[vacIndex],
           nombre: normalizedName,
           detalles: vDetalles,
+          funciones: vFunciones,
           palabras_clave: vPalabrasClave,
           naves: vNaves,
         };
@@ -320,6 +349,7 @@ export function useVacantes() {
         id: "v_" + Date.now().toString(),
         nombre: normalizedName,
         detalles: vDetalles,
+        funciones: vFunciones,
         palabras_clave: vPalabrasClave,
         naves: vNaves,
         activa: true,
@@ -401,6 +431,8 @@ export function useVacantes() {
     setVNombre,
     vDetalles,
     setVDetalles,
+    vFunciones,
+    setVFunciones,
     vPalabrasClave,
     setVPalabrasClave,
     vNaves,

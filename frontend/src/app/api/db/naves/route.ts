@@ -1,27 +1,17 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
-import { cookies } from "next/headers";
-import { jwtVerify } from "jose";
-import { ENV } from "@/lib/env";
+import { getSession, requireRole } from '@/lib/auth';
 import { syncPromptContextDisk } from "@/lib/syncPromptContext";
 
 export const dynamic = 'force-dynamic';
 
-async function verifyRoot() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("tci_session")?.value;
-  if (!token) return false;
-  try {
-    const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
-    const { payload } = await jwtVerify(token, secretKey);
-    return payload.usuario === 'omurillo17' || payload.usuario === 'root' || payload.rol === 'ROOT';
-  } catch (err) {
-    return false;
-  }
+// El acceso ROOT depende unicamente del rol en el JWT; nunca de usernames fijos.
+async function verifyRoot(request: Request): Promise<boolean> {
+  return requireRole(await getSession(request), 'ROOT');
 }
 
 export async function POST(request: Request) {
-  if (!(await verifyRoot())) {
+  if (!(await verifyRoot(request))) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
@@ -48,7 +38,7 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  if (!(await verifyRoot())) {
+  if (!(await verifyRoot(request))) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
@@ -79,7 +69,7 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  if (!(await verifyRoot())) {
+  if (!(await verifyRoot(request))) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 

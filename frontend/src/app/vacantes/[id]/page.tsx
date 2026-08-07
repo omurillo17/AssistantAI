@@ -2,23 +2,11 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
-import {
-  Plus,
-  Trash2,
-  Save,
-  ChevronLeft,
-  AlertTriangle,
-  CheckCircle2,
-  Users,
-  Filter,
-  ToggleLeft,
-  ToggleRight,
-  HelpCircle,
-  X,
-} from "lucide-react";
+import { Plus, Trash2, Save, ChevronLeft, AlertTriangle, CheckCircle2, Users, Filter, ToggleLeft, ToggleRight, HelpCircle, X } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 import type { TipoFiltro, Filtro, Vacante, Recruiter } from "@/types";
+import { useTenantChange } from "@/hooks/useTenant";
 
 // ─── Template Filters ────────────────────────────────────────────────────────
 const FILTROS_TEMPLATE: Omit<Filtro, "id" | "activo">[] = [
@@ -81,6 +69,16 @@ const PREGUNTAS_BASE_PREDEFINIDAS: Omit<Filtro, "id" | "activo">[] = [
 
 const API_URL = `/api/db/vacantes`;
 
+function tenantQuery() {
+  const storedEmpresaId = localStorage.getItem("tci_empresa_id");
+  const storedNaveId = localStorage.getItem("tci_nave_id");
+  const params = new URLSearchParams();
+  if (storedEmpresaId) params.set("empresa_id", storedEmpresaId);
+  if (storedNaveId) params.set("nave_id", storedNaveId);
+  const qs = params.toString();
+  return qs ? `?${qs}` : "";
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function VacanteFiltrosPage() {
   const router = useRouter();
@@ -90,6 +88,7 @@ export default function VacanteFiltrosPage() {
   const [vacante, setVacante] = useState<Vacante | null>(null);
   const [recruiterNombre, setRecruiterNombre] = useState("");
   const [recruiters, setRecruiters] = useState<Recruiter[]>([]);
+  const [availableNaves, setAvailableNaves] = useState<{ id: string; nombre: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<{ msg: string; isError: boolean } | null>(null);
@@ -110,10 +109,39 @@ export default function VacanteFiltrosPage() {
     setTimeout(() => setToast(null), 3500);
   };
 
+  const loadNaves = useCallback(async () => {
+    try {
+      const role = localStorage.getItem("tci_role") || "USER";
+      const res = await fetch("/api/db/empresas");
+      if (res.ok) {
+        const data = await res.json();
+        let fetchedEmpresas = data.empresas || [];
+
+        try {
+          const navesAsignadasStr = localStorage.getItem("tci_naves_asignadas");
+          if (navesAsignadasStr && role !== "ROOT" && role !== "ADMIN") {
+            const allowedNaves = JSON.parse(navesAsignadasStr);
+            if (Array.isArray(allowedNaves) && allowedNaves.length > 0) {
+              fetchedEmpresas = fetchedEmpresas.map((emp: any) => ({
+                ...emp,
+                naves: emp.naves ? emp.naves.filter((n: any) => allowedNaves.includes(n.id)) : []
+              })).filter((emp: any) => emp.naves.length > 0);
+            }
+          }
+        } catch {}
+
+        const allNaves = fetchedEmpresas.flatMap((e: any) => e.naves || []);
+        setAvailableNaves(allNaves);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(API_URL);
+      const res = await fetch(`${API_URL}${tenantQuery()}`);
       if (!res.ok) throw new Error();
       const data = await res.json();
       const raw: any[] = Array.isArray(data) ? data : data.data || [];
@@ -164,7 +192,17 @@ export default function VacanteFiltrosPage() {
 
   useEffect(() => {
     loadData();
-  }, [loadData, router]);
+    loadNaves();
+  }, [loadData, loadNaves, router]);
+
+  // Re-cargar (sin recargar la página) cuando el usuario cambia de empresa/nave en el TopNavbar
+  useTenantChange(() => {
+    loadData();
+    loadNaves();
+  });
+
+  const naveNames = (ids: string[]) =>
+    ids.map((n) => availableNaves.find((an) => an.id === n)?.nombre || n).join(", ");
 
   const saveFiltros = async (updatedFiltros: Filtro[]) => {
     if (!vacante) return;
@@ -177,7 +215,7 @@ export default function VacanteFiltrosPage() {
         ),
       }));
 
-      const res = await fetch(API_URL, {
+      const res = await fetch(`${API_URL}${tenantQuery()}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updatedRecruiters),
@@ -300,7 +338,7 @@ export default function VacanteFiltrosPage() {
           </button>
           <div>
             <h1 className="text-2xl font-bold text-slate-800">{vacante.nombre}</h1>
-            <p className="text-sm text-slate-500">{recruiterNombre} · Naves: {vacante.naves.join(", ")}</p>
+            <p className="text-sm text-slate-500">{recruiterNombre} · Naves: {naveNames(vacante.naves)}</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -312,7 +350,7 @@ export default function VacanteFiltrosPage() {
       </div>
 
       <main className="flex-1 px-8 pb-12 max-w-5xl mx-auto w-full grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
+
         {/* LEFT: Current Filters */}
         <div className="lg:col-span-2 space-y-4">
           <div className="flex items-center justify-between mb-2">
@@ -344,9 +382,8 @@ export default function VacanteFiltrosPage() {
               {filtros.map((f) => (
                 <div
                   key={f.id}
-                  className={`bg-white rounded-xl border p-4 shadow-sm transition-all ${
-                    f.activo ? "border-black/10" : "border-slate-200 opacity-60"
-                  }`}
+                  className={`bg-white rounded-xl border p-4 shadow-sm transition-all ${f.activo ? "border-black/10" : "border-slate-200 opacity-60"
+                    }`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1">
@@ -445,11 +482,10 @@ export default function VacanteFiltrosPage() {
                       key={t.clave}
                       disabled={already}
                       onClick={() => addFiltroFromTemplate(t)}
-                      className={`w-full text-left p-3 rounded-lg border transition-all text-sm ${
-                        already
+                      className={`w-full text-left p-3 rounded-lg border transition-all text-sm ${already
                           ? "border-emerald-200 bg-emerald-50 text-emerald-700 cursor-not-allowed"
                           : "border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 text-slate-700"
-                      }`}
+                        }`}
                     >
                       <div className="flex items-center justify-between">
                         <span className="font-semibold">{t.etiqueta}</span>
@@ -474,8 +510,10 @@ export default function VacanteFiltrosPage() {
             </h3>
             <div className="space-y-3">
               <div>
-                <label className="text-xs font-medium text-slate-500 block mb-1">Tipo de filtro</label>
+                <label htmlFor="filtro-tipo" className="text-xs font-medium text-slate-500 block mb-1">Tipo de filtro</label>
                 <select
+                  id="filtro-tipo"
+                  name="filtro_tipo"
                   value={newFiltro.tipo}
                   onChange={(e) => setNewFiltro({ ...newFiltro, tipo: e.target.value as TipoFiltro })}
                   className="w-full p-2 text-sm border border-slate-200 rounded-lg bg-slate-50 focus:border-indigo-400 outline-none"
@@ -487,8 +525,10 @@ export default function VacanteFiltrosPage() {
                 </select>
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-500 block mb-1">Nombre (etiqueta)</label>
+                <label htmlFor="filtro-etiqueta" className="text-xs font-medium text-slate-500 block mb-1">Nombre (etiqueta)</label>
                 <input
+                  id="filtro-etiqueta"
+                  name="filtro_etiqueta"
                   type="text"
                   placeholder="Ej: Manejo de montacargas"
                   value={newFiltro.etiqueta}
@@ -497,8 +537,10 @@ export default function VacanteFiltrosPage() {
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-500 block mb-1">Pregunta que hará la IA</label>
+                <label htmlFor="filtro-pregunta" className="text-xs font-medium text-slate-500 block mb-1">Pregunta que hará la IA</label>
                 <textarea
+                  id="filtro-pregunta"
+                  name="filtro_pregunta"
                   placeholder="Ej: ¿Tienes experiencia con montacargas?"
                   value={newFiltro.pregunta}
                   onChange={(e) => setNewFiltro({ ...newFiltro, pregunta: e.target.value })}
@@ -513,6 +555,7 @@ export default function VacanteFiltrosPage() {
                     {["Sí", "No"].map((opt) => (
                       <label key={opt} className="flex items-center gap-2 cursor-pointer text-sm">
                         <input
+                          id={`filtro-requiere-${opt.toLowerCase()}`}
                           type="radio"
                           name="requiere_si"
                           checked={opt === "Sí" ? newFiltro.requiere_si === true : newFiltro.requiere_si === false}
@@ -529,14 +572,14 @@ export default function VacanteFiltrosPage() {
               {newFiltro.tipo === "rango_edad" && (
                 <div className="flex gap-2">
                   <div className="flex-1">
-                    <label className="text-xs font-medium text-slate-500 block mb-1">Edad mín.</label>
-                    <input type="number" min={0} placeholder="18" value={newFiltro.edad_min ?? ""}
+                    <label htmlFor="filtro-edad-min" className="text-xs font-medium text-slate-500 block mb-1">Edad mín.</label>
+                    <input id="filtro-edad-min" name="edad_min" type="number" min={0} placeholder="18" value={newFiltro.edad_min ?? ""}
                       onChange={(e) => setNewFiltro({ ...newFiltro, edad_min: Number(e.target.value) })}
                       className="w-full p-2 text-sm border border-slate-200 rounded-lg bg-slate-50 focus:border-indigo-400 outline-none" />
                   </div>
                   <div className="flex-1">
-                    <label className="text-xs font-medium text-slate-500 block mb-1">Edad máx.</label>
-                    <input type="number" min={0} placeholder="45" value={newFiltro.edad_max ?? ""}
+                    <label htmlFor="filtro-edad-max" className="text-xs font-medium text-slate-500 block mb-1">Edad máx.</label>
+                    <input id="filtro-edad-max" name="edad_max" type="number" min={0} placeholder="45" value={newFiltro.edad_max ?? ""}
                       onChange={(e) => setNewFiltro({ ...newFiltro, edad_max: Number(e.target.value) })}
                       className="w-full p-2 text-sm border border-slate-200 rounded-lg bg-slate-50 focus:border-indigo-400 outline-none" />
                   </div>
@@ -545,16 +588,20 @@ export default function VacanteFiltrosPage() {
 
               {newFiltro.tipo === "opcion" && (
                 <div>
-                  <label className="text-xs font-medium text-slate-500 block mb-1">Opciones (separadas por coma)</label>
+                  <label htmlFor="filtro-opciones" className="text-xs font-medium text-slate-500 block mb-1">Opciones (separadas por coma)</label>
                   <input
+                    id="filtro-opciones"
+                    name="filtro_opciones"
                     type="text"
                     placeholder="MASCULINO, FEMENINO"
                     value={(newFiltro.opciones || []).join(", ")}
                     onChange={(e) => setNewFiltro({ ...newFiltro, opciones: e.target.value.split(",").map((s) => s.trim().toUpperCase()) })}
                     className="w-full p-2 text-sm border border-slate-200 rounded-lg bg-slate-50 focus:border-indigo-400 outline-none"
                   />
-                  <label className="text-xs font-medium text-slate-500 block mb-1 mt-2">Valor requerido</label>
+                  <label htmlFor="filtro-valor-requerido" className="text-xs font-medium text-slate-500 block mb-1 mt-2">Valor requerido</label>
                   <input
+                    id="filtro-valor-requerido"
+                    name="filtro_valor_requerido"
                     type="text"
                     placeholder="MASCULINO"
                     value={newFiltro.valor_requerido || ""}
@@ -589,7 +636,7 @@ export default function VacanteFiltrosPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Naves</span>
-                <span className="font-semibold">{vacante.naves.join(", ")}</span>
+                <span className="font-semibold">{naveNames(vacante.naves)}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500">Filtros activos</span>
@@ -605,9 +652,8 @@ export default function VacanteFiltrosPage() {
       </main>
 
       {/* Toast */}
-      <div className={`fixed bottom-6 right-6 px-5 py-3 rounded-xl font-bold text-white shadow-xl transition-all duration-300 z-[2000] ${
-        toast ? "translate-y-0 opacity-100" : "translate-y-16 opacity-0"
-      } ${toast?.isError ? "bg-red-500" : "bg-emerald-500"}`}>
+      <div className={`fixed bottom-6 right-6 px-5 py-3 rounded-xl font-bold text-white shadow-xl transition-all duration-300 z-[2000] ${toast ? "translate-y-0 opacity-100" : "translate-y-16 opacity-0"
+        } ${toast?.isError ? "bg-red-500" : "bg-emerald-500"}`}>
         {toast?.msg}
       </div>
       {/* Modal Preguntas Base */}
@@ -628,7 +674,7 @@ export default function VacanteFiltrosPage() {
                 <X size={20} />
               </button>
             </div>
-            
+
             <div className="p-2 overflow-y-auto">
               <div className="space-y-1">
                 {PREGUNTAS_BASE_PREDEFINIDAS.map((pb) => {
@@ -637,6 +683,8 @@ export default function VacanteFiltrosPage() {
                     <label key={pb.clave} className={`flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-colors ${isSelected ? "bg-indigo-50/50" : "hover:bg-slate-50"}`}>
                       <div className="mt-0.5">
                         <input
+                          id={`pregunta-base-${pb.clave}`}
+                          name={`pregunta_base_${pb.clave}`}
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => togglePreguntaBase(pb)}
@@ -652,7 +700,7 @@ export default function VacanteFiltrosPage() {
                 })}
               </div>
             </div>
-            
+
             <div className="p-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl flex justify-end">
               <button
                 onClick={() => setShowPreguntasBaseModal(false)}

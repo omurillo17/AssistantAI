@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 
 import { pool } from '@/lib/db';
 import { enviarMensajeCandidato } from '@/lib/waha';
+import { getSession } from '@/lib/auth';
 
 // ─── GET /api/db/mensajes/[telefono] ──────────────────────
 // Devuelve historial de conversation_history para ese candidato
@@ -12,6 +13,9 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ telefono: string }> }
 ) {
+  if (!(await getSession(_request))) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  }
   const { telefono } = await params;
 
   if (!telefono) {
@@ -41,9 +45,12 @@ export async function GET(
 
     // Info del candidato
     const candRes = await pool.query(
-      `SELECT id as candidato_id, telefono, COALESCE(NULLIF(TRIM(nombre_ine),''), NULLIF(TRIM(nombre_solicitud),''), NULLIF(TRIM(nombre_constancia),''), NULLIF(TRIM(nombre_chat),''), NULLIF(TRIM(nombre),''), telefono) AS nombre,
-              estado, escalado, escalation_reason, vacante_interes, nave_interes, correo
-       FROM candidatos WHERE telefono = $1 ORDER BY updated_at DESC LIMIT 1`,
+      `SELECT c.id as candidato_id, c.telefono, COALESCE(NULLIF(TRIM(c.nombre_ine),''), NULLIF(TRIM(c.nombre_solicitud),''), NULLIF(TRIM(c.nombre_constancia),''), NULLIF(TRIM(c.nombre_chat),''), NULLIF(TRIM(c.nombre),''), c.telefono) AS nombre,
+              c.estado, c.escalado, c.escalation_reason, c.vacante_interes, c.nave_interes, c.correo,
+              COALESCE(mb.asignado_a_id, c.asignado_a_id) AS asignado_a_id
+       FROM candidatos c
+       LEFT JOIN mensajes_bandeja mb ON mb.candidato_id = c.id
+       WHERE c.telefono = $1 ORDER BY c.updated_at DESC LIMIT 1`,
       [telefono]
     );
 
@@ -72,16 +79,19 @@ export async function GET(
 
 // ─── POST /api/db/mensajes/[telefono] ─────────────────────
 // Envía un mensaje de WhatsApp via WAHA y lo guarda en conversation_history y la cola (Outbox)
-// Body: { texto, asignado_a? }
+// Body: { texto, asignado_a_id? }
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ telefono: string }> }
 ) {
+  if (!(await getSession(request))) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  }
   const { telefono } = await params;
 
   try {
     const body = await request.json();
-    const { texto, asignado_a } = body;
+    const { texto, asignado_a_id } = body;
 
     if (!texto?.trim()) {
       return NextResponse.json({ error: 'El mensaje no puede estar vacío' }, { status: 400 });
@@ -89,7 +99,7 @@ export async function POST(
 
     let savedMsg;
     try {
-      savedMsg = await enviarMensajeCandidato(telefono, texto, asignado_a);
+      savedMsg = await enviarMensajeCandidato(telefono, texto, asignado_a_id);
     } catch (sendErr) {
       const message = sendErr instanceof Error ? sendErr.message : String(sendErr);
       if (message === 'Candidato no encontrado en la base de datos') {

@@ -217,6 +217,8 @@ export default function PortalCandidatoPage() {
                     <div className="h-12 bg-slate-100 animate-pulse rounded-xl"></div>
                   ) : (
                     <select
+                      id="portal-empresa"
+                      name="empresa"
                       value={selectedEmpresaId}
                       onChange={(e) => {
                         setSelectedEmpresaId(e.target.value);
@@ -240,6 +242,8 @@ export default function PortalCandidatoPage() {
                       <MapPin size={16} className="text-[#0c66ac]" /> Sucursal / Nave Específica (Opcional)
                     </label>
                     <select
+                      id="portal-nave"
+                      name="nave"
                       value={selectedNaveId}
                       onChange={(e) => setSelectedNaveId(e.target.value)}
                       className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 font-bold focus:outline-none focus:border-[#0c66ac] focus:ring-2 focus:ring-[#0c66ac]/20 transition-all cursor-pointer shadow-xs text-sm sm:text-base"
@@ -260,6 +264,8 @@ export default function PortalCandidatoPage() {
                     <Phone size={16} className="text-[#0c66ac]" /> Número de Teléfono (10 dígitos)
                   </label>
                   <input
+                    id="portal-telefono"
+                    name="telefono"
                     type="tel"
                     placeholder="Ej. 33 3248 3278"
                     value={telefono}
@@ -399,6 +405,8 @@ export default function PortalCandidatoPage() {
 
                       <div className="relative border-2 border-dashed border-slate-300 hover:border-[#0c66ac] rounded-xl p-4 text-center transition-colors bg-white cursor-pointer">
                         <input
+                          id="portal-file-ine"
+                          name="file_ine"
                           type="file"
                           accept="image/*,application/pdf"
                           onChange={(e) => setFileIne(e.target.files?.[0] || null)}
@@ -436,6 +444,8 @@ export default function PortalCandidatoPage() {
 
                       <div className="relative border-2 border-dashed border-slate-300 hover:border-[#0c66ac] rounded-xl p-4 text-center transition-colors bg-white cursor-pointer">
                         <input
+                          id="portal-file-rfc"
+                          name="file_rfc"
                           type="file"
                           accept="image/*,application/pdf"
                           onChange={(e) => setFileRfc(e.target.files?.[0] || null)}
@@ -474,6 +484,8 @@ export default function PortalCandidatoPage() {
 
                         <div className="relative border-2 border-dashed border-slate-300 hover:border-[#0c66ac] rounded-xl p-4 text-center transition-colors bg-white cursor-pointer">
                           <input
+                            id="portal-file-cv"
+                            name="file_cv"
                             type="file"
                             accept="image/*,application/pdf"
                             onChange={(e) => setFileCv(e.target.files?.[0] || null)}

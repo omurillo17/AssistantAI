@@ -50,6 +50,8 @@ export default function RecruiterModal({
               Nombre
             </label>
             <input
+              id="recruiter-nombre"
+              name="nombre"
               type="text"
               className="w-full p-3 rounded-lg border border-black/10 bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none uppercase transition-all shadow-sm"
               placeholder="EJ: Geronimo Murillo"
@@ -64,6 +66,8 @@ export default function RecruiterModal({
             </label>
             <div className="flex gap-2">
               <select
+                id="recruiter-country-code"
+                name="country_code"
                 className="w-[120px] sm:w-[140px] p-3 rounded-lg border border-black/10 bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none transition-all shadow-sm cursor-pointer"
                 value={rCodigoPais}
                 onChange={(e) => setRCodigoPais(e.target.value)}
@@ -75,6 +79,8 @@ export default function RecruiterModal({
                 ))}
               </select>
               <input
+                id="recruiter-phone"
+                name="phone"
                 type="text"
                 className="flex-1 p-3 rounded-lg border border-black/10 bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none transition-all shadow-sm"
                 placeholder="3300000000"
@@ -89,6 +95,8 @@ export default function RecruiterModal({
               Correo Electrónico (Google Calendar ID)
             </label>
             <input
+              id="recruiter-calendar"
+              name="calendar_email"
               type="email"
               className="w-full p-3 rounded-lg border border-black/10 bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none transition-all shadow-sm"
               placeholder="ejemplo@gmail.com"
@@ -103,6 +111,8 @@ export default function RecruiterModal({
             </label>
             <div className="flex items-center gap-4">
               <input
+                id="recruiter-color"
+                name="color"
                 type="color"
                 className="h-10 w-14 rounded cursor-pointer border-0 bg-transparent"
                 value={rColor}

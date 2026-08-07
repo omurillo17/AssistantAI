@@ -133,8 +133,10 @@ export default function EditUserModal({
         </div>
         <form onSubmit={guardarEdicion} className="space-y-4">
           <div>
-            <label className="block text-sm font-semibold mb-1 text-slate-600">Rol del Sistema</label>
-            <select 
+            <label htmlFor="edit-user-rol" className="block text-sm font-semibold mb-1 text-slate-600">Rol del Sistema</label>
+            <select
+              id="edit-user-rol"
+              name="rol"
               className="w-full p-2 border rounded focus:outline-none focus:border-indigo-500 bg-slate-50 focus:bg-white transition-colors"
               value={newRol}
               onChange={(e) => setNewRol(e.target.value)}
@@ -151,9 +153,11 @@ export default function EditUserModal({
             <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-lg space-y-3">
               <p className="text-xs text-indigo-800 font-medium">Datos del perfil CRM para este usuario:</p>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-indigo-700">Correo (Google Calendar)</label>
-                <input 
-                  type="email" 
+                <label htmlFor="edit-user-email" className="block text-xs font-semibold mb-1 text-indigo-700">Correo (Google Calendar)</label>
+                <input
+                  id="edit-user-email"
+                  name="email"
+                  type="email"
                   required
                   className="w-full p-2 border rounded focus:outline-none focus:border-indigo-500 bg-white"
                   value={editingCorreo}
@@ -161,9 +165,11 @@ export default function EditUserModal({
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold mb-1 text-indigo-700">Teléfono (WhatsApp)</label>
+                <label htmlFor="edit-user-phone" className="block text-xs font-semibold mb-1 text-indigo-700">Teléfono (WhatsApp)</label>
                 <div className="flex gap-2">
-                  <select 
+                  <select
+                    id="edit-user-phone-prefix"
+                    name="phone_prefix"
                     className="p-2 border rounded focus:outline-none focus:border-indigo-500 bg-slate-50 focus:bg-white transition-colors text-slate-800 text-sm"
                     value={editingTelPrefix}
                     onChange={(e) => setEditingTelPrefix(e.target.value)}
@@ -178,8 +184,10 @@ export default function EditUserModal({
                     <option value="51">+51 (PE)</option>
                     <option value="502">+502 (GT)</option>
                   </select>
-                  <input 
-                    type="tel" 
+                  <input
+                    id="edit-user-phone"
+                    name="phone"
+                    type="tel"
                     className="flex-1 p-2 border rounded focus:outline-none focus:border-indigo-500 bg-white"
                     value={editingTelefono}
                     onChange={(e) => setEditingTelefono(e.target.value.replace(/\D/g, ""))}
@@ -193,14 +201,16 @@ export default function EditUserModal({
           {(user.rol === "RECLUTADOR" || user.rol === "ENCARGADO") && (newRol !== "RECLUTADOR" && newRol !== "ENCARGADO") && (
             <div className="p-4 bg-red-50 border border-red-100 rounded-lg space-y-3">
               <p className="text-xs text-red-800 font-medium">Este usuario dejará de recibir chats. Si tiene candidatos activos, transfiérelos a:</p>
-              <select 
+              <select
+                id="edit-user-transfer"
+                name="transfer_to"
                 className="w-full p-2 border border-red-200 rounded focus:outline-none focus:border-red-500 bg-white"
                 value={editingTransferTo}
                 onChange={e => setEditingTransferTo(e.target.value)}
               >
                 <option value="">No transferir (Perder chats)</option>
-                {usuarios.filter(u => u.id !== user.id && (u.rol === 'RECLUTADOR' || u.rol === 'ENCARGADO')).map(u => (
-                  <option key={u.id} value={u.usuario}>{u.usuario}</option>
+                {usuarios.filter(u => u.id !== user.id && u.reclutador_id && (u.rol === 'RECLUTADOR' || u.rol === 'ENCARGADO')).map(u => (
+                  <option key={u.id} value={u.reclutador_id}>{u.usuario}</option>
                 ))}
               </select>
             </div>
@@ -209,8 +219,10 @@ export default function EditUserModal({
           {/* Grupo Asignado (Editar Usuario) */}
           {(newRol === "RECLUTADOR" || newRol === "ENCARGADO") && (
             <div className="pt-2">
-              <label className="block text-sm font-semibold mb-2 text-slate-600">Grupo de Reclutamiento</label>
-              <select 
+              <label htmlFor="edit-user-grupo" className="block text-sm font-semibold mb-2 text-slate-600">Grupo de Reclutamiento</label>
+              <select
+                id="edit-user-grupo"
+                name="grupo"
                 className="w-full p-2 border rounded focus:outline-none focus:border-indigo-500 bg-slate-50 focus:bg-white transition-colors"
                 value={editingSelectedGrupo}
                 onChange={(e) => setEditingSelectedGrupo(e.target.value)}
@@ -242,9 +254,11 @@ export default function EditUserModal({
           )}
 
           <div>
-            <label className="block text-sm font-semibold mb-1 text-slate-600">Nueva Contraseña (Opcional)</label>
-            <input 
-              type="password" 
+            <label htmlFor="edit-user-new-password" className="block text-sm font-semibold mb-1 text-slate-600">Nueva Contraseña (Opcional)</label>
+            <input
+              id="edit-user-new-password"
+              name="new_password"
+              type="password"
               minLength={5}
               placeholder="Dejar en blanco para no cambiar"
               className="w-full p-2 border rounded focus:outline-none focus:border-indigo-500 bg-slate-50 focus:bg-white transition-colors"
@@ -254,10 +268,12 @@ export default function EditUserModal({
           </div>
 
           <div className="pt-4 border-t border-slate-100">
-            <label className="block text-sm font-semibold mb-1 text-red-500">Autorización Requerida</label>
+            <label htmlFor="edit-user-admin-password" className="block text-sm font-semibold mb-1 text-red-500">Autorización Requerida</label>
             <p className="text-xs text-slate-500 mb-2">Ingresa tu contraseña de Administrador para confirmar los cambios.</p>
-            <input 
-              type="password" 
+            <input
+              id="edit-user-admin-password"
+              name="admin_password"
+              type="password"
               required
               className="w-full p-2 border border-red-200 rounded focus:outline-none focus:border-red-500 bg-red-50 focus:bg-white transition-colors"
               placeholder="Contraseña de administrador"

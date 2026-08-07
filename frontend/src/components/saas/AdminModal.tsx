@@ -73,9 +73,11 @@ export default function AdminModal({
         </div>
         <div className="p-6 space-y-4">
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">Usuario</label>
-            <input 
-              type="text" 
+            <label htmlFor="admin-usuario" className="block text-sm font-bold text-slate-700 mb-1.5">Usuario</label>
+            <input
+              id="admin-usuario"
+              name="username"
+              type="text"
               className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 transition-all font-medium uppercase"
               placeholder="EJ. ADMIN_EMPRESA"
               value={usuario}
@@ -83,9 +85,11 @@ export default function AdminModal({
             />
           </div>
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">Contraseña</label>
-            <input 
-              type="password" 
+            <label htmlFor="admin-password" className="block text-sm font-bold text-slate-700 mb-1.5">Contraseña</label>
+            <input
+              id="admin-password"
+              name="password"
+              type="password"
               className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 transition-all font-medium"
               placeholder="MÍNIMO 5 CARACTERES"
               value={password}

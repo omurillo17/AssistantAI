@@ -90,6 +90,8 @@ export default function RecruiterCard({
         >
           <div className="relative">
             <input
+              id={`recruiter-toggle-${rec.reclutador_id}`}
+              name="recruiter_activo"
               type="checkbox"
               className="sr-only"
               checked={rec.activo}
@@ -146,6 +148,8 @@ export default function RecruiterCard({
             <div className="flex justify-between items-start mb-2">
               <div className="font-semibold text-[15px]">{vac.nombre}</div>
               <input
+                id={`vacancy-toggle-${vac.id}`}
+                name="vacancy_activa"
                 type="checkbox"
                 className={`w-4 h-4 accent-indigo-500 ${
                   isEditable ? "cursor-pointer" : "cursor-not-allowed"
@@ -204,6 +208,11 @@ export default function RecruiterCard({
             </div>
           </div>
         ))}
+        {rec.vacantes.length === 0 && (
+          <div className="flex-1 flex items-center justify-center text-center text-sm text-slate-400 italic py-4">
+            Sin vacantes {isEditable ? "— agrega la primera" : "registradas"}
+          </div>
+        )}
       </div>
 
       {/* Add Vacancy Footer */}

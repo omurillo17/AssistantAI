@@ -19,7 +19,6 @@ type Nave = {
 type Empresa = {
   id: string;
   nombre: string;
-  telefono_whatsapp: string;
   prompt_ia: string;
   created_at: string;
   naves: Nave[];
@@ -232,7 +231,7 @@ export default function SaasAdminPage() {
                   <div>
                     <h2 className="text-xl font-bold text-slate-900">{emp.nombre}</h2>
                     <div className="flex items-center gap-4 text-sm text-slate-500 mt-1">
-                      <span className="flex items-center gap-1.5"><Phone size={14} /> {emp.telefono_whatsapp || 'Sin WhatsApp'}</span>
+                      <span className="flex items-center gap-1.5"><Phone size={14} /> {grupos.filter(g => g.empresa_id === emp.id).length} Grupos (WhatsApp)</span>
                       <span className="flex items-center gap-1.5"><MapPin size={14} /> {(emp.naves || []).length} Naves activas</span>
                     </div>
                   </div>
@@ -300,6 +299,8 @@ export default function SaasAdminPage() {
                     )}
                     {empGrupos.length > 0 && (
                       <select
+                        id={`nave-grupo-${nave.id}`}
+                        name="nave_grupo"
                         value={grupoActualId}
                         onChange={(e) => handleChangeNaveGrupo(nave.id, emp.id, e.target.value)}
                         className="w-full text-xs font-semibold p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-violet-500 text-slate-600 cursor-pointer"

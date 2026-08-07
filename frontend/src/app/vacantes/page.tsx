@@ -80,7 +80,7 @@ export default function VacantesPage() {
                   >
                     <div className="flex justify-between items-start mb-2">
                       <div className="font-semibold text-lg">{vac.nombre}</div>
-                      <input type="checkbox" className="w-5 h-5 accent-indigo-500 cursor-pointer" checked={vac.activa} onChange={() => v.toggleVacancy(recIndex, vacIndex)} />
+                      <input id={`vacancy-toggle-${vac.id}`} name="vacancy_activa" type="checkbox" className="w-5 h-5 accent-indigo-500 cursor-pointer" checked={vac.activa} onChange={() => v.toggleVacancy(recIndex, vacIndex)} />
                     </div>
                     <div className="flex flex-wrap gap-2 mb-3">
                       {Array.isArray(vac.naves) && vac.naves.map((n) => {
@@ -125,6 +125,7 @@ export default function VacantesPage() {
           isEditing={!!v.modalVacancyId}
           vNombre={v.vNombre} setVNombre={v.setVNombre}
           vDetalles={v.vDetalles} setVDetalles={v.setVDetalles}
+          vFunciones={v.vFunciones} setVFunciones={v.setVFunciones}
           vPalabrasClave={v.vPalabrasClave} setVPalabrasClave={v.setVPalabrasClave}
           vNaves={v.vNaves} toggleNave={v.toggleNave}
           availableNaves={v.availableNaves}

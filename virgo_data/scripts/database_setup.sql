@@ -25,8 +25,8 @@ $$ LANGUAGE plpgsql;
 CREATE TABLE IF NOT EXISTS empresas (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     nombre VARCHAR(255) NOT NULL,
-    telefono_whatsapp VARCHAR(50) DEFAULT '',
     prompt_ia TEXT DEFAULT '',
+    retencion_archivos_dias INTEGER DEFAULT 30,
     created_at TIMESTAMP DEFAULT NOW()
 );
 
@@ -47,21 +47,10 @@ CREATE TABLE IF NOT EXISTS naves (
 CREATE INDEX IF NOT EXISTS idx_naves_empresa ON naves(empresa_id);
 
 -- ============================================
--- TABLA: empresas_ligadas
--- Relacion entre empresas para compartir datos
--- ============================================
-
-CREATE TABLE IF NOT EXISTS empresas_ligadas (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    empresa_origen_id UUID NOT NULL REFERENCES empresas(id) ON DELETE CASCADE,
-    empresa_destino_id UUID NOT NULL REFERENCES empresas(id) ON DELETE CASCADE,
-    created_at TIMESTAMP DEFAULT NOW(),
-    CONSTRAINT uq_empresas_ligadas UNIQUE (empresa_origen_id, empresa_destino_id)
-);
-
--- ============================================
 -- TABLA: grupos_reclutamiento
--- Grupos de reclutadores con naves asignadas
+-- Grupos de reclutadores con naves asignadas.
+-- Cada grupo es dueño de su propio numero/linea de WhatsApp
+-- (en vez de tener un unico numero a nivel empresa).
 -- ============================================
 
 CREATE TABLE IF NOT EXISTS grupos_reclutamiento (
@@ -69,10 +58,14 @@ CREATE TABLE IF NOT EXISTS grupos_reclutamiento (
     empresa_id UUID NOT NULL REFERENCES empresas(id) ON DELETE CASCADE,
     nombre VARCHAR(255) NOT NULL,
     naves_asignadas JSONB DEFAULT '[]',
+    telefono_whatsapp VARCHAR(50) DEFAULT '',
+    whatsapp_phone_number_id VARCHAR(100),
     created_at TIMESTAMP DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_grupos_empresa ON grupos_reclutamiento(empresa_id);
+CREATE INDEX IF NOT EXISTS idx_grupos_telefono ON grupos_reclutamiento(telefono_whatsapp) WHERE telefono_whatsapp <> '';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_grupos_phone_number_id ON grupos_reclutamiento(whatsapp_phone_number_id) WHERE whatsapp_phone_number_id IS NOT NULL;
 
 -- ============================================
 -- TABLA: reclutadores
@@ -87,13 +80,37 @@ CREATE TABLE IF NOT EXISTS reclutadores (
     color VARCHAR(20) DEFAULT '#6366f1',
     empresa_id UUID REFERENCES empresas(id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+    updated_at TIMESTAMP DEFAULT NOW(),
+    naves JSONB
 );
 
 CREATE INDEX IF NOT EXISTS idx_reclutadores_empresa ON reclutadores(empresa_id);
 
 CREATE TRIGGER update_reclutadores_updated_at
     BEFORE UPDATE ON reclutadores
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================
+-- TABLA: google_calendar_credentials
+-- Refresh tokens OAuth de Google Calendar por cuenta de reclutador
+-- (calendar_id = reclutadores.calendar_id), usados por el servicio
+-- backend/ que reemplaza progresivamente los workflows de n8n. Se llena
+-- con backend/scripts/authorize_recruiter.py (flujo manual, una vez por
+-- reclutador), no de forma programática.
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS google_calendar_credentials (
+    calendar_id VARCHAR(255) PRIMARY KEY,
+    refresh_token_encrypted TEXT NOT NULL,
+    scopes VARCHAR(500) NOT NULL DEFAULT 'https://www.googleapis.com/auth/calendar',
+    authorized_by VARCHAR(255) DEFAULT '',
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TRIGGER update_google_calendar_credentials_updated_at
+    BEFORE UPDATE ON google_calendar_credentials
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
@@ -108,17 +125,25 @@ CREATE TABLE IF NOT EXISTS vacantes_def (
     nombre VARCHAR(255) NOT NULL,
     naves TEXT DEFAULT '[]',
     detalles TEXT DEFAULT '',
+    -- Actividades/funciones del puesto que Sofia le muestra al candidato en un
+    -- segundo mensaje, aparte de los detalles (sueldo/horario), para que sepa
+    -- qué va a hacer antes de invertir tiempo en el proceso.
+    funciones TEXT DEFAULT '',
+    -- Sinónimos con los que el candidato puede referirse a la vacante
+    -- ("chofer" -> OPERADOR DE VEHÍCULO). Se le pasan a la IA en el catálogo.
     palabras_clave TEXT DEFAULT '',
     filtros JSONB DEFAULT '[]',
     activa BOOLEAN DEFAULT TRUE,
     orden INTEGER DEFAULT 0,
     empresa_id UUID REFERENCES empresas(id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+    updated_at TIMESTAMP DEFAULT NOW(),
+    nave_id UUID REFERENCES naves(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_vacantes_reclutador ON vacantes_def(reclutador_id);
 CREATE INDEX IF NOT EXISTS idx_vacantes_empresa ON vacantes_def(empresa_id);
+CREATE INDEX IF NOT EXISTS idx_vacantes_nave ON vacantes_def(nave_id);
 
 CREATE TRIGGER update_vacantes_def_updated_at
     BEFORE UPDATE ON vacantes_def
@@ -168,8 +193,8 @@ CREATE TABLE IF NOT EXISTS candidatos (
     cv_manual JSONB,
     datos_ine JSONB,
     datos_rfc TEXT,
-    curp_ine VARCHAR(18),
-    curp_rfc VARCHAR(18),
+    curp_ine VARCHAR(50),
+    curp_rfc VARCHAR(50),
     alerta_identidad_estado VARCHAR(20),
     alerta_identidad_motivo TEXT,
     link_cv TEXT,
@@ -194,7 +219,7 @@ CREATE TABLE IF NOT EXISTS candidatos (
     escalation_reason TEXT,
     escalated_at TIMESTAMP,
 
-    asignado_a VARCHAR(255),
+    asignado_a_id VARCHAR(100) REFERENCES reclutadores(id) ON DELETE SET NULL,
     mensajes_bot_enviados INTEGER DEFAULT 0,
     privacidad_aceptada BOOLEAN DEFAULT FALSE,
     ultima_ejecucion_id VARCHAR(255),
@@ -232,6 +257,7 @@ CREATE INDEX IF NOT EXISTS idx_candidatos_vacante ON candidatos(vacante_interes)
 CREATE INDEX IF NOT EXISTS idx_candidatos_created ON candidatos(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_candidatos_escalado ON candidatos(escalado) WHERE escalado = TRUE;
 CREATE INDEX IF NOT EXISTS idx_candidatos_empresa ON candidatos(empresa_id);
+CREATE INDEX IF NOT EXISTS idx_candidatos_asignado_a ON candidatos(asignado_a_id);
 
 CREATE TRIGGER update_candidatos_updated_at
     BEFORE UPDATE ON candidatos
@@ -275,7 +301,7 @@ CREATE TABLE IF NOT EXISTS mensajes_bandeja (
     ultimo_mensaje TEXT,
     ultimo_mensaje_rol VARCHAR(50) DEFAULT 'user',
     ultimo_mensaje_at TIMESTAMP DEFAULT NOW(),
-    asignado_a VARCHAR(255),
+    asignado_a_id VARCHAR(100) REFERENCES reclutadores(id) ON DELETE SET NULL,
     mensajes_no_leidos INTEGER DEFAULT 0,
     activo BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT NOW(),
@@ -284,6 +310,7 @@ CREATE TABLE IF NOT EXISTS mensajes_bandeja (
 
 CREATE INDEX IF NOT EXISTS idx_bandeja_candidato ON mensajes_bandeja(candidato_id);
 CREATE INDEX IF NOT EXISTS idx_bandeja_activo ON mensajes_bandeja(activo) WHERE activo = TRUE;
+CREATE INDEX IF NOT EXISTS idx_bandeja_asignado_a ON mensajes_bandeja(asignado_a_id);
 
 CREATE TRIGGER update_bandeja_updated_at
     BEFORE UPDATE ON mensajes_bandeja
@@ -340,6 +367,22 @@ CREATE TABLE IF NOT EXISTS reclutadores_turno (
     ultimo_index INTEGER DEFAULT 0,
     updated_at TIMESTAMP DEFAULT NOW()
 );
+
+-- ============================================
+-- TABLA: n8n_chat_histories
+-- Memoria de conversación del agente de IA (backend/app/chat/memoria.py).
+-- Mismo nombre/esquema que usaba el nodo Postgres Chat Memory de n8n
+-- (formato jsonb compatible con LangChain) para no perder continuidad
+-- si algún día hay que revertir esa pieza a n8n.
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS n8n_chat_histories (
+    id SERIAL PRIMARY KEY,
+    session_id VARCHAR(255) NOT NULL,
+    message JSONB NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_histories_session ON n8n_chat_histories(session_id);
 
 -- ============================================
 -- TABLA: system_logs
@@ -605,5 +648,5 @@ ALTER TABLE usuarios DROP COLUMN IF EXISTS actual_password;
 -- ============================================
 DO $$
 BEGIN
-    RAISE NOTICE 'Database setup completado - 18 tablas, 3 vistas, 3 funciones';
+    RAISE NOTICE 'Database setup completado - 17 tablas, 3 vistas, 3 funciones';
 END $$;

@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { z } from "zod";
 
 import { pool } from '@/lib/db';
-import { getSession } from '@/lib/auth';
+import { getSession, normalizeUsername } from '@/lib/auth';
 
 import crypto from 'crypto';
 
@@ -26,12 +26,12 @@ export async function GET(request: Request) {
     const userEmpresaId = payload.empresa_id as string | null;
 
     let query = `
-      SELECT u.id, u.usuario, u.rol, u.created_at, u.grupo_id, u.empresa_id,
+      SELECT u.id, u.usuario, u.rol, u.created_at, u.grupo_id, u.empresa_id, u.reclutador_id,
              r.calendar_id as correo, r.telefono
       FROM usuarios u
       LEFT JOIN reclutadores r ON u.reclutador_id = r.id
     `;
-    const params: any[] = [];
+    const params: unknown[] = [];
     const conditions: string[] = [];
 
     if (userRole !== 'ROOT') {
@@ -85,8 +85,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "El correo es obligatorio para Reclutadores y Encargados" }, { status: 400 });
     }
 
-    // Normalize username: lowercase and remove accents
-    const normalizedUser = usuario.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+    const normalizedUser = normalizeUsername(usuario);
 
     // Verificar si el usuario ya existe
     const check = await pool.query(`SELECT id FROM usuarios WHERE usuario = $1`, [normalizedUser]);
@@ -158,6 +157,12 @@ export async function PATCH(request: Request) {
     const adminRole = payload.rol as string;
     const adminGrupoId = payload.grupo_id as string | null;
 
+    // Defensa en profundidad: aunque el middleware ya restringe /api/db/usuarios,
+    // verificamos el rol también aquí.
+    if (adminRole !== 'ADMIN' && adminRole !== 'ROOT' && adminRole !== 'ENCARGADO') {
+      return NextResponse.json({ error: "No autorizado para modificar usuarios" }, { status: 403 });
+    }
+
     // Verificar la contraseña del administrador
     const adminRes = await pool.query(`SELECT password_hash FROM usuarios WHERE usuario = $1`, [adminUsername]);
     if (adminRes.rowCount === 0) return NextResponse.json({ error: "Admin no encontrado" }, { status: 404 });
@@ -215,11 +220,15 @@ export async function PATCH(request: Request) {
 
       // Descenso desde RECLUTADOR o ENCARGADO
       else if (currentUser.rol === "RECLUTADOR" || currentUser.rol === "ENCARGADO") {
-        // Transferir chats si se especifica
-        if (transferTo) {
+        // Transferir chats si se especifica (transferTo = reclutador_id destino)
+        if (transferTo && currentUser.reclutador_id) {
           await pool.query(
-            `UPDATE candidatos SET asignado_a = $1 WHERE asignado_a = $2`,
-            [transferTo, currentUser.usuario]
+            `UPDATE candidatos SET asignado_a_id = $1 WHERE asignado_a_id = $2`,
+            [transferTo, currentUser.reclutador_id]
+          );
+          await pool.query(
+            `UPDATE mensajes_bandeja SET asignado_a_id = $1, updated_at = NOW() WHERE asignado_a_id = $2`,
+            [transferTo, currentUser.reclutador_id]
           );
         }
 
@@ -293,13 +302,12 @@ export async function DELETE(request: Request) {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     const transferTo = searchParams.get('transferTo');
-    const username = searchParams.get('username');
 
     if (!id) {
       return NextResponse.json({ error: "Falta el ID del usuario" }, { status: 400 });
     }
 
-    const targetRes = await pool.query(`SELECT id, rol, grupo_id FROM usuarios WHERE id = $1`, [id]);
+    const targetRes = await pool.query(`SELECT id, rol, grupo_id, reclutador_id FROM usuarios WHERE id = $1`, [id]);
     if (targetRes.rowCount === 0) {
       return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
     }
@@ -314,11 +322,16 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "No tienes permiso para eliminar este usuario" }, { status: 403 });
     }
 
-    // Transferir chats si se especifica
-    if (transferTo && username) {
+    // Transferir chats si se especifica (transferTo = reclutador_id destino;
+    // el origen se toma del propio usuario objetivo, nunca de un valor que mande el cliente)
+    if (transferTo && targetUser.reclutador_id) {
       await pool.query(
-        `UPDATE candidatos SET asignado_a = $1 WHERE asignado_a = $2`,
-        [transferTo, username]
+        `UPDATE candidatos SET asignado_a_id = $1 WHERE asignado_a_id = $2`,
+        [transferTo, targetUser.reclutador_id]
+      );
+      await pool.query(
+        `UPDATE mensajes_bandeja SET asignado_a_id = $1, updated_at = NOW() WHERE asignado_a_id = $2`,
+        [transferTo, targetUser.reclutador_id]
       );
     }
 

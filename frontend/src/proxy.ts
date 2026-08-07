@@ -21,6 +21,8 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/api/upload-cv") || // Endpoints de subida de archivos de n8n no requieren JWT
     pathname.startsWith("/api/prompt-context") || // Consumido por n8n server-to-server, protegido por x-api-key propio
     pathname.startsWith("/api/cron") || // Disparado por n8n (Schedule Trigger), protegido por x-api-key propio
+    pathname.startsWith("/api/db/reclutador_vacantes") || // Consumido por n8n; la ruta valida sesión o x-api-key
+    pathname.startsWith("/api/db/encargados-por-nave") || // Consumido por n8n; la ruta valida sesión o x-api-key
     pathname.startsWith("/api/waha-status") || // Chequeo de estado de WAHA
     pathname.startsWith("/portal") || // Portal público de candidatos
     pathname.startsWith("/api/portal") || // API pública del portal de candidatos
@@ -86,7 +88,7 @@ export async function proxy(request: NextRequest) {
         headers: requestHeaders,
       },
     });
-  } catch (err) {
+  } catch {
     // Si el token es inválido o expiró
     console.error("Token JWT inválido");
     

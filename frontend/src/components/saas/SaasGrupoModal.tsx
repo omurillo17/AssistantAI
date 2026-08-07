@@ -20,15 +20,18 @@ export default function SaasGrupoModal({
 }: SaasGrupoModalProps) {
   const [grupoNombre, setGrupoNombre] = useState("");
   const [grupoNaves, setGrupoNaves] = useState<string[]>([]);
+  const [grupoTelefono, setGrupoTelefono] = useState("");
   const [savingGrupo, setSavingGrupo] = useState(false);
 
   useEffect(() => {
     if (isOpen && grupo) {
       setGrupoNombre(grupo.nombre || "");
       setGrupoNaves(grupo.naves_asignadas || []);
+      setGrupoTelefono(grupo.telefono_whatsapp || "");
     } else if (!isOpen) {
       setGrupoNombre("");
       setGrupoNaves([]);
+      setGrupoTelefono("");
     }
   }, [isOpen, grupo]);
 
@@ -49,6 +52,7 @@ export default function SaasGrupoModal({
           nombre: grupoNombre.toUpperCase(),
           empresa_id: empresa.id,
           naves_asignadas: grupoNaves,
+          telefono_whatsapp: grupoTelefono,
         }),
       });
 
@@ -77,14 +81,29 @@ export default function SaasGrupoModal({
         </div>
         <div className="p-6 space-y-4">
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">Nombre del Grupo</label>
+            <label htmlFor="saas-grupo-nombre" className="block text-sm font-bold text-slate-700 mb-1.5">Nombre del Grupo</label>
             <input
+              id="saas-grupo-nombre"
+              name="grupo_nombre"
               type="text"
               className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-violet-500 transition-all font-medium uppercase"
               placeholder="EJ. GRUPO NORTE, GRUPO CENTRO..."
               value={grupoNombre}
               onChange={(e) => setGrupoNombre(e.target.value.toUpperCase())}
             />
+          </div>
+          <div>
+            <label htmlFor="saas-grupo-whatsapp" className="block text-sm font-bold text-slate-700 mb-1.5">WhatsApp de este grupo (Opcional)</label>
+            <input
+              id="saas-grupo-whatsapp"
+              name="grupo_whatsapp"
+              type="text"
+              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-violet-500 transition-all font-medium"
+              placeholder="EJ. 5213322114455"
+              value={grupoTelefono}
+              onChange={(e) => setGrupoTelefono(e.target.value.replace(/[^\d]/g, ""))}
+            />
+            <p className="text-xs text-slate-400 mt-1">Cada grupo tiene su propia línea de WhatsApp para recibir mensajes.</p>
           </div>
           {empresa.naves && empresa.naves.length > 0 && (
             <div>
@@ -93,6 +112,8 @@ export default function SaasGrupoModal({
                 {empresa.naves.map((n: any) => (
                   <label key={n.id} className="flex items-center gap-2.5 cursor-pointer p-1.5 hover:bg-white rounded-lg transition-colors">
                     <input
+                      id={`saas-grupo-nave-${n.id}`}
+                      name="grupo_naves"
                       type="checkbox"
                       className="w-4 h-4 accent-violet-600 rounded cursor-pointer"
                       checked={grupoNaves.includes(n.id)}

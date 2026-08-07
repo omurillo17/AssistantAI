@@ -15,7 +15,7 @@ const patchBodySchema = z.object({
   escalado: z.boolean().nullable().optional(),
   escalation_reason: z.string().nullable().optional(),
   event_id: z.string().nullable().optional(),
-  asignado_a: z.string().nullable().optional(),
+  asignado_a_id: z.string().max(100).nullable().optional(),
   empresa_id: z.string().uuid().optional(),
 });
 
@@ -115,7 +115,7 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Datos inválidos", details: parsed.error.issues }, { status: 400 });
     }
 
-    const { telefono, estado, notas, vacante_interes, escalado, escalation_reason, event_id, asignado_a, empresa_id } = parsed.data;
+    const { telefono, estado, notas, vacante_interes, escalado, escalation_reason, event_id, asignado_a_id, empresa_id } = parsed.data;
 
     const campos: string[] = ['updated_at = NOW()'];
     const valores: (string | boolean | null)[] = [];
@@ -141,9 +141,9 @@ export async function PATCH(request: Request) {
       campos.push(`event_id = $${idx++}`);
       valores.push(event_id);
     }
-    if (asignado_a !== undefined) {
-      campos.push(`asignado_a = $${idx++}`);
-      valores.push(asignado_a);
+    if (asignado_a_id !== undefined) {
+      campos.push(`asignado_a_id = $${idx++}`);
+      valores.push(asignado_a_id);
     }
     if (empresa_id !== undefined) {
       campos.push(`empresa_id = $${idx++}`);
@@ -185,13 +185,13 @@ export async function PATCH(request: Request) {
     }
 
     // Si se asignó a un reclutador y se está escalando, intentar notificarle vía WhatsApp
-    if (asignado_a && escalado === true) {
+    if (asignado_a_id && escalado === true) {
       try {
-        const recRes = await pool.query('SELECT telefono FROM reclutadores WHERE nombre = $1 AND activo = true LIMIT 1', [asignado_a]);
+        const recRes = await pool.query('SELECT telefono FROM reclutadores WHERE id = $1 AND activo = true LIMIT 1', [asignado_a_id]);
         if (recRes.rows.length > 0) {
           const recTelefono = recRes.rows[0].telefono;
           const msg = `🔔 *Atención*: Se te ha transferido un nuevo candidato.\n\n👤 *Teléfono:* ${telefono}\nPor favor revisa la plataforma para atenderlo.`;
-          
+
           await fetch(`${WAHA_BASE}/api/sendText`, {
             method: 'POST',
             headers: {
@@ -205,12 +205,12 @@ export async function PATCH(request: Request) {
               session: WAHA_SESSION
             })
           });
-          console.log(`Notificación enviada al reclutador ${asignado_a} (${recTelefono})`);
-          
+          console.log(`Notificación enviada al reclutador ${asignado_a_id} (${recTelefono})`);
+
           // Guardar notificación en base de datos
           await pool.query(
-            'INSERT INTO notificaciones (reclutador_id, mensaje) VALUES ((SELECT id FROM reclutadores WHERE nombre = $1 LIMIT 1), $2)',
-            [asignado_a, `Se te ha transferido un nuevo candidato: ${telefono}`]
+            'INSERT INTO notificaciones (reclutador_id, mensaje) VALUES ($1, $2)',
+            [asignado_a_id, `Se te ha transferido un nuevo candidato: ${telefono}`]
           );
         }
       } catch (notifyErr) {

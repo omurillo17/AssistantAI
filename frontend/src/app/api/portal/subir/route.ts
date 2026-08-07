@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
-import { writeFile, mkdir, unlink } from 'fs/promises';
+import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import fs from 'fs';
 import { pool } from '@/lib/db';
 import { rateLimit } from '@/lib/rate-limit';
+import { sniffDocumentType } from '@/lib/file-validation';
+import { deleteUploadedFile } from '@/lib/fileStorage';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB limit
 const ALLOWED_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png', '.webp'];
@@ -63,7 +65,7 @@ export async function POST(request: Request) {
 
     // Buscar candidato previamente para eliminar archivos anteriores si existen
     const candRes = await pool.query(
-      `SELECT id, nombre, nombre_chat, nombre_solicitud, asignado_a, datos_ine, datos_rfc, link_cv 
+      `SELECT id, nombre, nombre_chat, nombre_solicitud, asignado_a_id, datos_ine, datos_rfc, link_cv
        FROM candidatos 
        WHERE telefono = $1 OR REPLACE(telefono, '+', '') LIKE $2 
        ORDER BY updated_at DESC LIMIT 1`,
@@ -80,28 +82,20 @@ export async function POST(request: Request) {
     const cand = candRes.rows[0];
     const nombreCandidato = cand.nombre || cand.nombre_chat || cand.nombre_solicitud || 'Candidato';
 
-    let datosIneObj = typeof cand.datos_ine === 'string' ? (() => { try { return JSON.parse(cand.datos_ine); } catch(e) { return {}; } })() : (cand.datos_ine || {});
-    let datosRfcObj = typeof cand.datos_rfc === 'string' ? (() => { try { return JSON.parse(cand.datos_rfc); } catch(e) { return {}; } })() : (cand.datos_rfc || {});
+    let datosIneObj = typeof cand.datos_ine === 'string' ? (() => { try { return JSON.parse(cand.datos_ine); } catch { return {}; } })() : (cand.datos_ine || {});
+    let datosRfcObj = typeof cand.datos_rfc === 'string' ? (() => { try { return JSON.parse(cand.datos_rfc); } catch { return {}; } })() : (cand.datos_rfc || {});
 
-    // Función segura para eliminar archivo anterior si era local
-    const deleteOldFile = async (oldUrl: string | null | undefined) => {
-      if (!oldUrl || typeof oldUrl !== 'string' || !oldUrl.startsWith('/uploads/')) return;
-      try {
-        const filename = path.basename(oldUrl);
-        const fullPath = path.join(uploadDir, filename);
-        if (fs.existsSync(fullPath)) {
-          await unlink(fullPath);
-        }
-      } catch (e) {
-        console.warn('No se pudo eliminar el archivo antiguo:', oldUrl, e);
-      }
-    };
+    const deleteOldFile = deleteUploadedFile;
 
     const saveFile = async (fileObj: File, suffix: string) => {
-      const originalFilename = fileObj.name || 'documento.pdf';
       const arrayBuffer = await fileObj.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
-      const ext = path.extname(originalFilename).toLowerCase() || '.pdf';
+      // La extensión se determina por el contenido real (magic bytes), no por
+      // el nombre del archivo, para impedir subir HTML/scripts disfrazados.
+      const ext = sniffDocumentType(buffer);
+      if (!ext || ext === '.doc' || ext === '.docx') {
+        throw new Error('FORMATO_NO_PERMITIDO');
+      }
       const finalFilename = `portal_${safeTelefono}_${suffix}_${Date.now()}${ext}`;
       const filePath = path.join(uploadDir, finalFilename);
       await writeFile(filePath, buffer);
@@ -175,10 +169,10 @@ export async function POST(request: Request) {
     await pool.query(
       `INSERT INTO notificaciones (reclutador_id, mensaje)
        VALUES (
-         (SELECT id FROM reclutadores WHERE nombre = $1 LIMIT 1),
+         $1,
          $2
        )`,
-      [cand.asignado_a || '', mensajeNotif]
+      [cand.asignado_a_id || null, mensajeNotif]
     );
 
     return NextResponse.json({
@@ -190,6 +184,12 @@ export async function POST(request: Request) {
       estado: 'INE_VALIDADA',
     });
   } catch (err) {
+    if (err instanceof Error && err.message === 'FORMATO_NO_PERMITIDO') {
+      return NextResponse.json(
+        { error: 'El contenido del archivo no corresponde a un PDF o imagen válida (JPG, PNG, WEBP).' },
+        { status: 400 }
+      );
+    }
     console.error('Error en /api/portal/subir:', err);
     return NextResponse.json({ error: 'Error interno al procesar los archivos.' }, { status: 500 });
   }

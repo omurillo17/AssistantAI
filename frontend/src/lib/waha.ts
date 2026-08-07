@@ -34,13 +34,13 @@ export async function enviarMensajeCandidato(telefono: string, texto: string, as
   );
 
   await pool.query(
-    `INSERT INTO mensajes_bandeja (candidato_id, telefono, ultimo_mensaje, ultimo_mensaje_rol, asignado_a, mensajes_no_leidos, activo)
+    `INSERT INTO mensajes_bandeja (candidato_id, telefono, ultimo_mensaje, ultimo_mensaje_rol, asignado_a_id, mensajes_no_leidos, activo)
      VALUES ($1, $2, $3, 'assistant', $4, 0, TRUE)
      ON CONFLICT (candidato_id) DO UPDATE SET
        ultimo_mensaje = $3,
        ultimo_mensaje_rol = 'assistant',
        ultimo_mensaje_at = NOW(),
-       asignado_a = COALESCE($4, mensajes_bandeja.asignado_a),
+       asignado_a_id = COALESCE($4, mensajes_bandeja.asignado_a_id),
        updated_at = NOW()`,
     [candidato_id, telefono, textoLimpio, asignadoA || null]
   );

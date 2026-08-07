@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Conversacion, Mensaje, Candidato } from "@/types";
+import { useTenantChange } from "./useTenant";
 
 const normalize = (str?: string | null) => str ? str.trim().toUpperCase() : "";
 
@@ -21,6 +22,7 @@ export function useMensajes() {
   const [sending, setSending] = useState(false);
   const [texto, setTexto] = useState("");
   const [nombre, setNombre] = useState("");
+  const [reclutadorId, setReclutadorId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filterVacante, setFilterVacante] = useState("");
   const [filterNave, setFilterNave] = useState("");
@@ -49,8 +51,9 @@ export function useMensajes() {
 
   // ─── Init ───────────────────────────────────────────────
   useEffect(() => {
-    const n = localStorage.getItem("tci_nombre") || localStorage.getItem("tci_username") || "Reclutador";
+    const n = localStorage.getItem("tci_username") || "Reclutador";
     setNombre(n);
+    setReclutadorId(localStorage.getItem("tci_reclutador_id"));
 
     loadConversaciones();
     loadReclutadores();
@@ -72,6 +75,15 @@ export function useMensajes() {
     }, 4000);
     return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
   }, []);
+
+  // Re-cargar (sin recargar la página) cuando el usuario cambia de empresa/nave en el TopNavbar
+  useTenantChange(() => {
+    loadConversaciones();
+    loadReclutadores();
+    loadMisVacantes(nombre);
+    const phone = activePhoneRef.current;
+    if (phone) loadChat(phone, false);
+  });
 
   // ─── URL sync ──────────────────────────────────────────
   useEffect(() => {
@@ -138,7 +150,7 @@ export function useMensajes() {
           setReclutadores(data.grupos);
           const allRecs = data.grupos.flatMap((g: any) => g.reclutadores || []);
           if (allRecs.length > 0) {
-            setSelectedReclutador(allRecs[0].nombre);
+            setSelectedReclutador(allRecs[0].id);
           }
         } else if (Array.isArray(data)) {
           // Fallback legacy
@@ -159,9 +171,11 @@ export function useMensajes() {
     try {
       const storedEmpresaId = localStorage.getItem("tci_empresa_id");
       const storedNaveId = localStorage.getItem("tci_nave_id");
+      const storedGrupoId = localStorage.getItem("tci_grupo_id");
       let query = "";
       if (storedEmpresaId) query += `&empresa_id=${storedEmpresaId}`;
-      if (storedNaveId) query += `&nave_id=${storedNaveId}`;
+      if (storedGrupoId) query += `&grupo_id=${storedGrupoId}`;
+      else if (storedNaveId) query += `&nave_id=${storedNaveId}`;
       const res = await fetch(`/api/db/mensajes?t=${Date.now()}${query}`);
       if (!res.ok) {
         if (res.status === 429) return;
@@ -175,6 +189,13 @@ export function useMensajes() {
         return { ...c, nombre: n };
       });
       setConversaciones(safeData);
+      if (showLoad && safeData.length > 0) {
+        const rId = localStorage.getItem("tci_reclutador_id");
+        const hasMine = rId ? safeData.some(c => c.asignado_a_id === rId) : false;
+        if (!hasMine) {
+          setActiveTab("compartida");
+        }
+      }
     } catch {
       if (showLoad) showToast("Error al cargar", true);
     } finally {
@@ -223,7 +244,7 @@ export function useMensajes() {
       let query = "";
       if (storedEmpresaId) query += `?empresa_id=${storedEmpresaId}`;
       if (storedNaveId) query += (query ? `&` : `?`) + `nave_id=${storedNaveId}`;
-      await fetch(`/api/db/mensajes/${activePhone}${query}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texto: msgText, asignado_a: nombre }) });
+      await fetch(`/api/db/mensajes/${activePhone}${query}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texto: msgText, asignado_a_id: reclutadorId }) });
       await loadChat(activePhone, false);
     } catch { showToast("Error al enviar", true); } finally { setSending(false); }
   };
@@ -246,18 +267,18 @@ export function useMensajes() {
           escalado: true,
           estado: "ESCALADO",
           escalation_reason: `Atendido manualmente por ${nombre}`,
-          asignado_a: nombre
+          asignado_a_id: reclutadorId
         }),
       });
       if (!res.ok) throw new Error();
-      setCandidatoActivo(prev => prev ? { ...prev, escalado: true, estado: "ESCALADO", asignado_a: nombre } : prev);
+      setCandidatoActivo(prev => prev ? { ...prev, escalado: true, estado: "ESCALADO", asignado_a_id: reclutadorId } : prev);
       setConversaciones(prev =>
-        prev.map(c => c.telefono === activePhone ? { ...c, escalado: true, asignado_a: nombre } : c)
+        prev.map(c => c.telefono === activePhone ? { ...c, escalado: true, asignado_a_id: reclutadorId, asignado_a_nombre: nombre } : c)
       );
       await fetch(`/api/db/mensajes${query}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ telefono: activePhone, asignado_a: nombre }),
+        body: JSON.stringify({ telefono: activePhone, asignado_a_id: reclutadorId }),
       });
       showToast(`✅ Tomaste el control de la conversación`);
     } catch {
@@ -280,11 +301,11 @@ export function useMensajes() {
       const res = await fetch(`/api/db/mensajes${query}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ telefono: activePhone, asignado_a: nombre }),
+        body: JSON.stringify({ telefono: activePhone, asignado_a_id: reclutadorId }),
       });
       if (!res.ok) throw new Error();
       setConversaciones(prev =>
-        prev.map(c => c.telefono === activePhone ? { ...c, asignado_a: nombre } : c)
+        prev.map(c => c.telefono === activePhone ? { ...c, asignado_a_id: reclutadorId, asignado_a_nombre: nombre } : c)
       );
       showToast("✅ Has tomado el chat. Ahora está en 'Mis Chats'.");
       setActiveTab("mis_chats");
@@ -312,18 +333,18 @@ export function useMensajes() {
           telefono: activePhone,
           escalado: false,
           escalation_reason: null,
-          asignado_a: null
+          asignado_a_id: null
         }),
       });
       if (!res.ok) throw new Error();
       await fetch(`/api/db/mensajes${query}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ telefono: activePhone, asignado_a: null }),
+        body: JSON.stringify({ telefono: activePhone, asignado_a_id: null }),
       });
-      setCandidatoActivo(prev => prev ? { ...prev, escalado: false, asignado_a: null } : prev);
+      setCandidatoActivo(prev => prev ? { ...prev, escalado: false, asignado_a_id: null } : prev);
       setConversaciones(prev =>
-        prev.map(c => c.telefono === activePhone ? { ...c, escalado: false, asignado_a: null } : c)
+        prev.map(c => c.telefono === activePhone ? { ...c, escalado: false, asignado_a_id: null, asignado_a_nombre: null } : c)
       );
       showToast("🤖 Bot reactivado para este candidato");
     } catch {
@@ -341,14 +362,16 @@ export function useMensajes() {
 
   const confirmTransferir = async () => {
     if (!activePhone || !selectedReclutador) return;
-    
-    // Find the target reclutador to see if we need to change empresa_id
+
+    // Find the target reclutador (por id) para saber su nombre y si hay que cambiar empresa_id
     let targetEmpresaId: string | null = null;
+    let targetNombre: string = selectedReclutador;
     if (reclutadores && reclutadores.length > 0) {
       for (const grupo of reclutadores) {
-        const found = grupo.reclutadores?.find((r: any) => r.nombre === selectedReclutador);
-        if (found && grupo.empresa_id) {
-          targetEmpresaId = grupo.empresa_id;
+        const found = grupo.reclutadores?.find((r: any) => r.id === selectedReclutador);
+        if (found) {
+          targetNombre = found.nombre || targetNombre;
+          if (grupo.empresa_id) targetEmpresaId = grupo.empresa_id;
           break;
         }
       }
@@ -366,8 +389,8 @@ export function useMensajes() {
         telefono: activePhone,
         escalado: true,
         estado: "ESCALADO",
-        escalation_reason: `Transferido a ${selectedReclutador} por ${nombre}`,
-        asignado_a: selectedReclutador
+        escalation_reason: `Transferido a ${targetNombre} por ${nombre}`,
+        asignado_a_id: selectedReclutador
       };
 
       if (targetEmpresaId && targetEmpresaId !== storedEmpresaId) {
@@ -380,16 +403,16 @@ export function useMensajes() {
         body: JSON.stringify(bodyData),
       });
       if (!res.ok) throw new Error();
-      setCandidatoActivo(prev => prev ? { ...prev, escalado: true, estado: "ESCALADO", asignado_a: selectedReclutador } : prev);
+      setCandidatoActivo(prev => prev ? { ...prev, escalado: true, estado: "ESCALADO", asignado_a_id: selectedReclutador } : prev);
       setConversaciones(prev =>
-        prev.map(c => c.telefono === activePhone ? { ...c, escalado: true, asignado_a: selectedReclutador } : c)
+        prev.map(c => c.telefono === activePhone ? { ...c, escalado: true, asignado_a_id: selectedReclutador, asignado_a_nombre: targetNombre } : c)
       );
       await fetch(`/api/db/mensajes${query}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ telefono: activePhone, asignado_a: selectedReclutador }),
+        body: JSON.stringify({ telefono: activePhone, asignado_a_id: selectedReclutador }),
       });
-      showToast(`✅ Conversación transferida a ${selectedReclutador}`);
+      showToast(`✅ Conversación transferida a ${targetNombre}`);
       setShowTransferModal(false);
     } catch {
       showToast("Error al transferir", true);
@@ -414,8 +437,8 @@ export function useMensajes() {
     const matchesVacante = filterVacante ? normalize(c.vacante_interes) === filterVacante : true;
     const matchesNave = filterNave ? normalize(c.nave_interes) === filterNave : true;
 
-    const isAsignadoAMi = c.asignado_a?.toLowerCase() === nombre.toLowerCase();
-    const isCompartida = !c.asignado_a || c.asignado_a === 'Equipo de Reclutamiento' || c.asignado_a === 'Reclutador';
+    const isAsignadoAMi = !!reclutadorId && c.asignado_a_id === reclutadorId;
+    const isCompartida = !c.asignado_a_id || c.asignado_a_id !== reclutadorId;
     const matchesTab = activeTab === "mis_chats" ? isAsignadoAMi : isCompartida;
 
     return matchesSearch && matchesVacante && matchesNave && matchesTab;
@@ -424,8 +447,8 @@ export function useMensajes() {
   const convActiva = conversaciones.find(c => c.telefono === activePhone);
   const estaAtendidoPorOtro = Boolean(
     candidatoActivo?.escalado &&
-    convActiva?.asignado_a &&
-    convActiva.asignado_a.toLowerCase() !== nombre.toLowerCase()
+    convActiva?.asignado_a_id &&
+    convActiva.asignado_a_id !== reclutadorId
   );
 
   return {
@@ -439,6 +462,7 @@ export function useMensajes() {
     sending,
     texto, setTexto,
     nombre,
+    reclutadorId,
     search, setSearch,
     filterVacante, setFilterVacante,
     filterNave, setFilterNave,

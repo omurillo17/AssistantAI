@@ -1,53 +1,33 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
-import { cookies } from "next/headers";
-import { jwtVerify } from "jose";
-import { ENV } from "@/lib/env";
+import { getSession, requireRole } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
-async function verifyRoot() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("tci_session")?.value;
-  if (!token) return false;
-  try {
-    const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
-    const { payload } = await jwtVerify(token, secretKey);
-    return payload.usuario === 'omurillo17' || payload.usuario === 'root' || payload.rol === 'ROOT';
-  } catch (err) {
-    return false;
-  }
-}
-
-async function verifyAuth() {
-  const cookieStore = await cookies();
-  const token = cookieStore.get("tci_session")?.value;
-  if (!token) return null;
-  try {
-    const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
-    const { payload } = await jwtVerify(token, secretKey);
-    return payload;
-  } catch (err) {
-    return null;
-  }
+// El acceso ROOT depende únicamente del rol en el JWT; nunca de usernames fijos.
+async function verifyRoot(request: Request): Promise<boolean> {
+  return requireRole(await getSession(request), 'ROOT');
 }
 
 export async function GET(request: Request) {
-  const payload = await verifyAuth();
+  const payload = await getSession(request);
   if (!payload) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
   try {
     let query = `
-      SELECT e.id, e.nombre, e.telefono_whatsapp, e.prompt_ia, e.created_at,
+      SELECT e.id, e.nombre, e.prompt_ia, e.retencion_archivos_dias, e.created_at,
         (SELECT json_agg(row_to_json(n.*)) FROM (
           SELECT id, nombre, ubicacion_maps, rfc, created_at, empresa_id FROM naves WHERE empresa_id = e.id ORDER BY created_at ASC
-        ) n) as naves
+        ) n) as naves,
+        (SELECT json_agg(row_to_json(g.*)) FROM (
+          SELECT id, nombre, naves_asignadas, empresa_id FROM grupos_reclutamiento WHERE empresa_id = e.id ORDER BY created_at ASC
+        ) g) as grupos
       FROM empresas e
     `;
 
-    const params: any[] = [];
+    const params: unknown[] = [];
     if (payload.rol !== 'ROOT' && payload.empresa_id) {
       query += ` WHERE e.id = $1 `;
       params.push(payload.empresa_id);
@@ -65,21 +45,21 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!(await verifyRoot())) {
+  if (!(await verifyRoot(request))) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
   try {
     const body = await request.json();
-    const { nombre, telefono_whatsapp, prompt_ia } = body;
+    const { nombre, prompt_ia, retencion_archivos_dias } = body;
 
     if (!nombre) {
       return NextResponse.json({ error: "El nombre es obligatorio" }, { status: 400 });
     }
 
     const res = await pool.query(
-      `INSERT INTO empresas (nombre, telefono_whatsapp, prompt_ia) VALUES ($1, $2, $3) RETURNING *`,
-      [nombre, telefono_whatsapp || '', prompt_ia || '']
+      `INSERT INTO empresas (nombre, prompt_ia, retencion_archivos_dias) VALUES ($1, $2, $3) RETURNING *`,
+      [nombre, prompt_ia || '', Number.isInteger(retencion_archivos_dias) && retencion_archivos_dias > 0 ? retencion_archivos_dias : 30]
     );
 
     return NextResponse.json({ success: true, empresa: res.rows[0] });
@@ -90,21 +70,21 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  if (!(await verifyRoot())) {
+  if (!(await verifyRoot(request))) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 
   try {
     const body = await request.json();
-    const { id, nombre, telefono_whatsapp, prompt_ia } = body;
+    const { id, nombre, prompt_ia, retencion_archivos_dias } = body;
 
     if (!id || !nombre) {
       return NextResponse.json({ error: "ID y nombre son obligatorios" }, { status: 400 });
     }
 
     const res = await pool.query(
-      `UPDATE empresas SET nombre = $1, telefono_whatsapp = $2, prompt_ia = $3 WHERE id = $4 RETURNING *`,
-      [nombre, telefono_whatsapp || '', prompt_ia || '', id]
+      `UPDATE empresas SET nombre = $1, prompt_ia = $2, retencion_archivos_dias = $3 WHERE id = $4 RETURNING *`,
+      [nombre, prompt_ia || '', Number.isInteger(retencion_archivos_dias) && retencion_archivos_dias > 0 ? retencion_archivos_dias : 30, id]
     );
 
     return NextResponse.json({ success: true, empresa: res.rows[0] });
@@ -115,7 +95,7 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  if (!(await verifyRoot())) {
+  if (!(await verifyRoot(request))) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
 

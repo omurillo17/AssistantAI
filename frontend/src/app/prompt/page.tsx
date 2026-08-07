@@ -214,6 +214,8 @@ export default function PromptEditorPage() {
           </div>
         ) : (
           <textarea
+            id="prompt-editor"
+            name="prompt_ia"
             value={promptText}
             onChange={(e) => setPromptText(e.target.value)}
             spellCheck={false}

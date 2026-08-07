@@ -97,9 +97,11 @@ export default function NewUserModal({
         </div>
         <form onSubmit={crearUsuario} className="space-y-4">
           <div>
-            <label className="block text-sm font-semibold mb-1 text-slate-600">Nombre de Usuario</label>
-            <input 
-              type="text" 
+            <label htmlFor="new-user-username" className="block text-sm font-semibold mb-1 text-slate-600">Nombre de Usuario</label>
+            <input
+              id="new-user-username"
+              name="username"
+              type="text"
               required
               className="w-full p-2 border rounded focus:outline-none focus:border-indigo-500 bg-slate-50 focus:bg-white transition-colors uppercase"
               value={usuarioInput}
@@ -108,9 +110,11 @@ export default function NewUserModal({
           </div>
 
           <div>
-            <label className="block text-sm font-semibold mb-1 text-slate-600">Contraseña</label>
-            <input 
-              type="password" 
+            <label htmlFor="new-user-password" className="block text-sm font-semibold mb-1 text-slate-600">Contraseña</label>
+            <input
+              id="new-user-password"
+              name="password"
+              type="password"
               required
               minLength={5}
               className="w-full p-2 border rounded focus:outline-none focus:border-indigo-500 bg-slate-50 focus:bg-white transition-colors"
@@ -120,8 +124,10 @@ export default function NewUserModal({
           </div>
 
           <div>
-            <label className="block text-sm font-semibold mb-1 text-slate-600">Rol del Sistema</label>
-            <select 
+            <label htmlFor="new-user-rol" className="block text-sm font-semibold mb-1 text-slate-600">Rol del Sistema</label>
+            <select
+              id="new-user-rol"
+              name="rol"
               className="w-full p-2 border rounded focus:outline-none focus:border-indigo-500 bg-slate-50 focus:bg-white transition-colors"
               value={rolInput}
               onChange={(e) => setRolInput(e.target.value)}
@@ -139,9 +145,11 @@ export default function NewUserModal({
           {(rolInput === "RECLUTADOR" || rolInput === "ENCARGADO") && (
             <>
               <div>
-                <label className="block text-sm font-semibold mb-1 text-slate-600">Correo (Google Calendar)</label>
-                <input 
-                  type="email" 
+                <label htmlFor="new-user-email" className="block text-sm font-semibold mb-1 text-slate-600">Correo (Google Calendar)</label>
+                <input
+                  id="new-user-email"
+                  name="email"
+                  type="email"
                   required
                   className="w-full p-2 border rounded focus:outline-none focus:border-indigo-500 bg-slate-50 focus:bg-white transition-colors"
                   placeholder="ejemplo@gmail.com"
@@ -151,9 +159,11 @@ export default function NewUserModal({
               </div>
 
               <div>
-                <label className="block text-sm font-semibold mb-1 text-slate-600">Teléfono (Opcional - WhatsApp)</label>
+                <label htmlFor="new-user-phone" className="block text-sm font-semibold mb-1 text-slate-600">Teléfono (Opcional - WhatsApp)</label>
                 <div className="flex gap-2">
-                  <select 
+                  <select
+                    id="new-user-phone-prefix"
+                    name="phone_prefix"
                     className="p-2 border rounded focus:outline-none focus:border-indigo-500 bg-slate-50 focus:bg-white transition-colors text-slate-800 text-sm"
                     value={telPrefix}
                     onChange={(e) => setTelPrefix(e.target.value)}
@@ -168,8 +178,10 @@ export default function NewUserModal({
                     <option value="51">+51 (PE)</option>
                     <option value="502">+502 (GT)</option>
                   </select>
-                  <input 
-                    type="tel" 
+                  <input
+                    id="new-user-phone"
+                    name="phone"
+                    type="tel"
                     className="flex-1 p-2 border rounded focus:outline-none focus:border-indigo-500 bg-slate-50 focus:bg-white transition-colors"
                     placeholder="3320707333"
                     value={telefonoInput}
@@ -182,8 +194,10 @@ export default function NewUserModal({
 
           {(rolInput === "RECLUTADOR" || rolInput === "ENCARGADO") && (
             <div className="pt-2">
-              <label className="block text-sm font-semibold mb-2 text-slate-600">Grupo de Reclutamiento</label>
-              <select 
+              <label htmlFor="new-user-grupo" className="block text-sm font-semibold mb-2 text-slate-600">Grupo de Reclutamiento</label>
+              <select
+                id="new-user-grupo"
+                name="grupo"
                 className="w-full p-2 border rounded focus:outline-none focus:border-indigo-500 bg-slate-50 focus:bg-white transition-colors"
                 value={selectedGrupo}
                 onChange={(e) => setSelectedGrupo(e.target.value)}

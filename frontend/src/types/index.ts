@@ -23,6 +23,7 @@ export type Vacante = {
   naves: string[];
   detalles: string;
   activa: boolean;
+  funciones?: string;
   palabras_clave?: string;
   filtros?: Filtro[];
 };
@@ -48,7 +49,8 @@ export type Conversacion = {
   escalation_reason?: string | null;
   vacante_interes?: string | null;
   nave_interes?: string | null;
-  asignado_a?: string | null;
+  asignado_a_id?: string | null;
+  asignado_a_nombre?: string | null;
   mensajes_no_leidos?: number;
   ultimo_mensaje?: string | null;
   ultimo_mensaje_rol?: string;
@@ -69,7 +71,9 @@ export type Candidato = {
   escalation_reason?: string | null;
   vacante_interes?: string | null;
   nave_interes?: string | null;
-  asignado_a?: string | null;
+  nave_id?: string | null;
+  asignado_a_id?: string | null;
+  asignado_a_nombre?: string | null;
   correo?: string | null;
   respuestas_filtro?: Record<string, string>;
   fecha_entrevista?: string | null;

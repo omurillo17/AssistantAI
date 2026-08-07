@@ -1,33 +1,20 @@
 import { NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 import { pool } from '@/lib/db';
-import { jwtVerify } from 'jose';
-import { ENV } from '@/lib/env';
-import { cookies } from 'next/headers';
+import { getSession } from '@/lib/auth';
 
 // ─── GET /api/db/alertas-identidad ─────────────────────────
 // Candidatos con una discrepancia de CURP (INE vs RFC) pendiente de
 // validar por el reclutador responsable de la vacante. Alimenta el modal
 // urgente y la campana de notificaciones en cualquier pantalla del CRM.
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get('tci_session')?.value;
-    if (!token) {
+    const payload = await getSession(request);
+    if (!payload) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
     }
-
-    let reclutador_id = null;
-    let rol = 'USER';
-
-    try {
-      const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
-      const { payload } = await jwtVerify(token, secretKey);
-      reclutador_id = payload.reclutador_id as string | null;
-      rol = payload.rol as string;
-    } catch {
-      return NextResponse.json({ error: 'Token inválido' }, { status: 401 });
-    }
+    const reclutador_id = (payload.reclutador_id as string | null) ?? null;
+    const rol = (payload.rol as string) || 'USER';
 
     if (!reclutador_id && rol !== 'ADMIN' && rol !== 'ROOT') {
       return NextResponse.json({ items: [] });
@@ -36,7 +23,7 @@ export async function GET() {
     let filter = "WHERE c.alerta_identidad_estado = 'PENDIENTE'";
     const params: string[] = [];
     if (rol !== 'ADMIN' && rol !== 'ROOT') {
-      filter += ' AND c.asignado_a = (SELECT nombre FROM reclutadores WHERE id = $1)';
+      filter += ' AND c.asignado_a_id = $1';
       params.push(reclutador_id as string);
     }
 

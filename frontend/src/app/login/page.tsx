@@ -71,7 +71,10 @@ export default function LoginPage() {
         </div>
         <form onSubmit={checkLogin}>
           <input
+            id="login-username"
+            name="username"
             type="text"
+            autoComplete="username"
             className="w-full p-2.5 rounded border border-slate-300 bg-white text-slate-800 outline-none mb-4 focus:border-[#0C66AC] transition-colors"
             placeholder="Usuario"
             value={usuarioInput}
@@ -79,7 +82,10 @@ export default function LoginPage() {
             required
           />
           <input
+            id="login-password"
+            name="password"
             type="password"
+            autoComplete="current-password"
             className="w-full p-2.5 rounded border border-slate-300 bg-white text-slate-800 outline-none mb-4 focus:border-[#0C66AC] transition-colors"
             placeholder="Contraseña de acceso"
             value={passwordInput}

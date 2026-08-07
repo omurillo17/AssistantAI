@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
-import { ENV } from "@/lib/env";
 import { z } from "zod";
-import { jwtVerify } from "jose";
-import { cookies } from "next/headers";
+import { getSession } from '@/lib/auth';
 import { pool } from '@/lib/db';
+import { resolveGrupoNaveIds } from '@/lib/grupos';
 
 const querySchema = z.object({
   estado: z.string().optional().nullable(),
@@ -15,31 +14,29 @@ const querySchema = z.object({
 // ─── GET /api/db/candidatos ────────────────────────────────
 // Parámetros opcionales: ?estado=NUEVO&vacante=...&q=nombre
 export async function GET(request: Request) {
-  let rol = "USER";
-  let reclutador_id: string | null = null;
-  let jwt_empresa_id: string | null = null;
-  
-  try {
-    const cookieStore = await cookies();
-    const token = cookieStore.get("tci_session")?.value;
-    if (!token) {
-      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
-    }
-    const secret = new TextEncoder().encode(ENV.JWT_SECRET);
-    const { payload } = await jwtVerify(token, secret);
-    rol = payload.rol as string;
-    reclutador_id = payload.reclutador_id as string;
-    jwt_empresa_id = payload.empresa_id as string;
-  } catch (err) {
-    return NextResponse.json({ error: "Token inválido o expirado" }, { status: 401 });
+  const payload = await getSession(request);
+  if (!payload) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
+  const rol = (payload.rol as string) || "USER";
+  const reclutador_id = (payload.reclutador_id as string | null) ?? null;
+  const jwt_empresa_id = (payload.empresa_id as string | null) ?? null;
+  const jwt_grupo_id = (payload.grupo_id as string | null) ?? null;
 
   const { searchParams } = new URL(request.url);
-  
+
   let filter_empresa_id = searchParams.get("empresa_id");
-  let filter_nave_id = searchParams.get("nave_id");
+  const filter_nave_id = searchParams.get("nave_id");
+  let filter_grupo_id = searchParams.get("grupo_id");
   if (rol !== "ROOT") {
     filter_empresa_id = jwt_empresa_id;
+  }
+  // Solo ADMIN/ROOT pueden pedir el grupo de otra persona por query param.
+  // Ojo: esto NO debe inyectar un grupo_id cuando el cliente no mandó uno
+  // (p.ej. Dashboards/Mensajes/Expedientes filtrando solo por nave) — solo
+  // corrige el caso en que alguien mande un grupo_id ajeno al suyo.
+  if (filter_grupo_id && rol !== "ROOT" && rol !== "ADMIN" && filter_grupo_id !== jwt_grupo_id) {
+    filter_grupo_id = jwt_grupo_id;
   }
 
   const parsedQuery = querySchema.safeParse({
@@ -59,36 +56,50 @@ export async function GET(request: Request) {
 
   try {
     const conditions: string[] = [];
-    const values: (string | number)[] = [];
+    const values: unknown[] = [];
     let idx = 1;
 
     if (filter_empresa_id) {
-      conditions.push(`empresa_id = $${idx++}`);
+      conditions.push(`c.empresa_id = $${idx++}`);
       values.push(filter_empresa_id);
     }
 
-    if (filter_nave_id) {
-      conditions.push(`(nave_id = $${idx++} OR nave_id IS NULL OR nave_interes IS NULL OR nave_interes = '' OR nave_interes = 'Pendiente')`);
+    if (filter_grupo_id) {
+      // El filtro por grupo tiene prioridad sobre nave_id (son mutuamente
+      // excluyentes desde el TopNavbar, pero por robustez se prioriza grupo).
+      const grupoNaveIds = await resolveGrupoNaveIds(filter_grupo_id);
+      if (grupoNaveIds && grupoNaveIds.length > 0) {
+        conditions.push(`(c.nave_id = ANY($${idx++}::uuid[]) OR c.nave_id IS NULL OR c.nave_interes IS NULL OR c.nave_interes = '' OR c.nave_interes = 'Pendiente')`);
+        values.push(grupoNaveIds);
+      } else {
+        conditions.push(`FALSE`);
+      }
+    } else if (filter_nave_id) {
+      conditions.push(`(c.nave_id = $${idx++} OR c.nave_id IS NULL OR c.nave_interes IS NULL OR c.nave_interes = '' OR c.nave_interes = 'Pendiente')`);
       values.push(filter_nave_id);
     }
 
     if (estado && estado !== 'TODOS') {
-      conditions.push(`estado = $${idx++}`);
+      conditions.push(`c.estado = $${idx++}`);
       values.push(estado);
     }
     if (vacante) {
-      conditions.push(`vacante_interes ILIKE $${idx++}`);
+      conditions.push(`c.vacante_interes ILIKE $${idx++}`);
       values.push(`%${vacante}%`);
     }
     if (q) {
-      conditions.push(`(nombre_chat ILIKE $${idx} OR nombre_solicitud ILIKE $${idx} OR telefono ILIKE $${idx})`);
+      conditions.push(`(c.nombre_chat ILIKE $${idx} OR c.nombre_solicitud ILIKE $${idx} OR c.telefono ILIKE $${idx})`);
       values.push(`%${q}%`);
       idx++;
     }
 
-    if (rol === "RECLUTADOR" && reclutador_id) {
+    // Si hay un grupo aplicado (propio del usuario o elegido por ADMIN), el
+    // alcance de grupo ya cubre a todo el equipo — no restringir además a
+    // las vacantes propias del reclutador (ver Calendario: un reclutador de
+    // un grupo debe ver las citas de todo su grupo, no solo las suyas).
+    if (rol === "RECLUTADOR" && reclutador_id && !filter_grupo_id) {
       conditions.push(`
-        vacante_interes IN (
+        c.vacante_interes IN (
           SELECT nombre FROM vacantes_def WHERE reclutador_id = $${idx}
         )
       `);
@@ -100,17 +111,19 @@ export async function GET(request: Request) {
 
     const res = await pool.query(
       `SELECT
-        id, telefono, nombre, nombre_chat, nombre_solicitud, nombre_ine, nombre_constancia,
-        estado, vacante_interes, nave_interes, veredicto,
-        tiene_cv, datos_ine, datos_rfc, cv_manual,
-        escalado, escalation_reason,
-        fecha_entrevista, ultima_interaccion, updated_at, created_at,
-        resumen_ia, motivo_analisis, privacidad_aceptada,
-        nombre_confirmado, edad, correo, link_cv,
-        curp_ine, curp_rfc, alerta_identidad_estado, alerta_identidad_motivo
-       FROM candidatos
+        c.id, c.telefono, c.nombre, c.nombre_chat, c.nombre_solicitud, c.nombre_ine, c.nombre_constancia,
+        c.estado, c.vacante_interes, c.nave_interes, c.veredicto,
+        c.tiene_cv, c.datos_ine, c.datos_rfc, c.cv_manual,
+        c.escalado, c.escalation_reason,
+        c.fecha_entrevista, c.event_id, c.nave_id, c.ultima_interaccion, c.updated_at, c.created_at,
+        c.resumen_ia, c.motivo_analisis, c.privacidad_aceptada,
+        c.nombre_confirmado, c.edad, c.correo, c.link_cv,
+        c.curp_ine, c.curp_rfc, c.alerta_identidad_estado, c.alerta_identidad_motivo,
+        c.asignado_a_id, r.nombre AS asignado_a_nombre
+       FROM candidatos c
+       LEFT JOIN reclutadores r ON r.id = c.asignado_a_id
        ${where}
-       ORDER BY updated_at DESC
+       ORDER BY c.updated_at DESC
        LIMIT $${idx}`,
       [...values, limit]
     );

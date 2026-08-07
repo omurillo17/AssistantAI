@@ -5,13 +5,15 @@ import { useRouter } from "next/navigation";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, Legend, LineChart, Line,
+  RadialBarChart, RadialBar, PolarAngleAxis,
 } from "recharts";
 import {
   Users, UserCheck, CalendarDays, AlertTriangle, TrendingUp,
-  RefreshCw, Trophy, MessageSquare, Briefcase, Activity
+  RefreshCw, Trophy, MessageSquare, Briefcase, Activity, Building2, Clock, Bot
 } from "lucide-react";
 import { ESTADOS, ESTADOS_ORDENADOS, ESTADOS_CRM, GRUPOS, getEstado, type EstadoKey } from "@/lib/estados";
 import type { Candidato, ChatMessage } from "@/types";
+import { useTenantChange } from "@/hooks/useTenant";
 
 const CHART_COLORS = ["#6366f1", "#8b5cf6", "#ec4899", "#f43f5e", "#f59e0b", "#10b981", "#0ea5e9"];
 
@@ -30,11 +32,18 @@ function EstadoBadge({ estado }: { estado: string }) {
   );
 }
 
+type NaveInfo = { id: string; nombre: string; created_at: string };
+type HoraActividad = { dia_semana: number; hora: number; total: number };
+
+const DIAS_SEMANA = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+
 export default function DashboardsPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"ejecutivo" | "ia">("ejecutivo");
   const [candidatos, setCandidatos] = useState<Candidato[]>([]);
   const [mensajes, setMensajes] = useState<any[]>([]);
+  const [naveNombrePorNumero, setNaveNombrePorNumero] = useState<Record<string, string>>({});
+  const [actividadHoraria, setActividadHoraria] = useState<HoraActividad[]>([]);
   const [loading, setLoading] = useState(true);
 
 
@@ -43,23 +52,46 @@ export default function DashboardsPage() {
     try {
       const storedEmpresaId = localStorage.getItem("tci_empresa_id");
       const storedNaveId = localStorage.getItem("tci_nave_id");
-      
+      const storedGrupoId = localStorage.getItem("tci_grupo_id");
+
       let queryCand = "";
       if (storedEmpresaId) queryCand += `&empresa_id=${storedEmpresaId}`;
-      if (storedNaveId) queryCand += `&nave_id=${storedNaveId}`;
-      
+      if (storedGrupoId) queryCand += `&grupo_id=${storedGrupoId}`;
+      else if (storedNaveId) queryCand += `&nave_id=${storedNaveId}`;
+
       let queryMensajes = "";
       if (storedEmpresaId) queryMensajes += `?empresa_id=${storedEmpresaId}`;
-      if (storedNaveId) queryMensajes += (queryMensajes ? `&` : `?`) + `nave_id=${storedNaveId}`;
+      if (storedGrupoId) queryMensajes += (queryMensajes ? `&` : `?`) + `grupo_id=${storedGrupoId}`;
+      else if (storedNaveId) queryMensajes += (queryMensajes ? `&` : `?`) + `nave_id=${storedNaveId}`;
 
-      const [candRes, msgsRes] = await Promise.all([
+      let queryActividad = storedEmpresaId ? `?empresa_id=${storedEmpresaId}` : "";
+      if (storedGrupoId) queryActividad += (queryActividad ? `&` : `?`) + `grupo_id=${storedGrupoId}`;
+
+      const [candRes, msgsRes, empresasRes, actividadRes] = await Promise.all([
         fetch(`/api/db/candidatos?limit=2000${queryCand}`),
-        fetch(`/api/db/mensajes${queryMensajes}`)
+        fetch(`/api/db/mensajes${queryMensajes}`),
+        fetch(`/api/db/empresas`),
+        fetch(`/api/db/actividad-horaria${queryActividad}`),
       ]);
       const candData = await candRes.json();
       const msgsData = await msgsRes.json();
+      const empresasData = await empresasRes.json();
+      const actividadData = await actividadRes.json();
       setCandidatos(Array.isArray(candData) ? candData : []);
       setMensajes(Array.isArray(msgsData) ? msgsData : []);
+      setActividadHoraria(Array.isArray(actividadData) ? actividadData : []);
+
+      // candidatos.nave_interes guarda el numero secuencial de la sucursal (por
+      // orden de creacion dentro de su empresa, "1", "2"...), no el nombre — se
+      // resuelve aqui con el mismo orden que usa /api/prompt-context para la IA.
+      const empresas = Array.isArray(empresasData?.empresas) ? empresasData.empresas : [];
+      const empresaMatch = storedEmpresaId
+        ? empresas.find((e: { id: string }) => e.id === storedEmpresaId)
+        : (empresas.length === 1 ? empresas[0] : null);
+      const navesOrdenadas: NaveInfo[] = empresaMatch?.naves || [];
+      const mapa: Record<string, string> = {};
+      navesOrdenadas.forEach((n, i) => { mapa[String(i + 1)] = n.nombre; });
+      setNaveNombrePorNumero(mapa);
     } catch (err) {
       console.error(err);
     } finally {
@@ -71,6 +103,9 @@ export default function DashboardsPage() {
     document.title = "Dashboards | Grupo Virgo";
     loadData();
   }, [loadData]);
+
+  // Re-cargar (sin recargar la página) cuando el usuario cambia de empresa/nave en el TopNavbar
+  useTenantChange(loadData);
 
 
   // ─── ALERTS ───────────────────────────────────────────────
@@ -92,7 +127,6 @@ export default function DashboardsPage() {
 
     const vacanteCounts: Record<string, number> = {};
     const estadosCounts: Record<string, number> = {};
-    const reclutadorCounts: Record<string, number> = {};
     const pipeline: Record<string, number> = {};
 
     candidatos.forEach(c => {
@@ -115,17 +149,6 @@ export default function DashboardsPage() {
       }
     });
 
-    mensajes.forEach(m => {
-      if (m.asignado_a && m.asignado_a !== "Equipo de Reclutamiento" && m.asignado_a !== "Reclutador") {
-        reclutadorCounts[m.asignado_a] = (reclutadorCounts[m.asignado_a] || 0) + 1;
-      }
-    });
-
-    // Ranking
-    const ranking = Object.entries(reclutadorCounts)
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count);
-
     // Barras Contratacion
     const barrasVacante = Object.entries(vacanteCounts)
       .map(([name, count]) => ({ name, count }))
@@ -144,8 +167,86 @@ export default function DashboardsPage() {
       count: pipeline[step] || 0
     }));
 
-    return { total, contratados, nuevos, chatsActivos, ranking, barrasVacante, donutEstados, funnel };
+    return { total, contratados, nuevos, chatsActivos, barrasVacante, donutEstados, funnel };
   }, [candidatos, mensajes]);
+
+  // ─── RENDIMIENTO POR RECLUTADOR ───────────────────────────────
+  // Candidatos asignados/contratados por reclutador (no volumen de chats):
+  // mide a quién se le está asignando trabajo y quién efectivamente contrata.
+  const reclutadorPerf = useMemo(() => {
+    const counts: Record<string, { asignados: number; contratados: number }> = {};
+    candidatos.forEach(c => {
+      const nombre = c.asignado_a_nombre;
+      if (!nombre) return;
+      if (!counts[nombre]) counts[nombre] = { asignados: 0, contratados: 0 };
+      counts[nombre].asignados++;
+      if (c.estado === "CONTRATADO") counts[nombre].contratados++;
+    });
+    return Object.entries(counts)
+      .map(([nombre, v]) => ({
+        nombre,
+        asignados: v.asignados,
+        contratados: v.contratados,
+        tasaConversion: v.asignados > 0 ? Math.round((v.contratados / v.asignados) * 100) : 0,
+      }))
+      .sort((a, b) => b.contratados - a.contratados || b.asignados - a.asignados);
+  }, [candidatos]);
+
+  // ─── DISTRIBUCIÓN POR NAVE ─────────────────────────────────────
+  const naveDist = useMemo(() => {
+    const counts: Record<string, number> = {};
+    candidatos.forEach(c => {
+      const numero = (c.nave_interes || "").trim();
+      const nombre = naveNombrePorNumero[numero] || (numero && numero !== "Pendiente" ? `Sucursal ${numero}` : "Sin sucursal");
+      counts[nombre] = (counts[nombre] || 0) + 1;
+    });
+    return Object.entries(counts)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [candidatos, naveNombrePorNumero]);
+
+  // ─── AUTOMATIZACIÓN DE SOFÍA ────────────────────────────────────
+  // % de candidatos que Sofía atendió de principio a fin sin escalar a un humano.
+  const automatizacion = useMemo(() => {
+    const total = candidatos.length;
+    const escalados = candidatos.filter(c => c.escalado).length;
+    const pct = total > 0 ? Math.round(((total - escalados) / total) * 100) : 0;
+    return { pct, total, escalados, sinEscalar: total - escalados };
+  }, [candidatos]);
+
+  // ─── CONVERSIÓN POR VACANTE ─────────────────────────────────────
+  const conversionPorVacante = useMemo(() => {
+    const counts: Record<string, { total: number; contratados: number; rechazados: number }> = {};
+    candidatos.forEach(c => {
+      const v = c.vacante_interes || "General";
+      if (!counts[v]) counts[v] = { total: 0, contratados: 0, rechazados: 0 };
+      counts[v].total++;
+      if (c.estado === "CONTRATADO") counts[v].contratados++;
+      if (c.estado === "RECHAZADO") counts[v].rechazados++;
+    });
+    return Object.entries(counts)
+      .map(([vacante, v]) => ({
+        vacante,
+        total: v.total,
+        contratados: v.contratados,
+        rechazados: v.rechazados,
+        tasaConversion: v.total > 0 ? Math.round((v.contratados / v.total) * 100) : 0,
+      }))
+      .sort((a, b) => b.total - a.total);
+  }, [candidatos]);
+
+  // ─── HORAS CON MAYOR ACTIVIDAD (heatmap) ────────────────────────
+  const heatmap = useMemo(() => {
+    const grid: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0));
+    let max = 0;
+    actividadHoraria.forEach(({ dia_semana, hora, total }) => {
+      if (dia_semana >= 0 && dia_semana < 7 && hora >= 0 && hora < 24) {
+        grid[dia_semana][hora] = total;
+        if (total > max) max = total;
+      }
+    });
+    return { grid, max };
+  }, [actividadHoraria]);
 
   // Línea de tiempo simple (agrupada por fecha de última interacción para demo)
   const timelineData = useMemo(() => {
@@ -282,28 +383,91 @@ export default function DashboardsPage() {
                     </div>
                   </div>
 
-                  {/* RANKING RECLUTADORES */}
+                  {/* RENDIMIENTO POR RECLUTADOR */}
                   <div className="bg-white p-6 rounded-2xl border border-black/5 shadow-sm">
                     <h3 className="text-base font-bold text-slate-700 mb-6 flex items-center gap-2">
-                      <Users size={18} className="text-indigo-500"/> Ranking (Chats Activos)
+                      <Users size={18} className="text-indigo-500"/> Rendimiento por Reclutador
                     </h3>
                     <div className="space-y-4">
-                      {kpis.ranking.length === 0 ? (
-                        <div className="text-slate-400 text-sm italic">Sin datos de reclutadores activos.</div>
+                      {reclutadorPerf.length === 0 ? (
+                        <div className="text-slate-400 text-sm italic">Sin candidatos asignados todavía.</div>
                       ) : (
-                        kpis.ranking.map((r, i) => (
-                          <div key={r.name} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
-                            <div className="flex items-center gap-3">
-                              <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white ${i === 0 ? 'bg-amber-500' : i === 1 ? 'bg-slate-400' : i === 2 ? 'bg-amber-700' : 'bg-indigo-300'}`}>
-                                {i + 1}
+                        reclutadorPerf.map((r, i) => (
+                          <div key={r.nombre} className="p-3 bg-slate-50 rounded-xl">
+                            <div className="flex items-center justify-between mb-1.5">
+                              <div className="flex items-center gap-2">
+                                <div className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-white text-xs ${i === 0 ? 'bg-amber-500' : i === 1 ? 'bg-slate-400' : i === 2 ? 'bg-amber-700' : 'bg-indigo-300'}`}>
+                                  {i + 1}
+                                </div>
+                                <span className="font-bold text-slate-700 text-sm">{r.nombre}</span>
                               </div>
-                              <span className="font-bold text-slate-700">{r.name}</span>
+                              <span className="font-extrabold text-indigo-600 text-sm">{r.contratados}/{r.asignados}</span>
                             </div>
-                            <span className="font-extrabold text-indigo-600 bg-indigo-100 px-3 py-1 rounded-full text-sm">{r.count}</span>
+                            <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                              <div className="h-full bg-indigo-500 rounded-full" style={{ width: `${r.tasaConversion}%` }} />
+                            </div>
                           </div>
                         ))
                       )}
                     </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* DISTRIBUCIÓN POR NAVE */}
+                  <div className="bg-white p-6 rounded-2xl border border-black/5 shadow-sm">
+                    <h3 className="text-base font-bold text-slate-700 mb-6 flex items-center gap-2">
+                      <Building2 size={18} className="text-indigo-500"/> Distribución por Nave
+                    </h3>
+                    <div className="h-64 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={naveDist} margin={{ top: 0, right: 20, left: 0, bottom: 20 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                          <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} angle={-15} textAnchor="end" height={50} />
+                          <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                          <Tooltip contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }} cursor={{fill: '#f8fafc'}} />
+                          <Bar dataKey="count" radius={[6, 6, 0, 0]} barSize={32}>
+                            {naveDist.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* HORAS CON MAYOR ACTIVIDAD */}
+                  <div className="bg-white p-6 rounded-2xl border border-black/5 shadow-sm">
+                    <h3 className="text-base font-bold text-slate-700 mb-4 flex items-center gap-2">
+                      <Clock size={18} className="text-indigo-500"/> Horas con Mayor Actividad
+                    </h3>
+                    {actividadHoraria.length === 0 ? (
+                      <div className="h-56 flex items-center justify-center text-slate-400 text-sm italic">Sin actividad registrada en los últimos 90 días.</div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <div className="min-w-[560px]">
+                          <div className="flex gap-[2px] pl-8 mb-1">
+                            {Array.from({ length: 24 }, (_, h) => (
+                              <div key={h} className="flex-1 text-center text-[9px] text-slate-400">{h % 3 === 0 ? h : ""}</div>
+                            ))}
+                          </div>
+                          {heatmap.grid.map((row, dia) => (
+                            <div key={dia} className="flex items-center gap-[2px] mb-[2px]">
+                              <div className="w-7 text-[10px] font-semibold text-slate-500 text-right pr-1">{DIAS_SEMANA[dia]}</div>
+                              {row.map((count, hora) => {
+                                const intensity = heatmap.max > 0 ? count / heatmap.max : 0;
+                                return (
+                                  <div
+                                    key={hora}
+                                    title={`${DIAS_SEMANA[dia]} ${hora}:00 — ${count} mensajes`}
+                                    className="flex-1 aspect-square rounded-sm"
+                                    style={{ backgroundColor: intensity === 0 ? "#f1f5f9" : `rgba(99, 102, 241, ${0.15 + intensity * 0.85})` }}
+                                  />
+                                );
+                              })}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -326,16 +490,97 @@ export default function DashboardsPage() {
                     </ResponsiveContainer>
                   </div>
                 </div>
+
+                {/* CONVERSIÓN POR VACANTE */}
+                <div className="bg-white p-6 rounded-2xl border border-black/5 shadow-sm">
+                  <h3 className="text-base font-bold text-slate-700 mb-6 flex items-center gap-2">
+                    <TrendingUp size={18} className="text-indigo-500"/> Conversión por Vacante
+                  </h3>
+                  {conversionPorVacante.length === 0 ? (
+                    <div className="text-slate-400 text-sm italic">Sin datos de vacantes todavía.</div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-slate-400 text-xs uppercase tracking-wider border-b border-slate-100">
+                            <th className="pb-2 font-bold">Vacante</th>
+                            <th className="pb-2 font-bold text-right">Candidatos</th>
+                            <th className="pb-2 font-bold text-right">Contratados</th>
+                            <th className="pb-2 font-bold text-right">Rechazados</th>
+                            <th className="pb-2 font-bold text-right w-40">Conversión</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {conversionPorVacante.map((v) => (
+                            <tr key={v.vacante} className="border-b border-slate-50 last:border-0">
+                              <td className="py-2.5 font-semibold text-slate-700">{v.vacante}</td>
+                              <td className="py-2.5 text-right text-slate-600">{v.total}</td>
+                              <td className="py-2.5 text-right text-emerald-600 font-bold">{v.contratados}</td>
+                              <td className="py-2.5 text-right text-rose-500">{v.rechazados}</td>
+                              <td className="py-2.5">
+                                <div className="flex items-center gap-2 justify-end">
+                                  <div className="w-20 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                    <div
+                                      className={`h-full rounded-full ${v.tasaConversion >= 20 ? "bg-emerald-500" : v.tasaConversion >= 5 ? "bg-amber-500" : "bg-slate-300"}`}
+                                      style={{ width: `${Math.min(v.tasaConversion, 100)}%` }}
+                                    />
+                                  </div>
+                                  <span className="font-bold text-slate-600 text-xs w-10 text-right">{v.tasaConversion}%</span>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
             {activeTab === "ia" && (
-              <div className="animate-fade-in flex flex-col items-center justify-center py-20 text-center">
-                <div className="w-20 h-20 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mb-6 text-4xl">
-                  🤖
+              <div className="animate-fade-in space-y-6">
+                <div className="bg-white p-6 rounded-2xl border border-black/5 shadow-sm">
+                  <h3 className="text-base font-bold text-slate-700 mb-2 flex items-center gap-2">
+                    <Bot size={18} className="text-purple-500"/> Automatización de Sofía
+                  </h3>
+                  <p className="text-xs text-slate-400 mb-4">Candidatos atendidos de principio a fin sin necesitar un reclutador humano.</p>
+                  <div className="h-56 w-full relative">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RadialBarChart
+                        cx="50%" cy="65%" innerRadius="70%" outerRadius="100%"
+                        barSize={22}
+                        data={[{ name: "automatizacion", value: automatizacion.pct, fill: "#8b5cf6" }]}
+                        startAngle={180} endAngle={0}
+                      >
+                        <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
+                        <RadialBar background dataKey="value" cornerRadius={12} />
+                      </RadialBarChart>
+                    </ResponsiveContainer>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pt-10">
+                      <span className="text-4xl font-extrabold text-purple-600">{automatizacion.pct}%</span>
+                      <span className="text-xs text-slate-400 font-semibold mt-1">automatizado</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 mt-2">
+                    <div className="bg-purple-50 rounded-xl p-4 text-center">
+                      <div className="text-2xl font-extrabold text-purple-700">{automatizacion.sinEscalar}</div>
+                      <div className="text-xs text-purple-500 font-semibold mt-1">Sin escalar</div>
+                    </div>
+                    <div className="bg-slate-50 rounded-xl p-4 text-center">
+                      <div className="text-2xl font-extrabold text-slate-700">{automatizacion.escalados}</div>
+                      <div className="text-xs text-slate-500 font-semibold mt-1">Escalados a humano</div>
+                    </div>
+                  </div>
                 </div>
-                <h2 className="text-2xl font-extrabold text-slate-800 mb-2">Dashboard de IA (Sofía)</h2>
-                <p className="text-slate-500 max-w-md">Aquí mediremos el % de automatización, documentos procesados, y precisión de los análisis de nuestra asistente virtual. (Fase 3)</p>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                  <p className="text-blue-600 text-xs leading-relaxed">
+                    El resto de métricas de IA (documentos procesados, precisión de validación, tiempo promedio de análisis)
+                    requieren guardar cada evento de análisis de Gemini en la base de datos — hoy no se registra, así que
+                    aquí solo mostramos lo que sí se puede calcular con datos reales.
+                  </p>
+                </div>
               </div>
             )}
           </div>

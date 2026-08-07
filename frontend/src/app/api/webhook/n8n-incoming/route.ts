@@ -1,8 +1,20 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
-import { candidatoMachine } from '@/lib/stateMachine';
+import { candidatoMachine, ESTADOS_VALIDOS } from '@/lib/stateMachine';
 import { createActor } from 'xstate';
 import { verifyWebhookApiKey } from '@/lib/auth';
+import { resolveEmpresaYGrupo } from '@/lib/empresaResolution';
+import { asignarReclutadorPorVacante } from '@/lib/asignacionReclutador';
+
+/**
+ * Estas banderas llegaban de n8n como el STRING 'true' (todo en n8n viaja como
+ * texto), pero el backend de Python las manda como booleanos JSON reales. Las
+ * comparaciones `=== 'true'` que quedaron del puerto original nunca se cumplen
+ * con `true`, así que en producción `privacidad` y `cita_cancelada` se perdían
+ * en silencio: la cita se borraba de Google Calendar pero el expediente nunca
+ * pasaba a cancelado. Se acepta cualquiera de las dos formas.
+ */
+const esVerdadero = (v: unknown): boolean => v === true || v === 'true';
 
 export async function POST(request: Request) {
   if (!verifyWebhookApiKey(request)) {
@@ -13,6 +25,7 @@ export async function POST(request: Request) {
     const data = await request.json();
     const {
       telefono,
+      telefono_destino,
       nombre,
       cita_creada,
       vacante,
@@ -35,9 +48,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Falta telefono' }, { status: 400 });
     }
 
-    // 1. Obtener estado actual (buscamos por telefono, asumiendo por ahora la primera empresa o la mas reciente si hay varias)
-    // En el futuro, n8n debe enviar el empresa_id
-    const res = await pool.query('SELECT id, estado, tiene_cv, cv_manual as db_cv_manual, fecha_entrevista as db_fecha, privacidad_aceptada, escalado, vacante_interes, asignado_a FROM candidatos WHERE telefono = $1 ORDER BY updated_at DESC LIMIT 1', [telefono]);
+    // 1. Obtener estado actual (buscamos por telefono; puede haber una fila por empresa)
+    const res = await pool.query('SELECT id, estado, tiene_cv, cv_manual as db_cv_manual, fecha_entrevista as db_fecha, privacidad_aceptada, escalado, vacante_interes, asignado_a_id FROM candidatos WHERE telefono = $1 ORDER BY updated_at DESC LIMIT 1', [telefono]);
     let currentState = 'NUEVO';
     let context = {
       telefono,
@@ -55,6 +67,16 @@ export async function POST(request: Request) {
 
     if (res.rowCount && res.rowCount > 0) {
       currentState = res.rows[0].estado;
+      // `resolveState` lanza si el valor guardado no es un estado de la
+      // máquina, y como eso ocurre ANTES de responder, el candidato quedaba
+      // con todos sus mensajes devolviendo HTTP 500 (pasó con 'CITA_CANCELADA',
+      // que el backend escribía sin que existiera aquí). Un estado huérfano
+      // -- por dato viejo o por otro camino que escriba directo -- no debe
+      // volver a congelar el expediente: se degrada a NUEVO y se avisa.
+      if (!ESTADOS_VALIDOS.has(currentState)) {
+        console.warn(`[n8n-incoming] estado desconocido '${currentState}' para ${telefono}; se usa NUEVO`);
+        currentState = 'NUEVO';
+      }
       context = {
         telefono,
         tiene_cv: res.rows[0].tiene_cv || false,
@@ -68,17 +90,24 @@ export async function POST(request: Request) {
     // 2. Determinar el evento basado en la información entrante (emulando lo que hacía el CASE WHEN)
     let event: any = { type: 'INTERES' }; // default fallback
 
-    if (privacidad === 'true' && currentState === 'NUEVO') {
+    if (esVerdadero(privacidad) && currentState === 'NUEVO') {
       event = { type: 'INTERES' };
     }
-    if (es_cv === 'true' || cv_manual) {
+    if (esVerdadero(es_cv) || cv_manual) {
       event = { type: 'RECIBE_CV' };
     }
-    if (cita_creada === 'true' || fecha_entrevista) {
+    if (esVerdadero(cita_creada) || fecha_entrevista) {
       event = { type: 'AGENDA_CITA', fecha: fecha_entrevista || 'Por confirmar' };
     }
-    // Si cancela la cita o hay escalamiento explícito en resumen (ej. HUMAN_ALERT)
-    if (cita_cancelada === 'true' || (resumen && (resumen as string).includes('solicitó apoyo'))) {
+    // Cancelar NO es escalar: antes ambos casos mandaban ESCALA_HUMANO, así que
+    // un candidato que cancelaba su cita quedaba con escalado=true y el bot
+    // dejaba de responderle (procesar_turno corta en seco si escalado).
+    if (esVerdadero(cita_cancelada)) {
+      event = { type: 'CANCELA_CITA' };
+    }
+    // Escalamiento explícito en resumen (ej. HUMAN_ALERT) -- va al final porque
+    // es más severo y debe ganar si ambos vienen en el mismo turno.
+    if (resumen && (resumen as string).includes('solicitó apoyo')) {
       event = { type: 'ESCALA_HUMANO' };
     }
 
@@ -122,14 +151,21 @@ export async function POST(request: Request) {
       finalNombre = 'Candidato';
     }
 
-    // Extraer Vacante desde Resumen si viene como 'General' o vacía
-    let finalVacante = (vacante && vacante.trim() !== 'General') ? vacante.trim() : '';
-    if (!finalVacante || finalVacante === 'General') {
+    // Extraer Vacante desde Resumen si viene como 'General'/'GENERAL' (placeholder
+    // del backend mientras el candidato no ha elegido vacante) o vacía. Comparación
+    // insensible a mayúsculas: el backend de Python (parser.py) siempre manda este
+    // valor en MAYÚSCULAS, así que el check original (case-sensitive contra
+    // 'General') nunca lo atrapaba -- el placeholder se guardaba como si fuera una
+    // vacante real y, por el COALESCE del UPSERT de abajo, quedaba atorado ahí para
+    // siempre (rompiendo el match de vacante->reclutador en definir_agenda).
+    const esPlaceholderVacante = (v: string) => ['GENERAL', 'NINGUNA'].includes(v.trim().toUpperCase());
+    let finalVacante = (vacante && !esPlaceholderVacante(vacante)) ? vacante.trim() : '';
+    if (!finalVacante) {
       if (resumen && typeof resumen === 'string') {
         const vacMatch = resumen.match(/Vacante:\s*([^.\n|]+)/i);
         if (vacMatch && vacMatch[1]) {
           const extractedVac = vacMatch[1].trim();
-          if (extractedVac && !['General', 'Ninguna', 'Pendiente', 'Desconocida', 'X'].includes(extractedVac)) {
+          if (extractedVac && !['Pendiente', 'Desconocida', 'X'].includes(extractedVac) && !esPlaceholderVacante(extractedVac)) {
             finalVacante = extractedVac;
           }
         }
@@ -159,9 +195,9 @@ export async function POST(request: Request) {
       motivoEscalamiento = `ALERTA GLOBAL: Este candidato fue RECHAZADO previamente en la nave: ${naveRechazo || 'Desconocida'}.`;
     }
 
-    // Buscamos una empresa_id default para no romper el UNIQUE constraint
-    const defaultEmpresaRes = await pool.query('SELECT id FROM empresas LIMIT 1');
-    const empresaId = (defaultEmpresaRes.rowCount && defaultEmpresaRes.rowCount > 0) ? defaultEmpresaRes.rows[0].id : null;
+    // Resolver empresa_id real a partir del número que recibió el mensaje (telefono_destino),
+    // vía grupos_reclutamiento. Fallback de una sola empresa mientras n8n no lo mande.
+    const { empresa_id: empresaId } = await resolveEmpresaYGrupo(telefono_destino, 'n8n-incoming');
 
     const upsertQuery = `
       INSERT INTO candidatos (
@@ -215,7 +251,7 @@ export async function POST(request: Request) {
       filtros,
       parsedCvManual ? JSON.stringify(parsedCvManual) : null,
       fecha_entrevista,
-      privacidad === 'true' || newState.context.privacidad_aceptada,
+      esVerdadero(privacidad) || newState.context.privacidad_aceptada,
       finalNombre,
       parsedCvManual?.nombre || null,
       parsedCvManual?.edad || null,
@@ -231,61 +267,11 @@ export async function POST(request: Request) {
 
     const candidatoId = upsertRes.rows[0].id;
 
-    // 4.5 Asignación temprana al reclutador de la vacante elegida
-    // Se dispara solo la primera vez que el candidato elige una vacante real
-    // (antes no tenía una, o estaba en 'General') y todavía no tiene reclutador asignado.
-    const vacanteEntrante = (vacante || '').trim();
-    const vacantePreviaVacia = !res.rowCount || !res.rows[0].vacante_interes || res.rows[0].vacante_interes === 'General';
-    const yaAsignado = !!(res.rowCount && res.rows[0].asignado_a);
-
-    if (vacanteEntrante && vacanteEntrante !== 'General' && vacantePreviaVacia && !yaAsignado) {
-      try {
-        const equipoRes = await pool.query(
-          `SELECT r.id AS reclutador_id, r.nombre AS reclutador_nombre, v.nombre AS vacante_nombre, v.naves
-           FROM reclutadores r
-           JOIN vacantes_def v ON v.reclutador_id = r.id AND v.activa = true
-           WHERE r.activo = true AND ($1::uuid IS NULL OR r.empresa_id = $1)`,
-          [empresaId]
-        );
-
-        const cleanStr = (s: string) => s ? s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim() : '';
-        const vacanteClean = cleanStr(vacanteEntrante);
-        const naveClean = nave ? String(nave).trim() : null;
-
-        const matches = equipoRes.rows.filter((row) => {
-          if (cleanStr(row.vacante_nombre) !== vacanteClean) return false;
-          if (!naveClean) return true;
-          let navesArr: string[] = [];
-          try { navesArr = typeof row.naves === 'string' ? JSON.parse(row.naves) : (row.naves || []); } catch { navesArr = []; }
-          return navesArr.length === 0 || navesArr.includes(naveClean);
-        });
-
-        let reclutadorAsignado: { reclutador_id: string; reclutador_nombre: string } | null = null;
-        if (matches.length === 1) {
-          reclutadorAsignado = matches[0];
-        } else if (matches.length === 0) {
-          const gerenteRes = await pool.query(
-            `SELECT id AS reclutador_id, nombre AS reclutador_nombre FROM reclutadores WHERE nombre = 'Gerente de Reclutamiento' AND activo = true LIMIT 1`
-          );
-          if (gerenteRes.rowCount) reclutadorAsignado = gerenteRes.rows[0];
-        }
-        // Si hay varios reclutadores para la misma vacante/nave, no forzamos una asignación
-        // individual aquí — el sistema de turnos que ya existe en el agendado de entrevista se encarga.
-
-        if (reclutadorAsignado) {
-          await pool.query(
-            `UPDATE candidatos SET asignado_a = $1 WHERE id = $2 AND (asignado_a IS NULL OR asignado_a = '')`,
-            [reclutadorAsignado.reclutador_nombre, candidatoId]
-          );
-          await pool.query(
-            `INSERT INTO notificaciones (reclutador_id, mensaje) VALUES ($1, $2)`,
-            [reclutadorAsignado.reclutador_id, `🆕 Nuevo candidato en proceso: ${finalNombre} — ${vacanteEntrante}`]
-          );
-        }
-      } catch (asignarErr) {
-        console.error('Error asignando candidato al reclutador de la vacante:', asignarErr);
-      }
-    }
+    // Asignación al reclutador dueño de la vacante elegida. Se intenta en cada
+    // mensaje (no solo "la primera vez que llega vacante") porque la IA no siempre
+    // etiqueta la vacante en el mismo turno en que la menciona en el chat — el
+    // helper es idempotente, solo asigna si `asignado_a_id` sigue en NULL.
+    await asignarReclutadorPorVacante(candidatoId, finalVacante, nave, empresaId);
 
     // 5. Insertar historial de mensajes
     // Mensaje del usuario

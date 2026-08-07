@@ -45,3 +45,15 @@ export function getCandidateDisplayName(c: {
 
   return name || "Candidato Desconocido";
 }
+
+/**
+ * Maps numeric nave IDs or strings (e.g. "1", "2", "3") to human-readable Nave names.
+ */
+export function formatNaveName(nave?: string | number | null): string {
+  if (!nave) return "";
+  const clean = String(nave).trim();
+  if (clean === "1" || clean.toUpperCase() === "NAVE 1") return "Dulcería";
+  if (clean === "2" || clean.toUpperCase() === "NAVE 2") return "CEDIS";
+  if (clean === "3" || clean.toUpperCase() === "NAVE 3") return "Materias Primas";
+  return clean;
+}

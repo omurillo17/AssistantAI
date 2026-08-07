@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
-import { jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { pool } from "@/lib/db";
-import { ENV } from "@/lib/env";
-import { cookies } from "next/headers";
+import { getSession } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
@@ -21,16 +19,10 @@ export async function POST(request: Request) {
     }
 
     // Obtener la sesión actual de las cookies
-    const cookieStore = await cookies();
-    const token = cookieStore.get("tci_session")?.value;
-
-    if (!token) {
+    const payload = await getSession(request);
+    if (!payload) {
       return NextResponse.json({ success: false, error: "No autorizado" }, { status: 401 });
     }
-
-    // Verificar el token
-    const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
-    const { payload } = await jwtVerify(token, secretKey);
     const usuario = payload.usuario as string;
 
     if (!usuario) {

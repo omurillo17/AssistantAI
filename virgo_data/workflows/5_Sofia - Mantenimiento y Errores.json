@@ -30,8 +30,8 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.6,
       "position": [
-        32,
-        -80
+        0,
+        -176
       ],
       "id": "038684ca-19b4-44c1-8a27-0a1173f9034b",
       "name": "LimpiarBD",
@@ -138,15 +138,97 @@
           "name": "Postgres account"
         }
       }
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:3001/api/cron/limpiar-archivos",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "n8na-bkwkt7S8JHwa839AHfxnoXN18Ua9B6el2bSNeN"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        0,
+        -16
+      ],
+      "id": "fc54540a-286b-4a08-be75-816798a6b3dd",
+      "name": "LimpiarArchivosCandidatos"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 2
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -192,
+        320
+      ],
+      "id": "a8a43721-13a4-4349-b192-6811d849bc0a",
+      "name": "ReintentarOutbox"
+    },
+    {
+      "parameters": {
+        "url": "http://host.docker.internal:3001/api/cron/process-outbox",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Api-Key",
+              "value": "n8na-bkwkt7S8JHwa839AHfxnoXN18Ua9B6el2bSNeN"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        0,
+        320
+      ],
+      "id": "7275e2f4-437c-4786-bbcd-18760f8ff2e5",
+      "name": "ProcesarOutbox"
     }
   ],
   "pinData": {},
   "connections": {
+    "ReintentarOutbox": {
+      "main": [
+        [
+          {
+            "node": "ProcesarOutbox",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "Limpieza": {
       "main": [
         [
           {
             "node": "LimpiarBD",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "LimpiarArchivosCandidatos",
             "type": "main",
             "index": 0
           }
@@ -204,7 +286,7 @@
     "binaryMode": "separate",
     "availableInMCP": false
   },
-  "versionId": "da67a46e-0a01-42a2-83d0-1f9a6a694d68",
+  "versionId": "5d300be7-7d3c-4bbd-ae4f-cced5f770c38",
   "meta": {
     "instanceId": "dee31bcf1d2327582c0e4156e13b587f5779996960582a36461518ee5fc3826e",
     "templateCredsSetupCompleted": true
