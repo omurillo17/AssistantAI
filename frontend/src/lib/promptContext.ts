@@ -90,7 +90,7 @@ export type PromptContext = {
     color: string;
     usuario: string;
     empresa_id: string;
-    vacantes: Array<{ id: string; nombre: string; naves: string[]; detalles: string; palabras_clave: string; filtros: Filtro[] }>;
+    vacantes: Array<{ id: string; nombre: string; naves: string[]; detalles: string; funciones: string; palabras_clave: string; filtros: Filtro[] }>;
   }>;
   _meta: {
     empresas: Array<{ id: string; nombre: string }>;
@@ -163,6 +163,7 @@ export async function buildPromptContext(empresaId?: string | null): Promise<Pro
        v.nombre AS vacante_nombre,
        v.naves AS vacante_naves,
        v.detalles,
+       v.funciones,
        v.palabras_clave,
        v.filtros,
        v.orden
@@ -202,6 +203,7 @@ export async function buildPromptContext(empresaId?: string | null): Promise<Pro
         nombre: row.vacante_nombre,
         naves: navesArr,
         detalles: row.detalles || '',
+        funciones: row.funciones || '',
         palabras_clave: row.palabras_clave || '',
         filtros: row.filtros || [],
       });
@@ -223,11 +225,23 @@ export async function buildPromptContext(empresaId?: string | null): Promise<Pro
     : 'No hay sucursales registradas.';
 
   // 6. Recopilar vacantes unicas
-  const todasLasVacantes: Array<{ nombre: string; detalles: string; naves: string[]; filtros: Filtro[] }> = [];
+  // `funciones` y `palabras_clave` se arrastran hasta aquí a propósito: antes se
+  // leían de la BD y se exponían en equipo_reclutadores, pero se quedaban fuera
+  // de este arreglo, que es lo único que alimenta menu_vacantes/detalle_vacantes
+  // -- o sea, la IA nunca las veía y el campo "Palabras Clave" del modal no
+  // hacía absolutamente nada.
+  const todasLasVacantes: Array<{ nombre: string; detalles: string; funciones: string; palabras_clave: string; naves: string[]; filtros: Filtro[] }> = [];
   for (const rec of equipo_reclutadores) {
     for (const vac of rec.vacantes) {
       if (!todasLasVacantes.some((v) => v.nombre === vac.nombre)) {
-        todasLasVacantes.push({ nombre: vac.nombre, detalles: vac.detalles, naves: vac.naves, filtros: vac.filtros || [] });
+        todasLasVacantes.push({
+          nombre: vac.nombre,
+          detalles: vac.detalles,
+          funciones: vac.funciones,
+          palabras_clave: vac.palabras_clave,
+          naves: vac.naves,
+          filtros: vac.filtros || [],
+        });
       }
     }
   }
@@ -235,7 +249,7 @@ export async function buildPromptContext(empresaId?: string | null): Promise<Pro
   // Mapa nave_id (UUID real, tal como se guarda en vacantes_def.naves) => { numero, naveName, vacantes[] }
   // El "numero" (secuencial por empresa) solo se usa para el texto que ve la IA/n8n
   // ("--- SUCURSAL {numero}: ---"), nunca como llave de cruce con las vacantes.
-  const naveMap = new Map<string, { numero: number; naveName: string; vacantes: Array<{ nombre: string; detalles: string; filtros: Filtro[] }> }>();
+  const naveMap = new Map<string, { numero: number; naveName: string; vacantes: Array<{ nombre: string; detalles: string; funciones: string; palabras_clave: string; filtros: Filtro[] }> }>();
   for (const nav of naves) {
     naveMap.set(nav.id, { numero: nav.numero, naveName: nav.nombre, vacantes: [] });
   }
@@ -245,7 +259,13 @@ export async function buildPromptContext(empresaId?: string | null): Promise<Pro
       if (naveMap.has(naveId)) {
         const navData = naveMap.get(naveId)!;
         if (!navData.vacantes.some((v) => v.nombre === vac.nombre)) {
-          navData.vacantes.push({ nombre: vac.nombre, detalles: vac.detalles, filtros: vac.filtros });
+          navData.vacantes.push({
+            nombre: vac.nombre,
+            detalles: vac.detalles,
+            funciones: vac.funciones,
+            palabras_clave: vac.palabras_clave,
+            filtros: vac.filtros,
+          });
         }
       }
     }
@@ -262,6 +282,16 @@ export async function buildPromptContext(empresaId?: string | null): Promise<Pro
     const detalleLines = navData.vacantes
       .map((v, i) => {
         const partes = [`*${i + 1}. ${v.nombre}*`, v.detalles || '(Sin detalles registrados)'];
+        // Bloques que chat_prompt.md busca literalmente (sección 3.7): las
+        // funciones se mandan al candidato como SEGUNDO mensaje tras los
+        // detalles, y las palabras clave son solo para que la IA reconozca la
+        // vacante -- nunca se le muestran al candidato.
+        if ((v.funciones || '').trim()) {
+          partes.push(`[ACTIVIDADES A REALIZAR]\n${v.funciones.trim()}`);
+        }
+        if ((v.palabras_clave || '').trim()) {
+          partes.push(`[PALABRAS CLAVE / SINÓNIMOS (uso interno, NO mostrar)]\n${v.palabras_clave.trim()}`);
+        }
         const reglas = buildReglasEvaluacion(v.filtros);
         if (reglas) partes.push(reglas);
         const preguntasBase = buildPreguntasBase(v.filtros);

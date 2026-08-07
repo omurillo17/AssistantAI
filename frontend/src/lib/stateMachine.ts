@@ -18,6 +18,7 @@ export type CandidatoEvent =
   | { type: 'ENTREGA_DOCS' }
   | { type: 'BLOQUEO_IDENTIDAD' }
   | { type: 'AGENDA_CITA'; fecha: string }
+  | { type: 'CANCELA_CITA' }
   | { type: 'ESCALA_HUMANO' }
   | { type: 'RECHAZA' }
   | { type: 'CONTRATA' }
@@ -125,6 +126,33 @@ export const candidatoMachine = createMachine(
       CITA_AGENDADA: {
         on: {
           ASISTE_ENTREVISTA: 'ENTREVISTADO',
+          CANCELA_CITA: {
+            target: 'CITA_CANCELADA',
+            actions: 'limpiarFechaEntrevista',
+          },
+          ESCALA_HUMANO: {
+            target: 'ESCALADO',
+            actions: 'setEscalado',
+          },
+        },
+      },
+      // El backend ya escribía 'CITA_CANCELADA' en candidatos.estado al borrar
+      // el evento (ver backend/app/routers/eventos_calendario.py), pero el
+      // estado no existía aquí: `resolveState` reventaba con ese valor y TODOS
+      // los mensajes siguientes de ese candidato devolvían HTTP 500 en
+      // /api/webhook/n8n-incoming, dejando su expediente congelado. Cancelar
+      // no es escalar: el candidato sigue conversando y puede reagendar.
+      CITA_CANCELADA: {
+        on: {
+          AGENDA_CITA: {
+            target: 'CITA_AGENDADA',
+            actions: 'setFechaEntrevista',
+          },
+          ENTREGA_DOCS: 'INE_VALIDADA',
+          RECIBE_CV: {
+            target: 'CV_RECIBIDO',
+            actions: 'setTieneCV',
+          },
           ESCALA_HUMANO: {
             target: 'ESCALADO',
             actions: 'setEscalado',
@@ -137,6 +165,10 @@ export const candidatoMachine = createMachine(
           AGENDA_CITA: {
             target: 'CITA_AGENDADA',
             actions: 'setFechaEntrevista',
+          },
+          CANCELA_CITA: {
+            target: 'CITA_CANCELADA',
+            actions: 'limpiarFechaEntrevista',
           },
           ESCALA_HUMANO: {
             target: 'ESCALADO',
@@ -219,7 +251,18 @@ export const candidatoMachine = createMachine(
           return null;
         },
       }),
+      limpiarFechaEntrevista: assign({ fecha_entrevista: null }),
       setEscalado: assign({ escalado: true }),
     },
   }
+);
+
+/**
+ * Nombres de estado que `candidatoMachine.resolveState` acepta. Se deriva de
+ * la propia máquina a propósito: una lista escrita a mano se desincroniza al
+ * agregar estados, y pasar un valor que no está aquí hace que resolveState
+ * lance (ver el guard en /api/webhook/n8n-incoming).
+ */
+export const ESTADOS_VALIDOS: ReadonlySet<string> = new Set(
+  Object.keys(candidatoMachine.states)
 );

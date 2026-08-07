@@ -97,6 +97,7 @@ export async function GET(request: Request) {
         v.nombre AS vacante_nombre,
         v.naves,
         v.detalles,
+        v.funciones,
         v.palabras_clave,
         v.filtros,
         v.activa AS vacante_activa
@@ -130,6 +131,7 @@ export async function GET(request: Request) {
           nombre: row.vacante_nombre,
           naves: typeof row.naves === 'string' ? JSON.parse(row.naves) : row.naves,
           detalles: row.detalles || '',
+          funciones: row.funciones || '',
           palabras_clave: row.palabras_clave || '',
           filtros: row.filtros || [],
           activa: row.vacante_activa
@@ -255,13 +257,14 @@ export async function POST(request: Request) {
       let orden = 0;
       for (const vac of rec.vacantes) {
         await client.query(`
-          INSERT INTO vacantes_def (id, reclutador_id, nombre, naves, detalles, palabras_clave, filtros, activa, orden, empresa_id, updated_at)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+          INSERT INTO vacantes_def (id, reclutador_id, nombre, naves, detalles, funciones, palabras_clave, filtros, activa, orden, empresa_id, updated_at)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
           ON CONFLICT (id) DO UPDATE SET
             reclutador_id = EXCLUDED.reclutador_id,
             nombre = EXCLUDED.nombre,
             naves = EXCLUDED.naves,
             detalles = EXCLUDED.detalles,
+            funciones = EXCLUDED.funciones,
             palabras_clave = EXCLUDED.palabras_clave,
             filtros = EXCLUDED.filtros,
             activa = EXCLUDED.activa,
@@ -274,6 +277,7 @@ export async function POST(request: Request) {
           vac.nombre,
           JSON.stringify(vac.naves || []),
           vac.detalles || '',
+          vac.funciones || '',
           vac.palabras_clave || '',
           JSON.stringify(vac.filtros || []),
           vac.activa,

@@ -9,6 +9,8 @@ type Props = {
   setVNombre: (v: string) => void;
   vDetalles: string;
   setVDetalles: (v: string) => void;
+  vFunciones: string;
+  setVFunciones: (v: string) => void;
   vPalabrasClave: string;
   setVPalabrasClave: (v: string) => void;
   vNaves: string[];
@@ -24,6 +26,8 @@ export default function VacancyModal({
   setVNombre,
   vDetalles,
   setVDetalles,
+  vFunciones,
+  setVFunciones,
   vPalabrasClave,
   setVPalabrasClave,
   vNaves,
@@ -113,8 +117,9 @@ export default function VacancyModal({
               onChange={(e) => setVPalabrasClave(e.target.value)}
             />
             <p className="text-xs text-slate-400 mt-1">
-              Si la IA lee estos nombres en el flyer, los relacionará con esta
-              vacante.
+              Sinónimos con los que el candidato puede pedir esta vacante. Si
+              escribe &quot;chofer&quot; y aquí lo pusiste, la IA sabrá que se
+              refiere a esta vacante aunque se llame distinto.
             </p>
           </div>
 
@@ -130,6 +135,24 @@ export default function VacancyModal({
               value={vDetalles}
               onChange={(e) => setVDetalles(e.target.value)}
             ></textarea>
+          </div>
+
+          <div>
+            <label className="block text-sm text-slate-500 font-medium mb-1">
+              Actividades a realizar
+            </label>
+            <textarea
+              id="vacancy-funciones"
+              name="funciones"
+              className="w-full p-3 rounded-lg border border-black/10 bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none font-mono text-sm h-32 resize-y transition-all shadow-sm"
+              placeholder={`- Registrar entrada y salida de mercancía\n- Capturar folios en el sistema\n- Apoyo en inventarios cíclicos`}
+              value={vFunciones}
+              onChange={(e) => setVFunciones(e.target.value)}
+            ></textarea>
+            <p className="text-xs text-slate-400 mt-1">
+              Se le envían al candidato en un mensaje aparte de los detalles,
+              para que sepa qué va a hacer antes de avanzar en el proceso.
+            </p>
           </div>
         </div>
 

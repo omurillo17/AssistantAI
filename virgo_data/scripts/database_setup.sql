@@ -125,6 +125,12 @@ CREATE TABLE IF NOT EXISTS vacantes_def (
     nombre VARCHAR(255) NOT NULL,
     naves TEXT DEFAULT '[]',
     detalles TEXT DEFAULT '',
+    -- Actividades/funciones del puesto que Sofia le muestra al candidato en un
+    -- segundo mensaje, aparte de los detalles (sueldo/horario), para que sepa
+    -- qué va a hacer antes de invertir tiempo en el proceso.
+    funciones TEXT DEFAULT '',
+    -- Sinónimos con los que el candidato puede referirse a la vacante
+    -- ("chofer" -> OPERADOR DE VEHÍCULO). Se le pasan a la IA en el catálogo.
     palabras_clave TEXT DEFAULT '',
     filtros JSONB DEFAULT '[]',
     activa BOOLEAN DEFAULT TRUE,

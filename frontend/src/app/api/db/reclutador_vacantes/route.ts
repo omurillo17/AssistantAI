@@ -33,6 +33,7 @@ export async function GET(request: Request) {
          r.calendar_id,
          r.color,
          u.usuario,
+         u.rol AS usuario_rol,
          v.id AS vacante_id,
          v.nombre AS vacante_nombre,
          v.naves AS vacante_naves,
@@ -55,7 +56,7 @@ export async function GET(request: Request) {
       naveMap.set(r.id, r.nombre);
     }
 
-    const recMap = new Map<string, { reclutador_id: string; nombre: string; activo: boolean; telefono: string; calendar_id: string; color: string; usuario: string; vacantes: Record<string, unknown>[] }>();
+    const recMap = new Map<string, { reclutador_id: string; nombre: string; activo: boolean; telefono: string; calendar_id: string; color: string; usuario: string; es_encargado: boolean; vacantes: Record<string, unknown>[] }>();
     for (const row of res.rows) {
       if (!recMap.has(row.reclutador_id)) {
         recMap.set(row.reclutador_id, {
@@ -66,6 +67,10 @@ export async function GET(request: Request) {
           calendar_id: row.calendar_id || "",
           color: row.color || "#6366f1",
           usuario: row.usuario || "",
+          // Jefe de grupo real (ver frontend/src/app/api/db/usuarios/route.ts) --
+          // usado por definir_agenda (backend) para elegir un fallback
+          // determinista en vez de "el ultimo reclutador creado".
+          es_encargado: row.usuario_rol === "ENCARGADO",
           vacantes: [],
         });
       }

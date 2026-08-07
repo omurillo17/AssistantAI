@@ -24,16 +24,6 @@ from app.db import get_pool
 logger = logging.getLogger("ingesta")
 
 _TEST_PHONE = "5213323379399"
-
-# --- Debounce de mensajes rápidos consecutivos ------------------------------
-# En n8n, el camino MsjCorto -> JuntarMsj pasaba por varias llamadas de red
-# (WAHA, catálogo de vacantes) que sin querer daban tiempo a que un segundo
-# mensaje llegara antes de que JuntarMsj corriera. En Python el camino de
-# texto plano es más rápido (sin llamada a Gemini, catálogo local), así que
-# ese colchón casi desaparece -- sin esto, 2 mensajes seguidos generaban 2
-# respuestas en vez de 1. Debounce "trailing" en memoria: cada mensaje
-# empuja el deadline hacia adelante; solo la última tarea en despertar sin
-# más empujones procesa (recogiendo todo lo acumulado vía JuntarMsj).
 _DEBOUNCE_SECONDS = 8.0
 _debounce_deadlines: dict[str, float] = {}
 _debounce_lock = asyncio.Lock()
@@ -45,10 +35,6 @@ async def _procesar_con_debounce(telefono: str, tarea, al_primero=None) -> None:
         _debounce_deadlines[telefono] = time.monotonic() + _DEBOUNCE_SECONDS
 
     if not ya_pendiente and al_primero is not None:
-        # Solo en el primer mensaje del grupo -- avisa "escribiendo..." de
-        # inmediato en vez de hasta que se resuelva el debounce, para que el
-        # candidato no vea puro silencio mientras Sofía "espera" a que
-        # termine de escribir.
         try:
             await al_primero()
         except Exception:

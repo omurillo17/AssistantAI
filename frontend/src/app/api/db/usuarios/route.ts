@@ -322,23 +322,44 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "No tienes permiso para eliminar este usuario" }, { status: 403 });
     }
 
-    // Transferir chats si se especifica (transferTo = reclutador_id destino;
-    // el origen se toma del propio usuario objetivo, nunca de un valor que mande el cliente)
-    if (transferTo && targetUser.reclutador_id) {
-      await pool.query(
-        `UPDATE candidatos SET asignado_a_id = $1 WHERE asignado_a_id = $2`,
-        [transferTo, targetUser.reclutador_id]
-      );
-      await pool.query(
-        `UPDATE mensajes_bandeja SET asignado_a_id = $1, updated_at = NOW() WHERE asignado_a_id = $2`,
-        [transferTo, targetUser.reclutador_id]
-      );
-    }
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    const res = await pool.query(`DELETE FROM usuarios WHERE id = $1 RETURNING id`, [id]);
+      // Transferir chats si se especifica (transferTo = reclutador_id destino;
+      // el origen se toma del propio usuario objetivo, nunca de un valor que mande el cliente)
+      if (transferTo && targetUser.reclutador_id) {
+        await client.query(
+          `UPDATE candidatos SET asignado_a_id = $1 WHERE asignado_a_id = $2`,
+          [transferTo, targetUser.reclutador_id]
+        );
+        await client.query(
+          `UPDATE mensajes_bandeja SET asignado_a_id = $1, updated_at = NOW() WHERE asignado_a_id = $2`,
+          [transferTo, targetUser.reclutador_id]
+        );
+      }
 
-    if (res.rowCount === 0) {
-      return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
+      // El perfil de reclutador se crea automáticamente al asignar el rol
+      // (ver POST/PATCH de este mismo archivo); al borrar el usuario debe
+      // desligarse igual de automático, si no, queda un reclutador fantasma
+      // en el módulo de Vacantes sin usuario que lo respalde.
+      if (targetUser.reclutador_id) {
+        await client.query(`DELETE FROM reclutadores WHERE id = $1`, [targetUser.reclutador_id]);
+      }
+
+      const res = await client.query(`DELETE FROM usuarios WHERE id = $1 RETURNING id`, [id]);
+
+      if (res.rowCount === 0) {
+        await client.query('ROLLBACK');
+        return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
+      }
+
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
     }
 
     return NextResponse.json({ success: true });
