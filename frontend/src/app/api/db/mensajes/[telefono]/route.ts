@@ -38,7 +38,7 @@ export async function GET(
            message_type IN ('image', 'video', 'document', 'audio', 'ptt', 'voice', 'sticker')
          )
          AND NOT (COALESCE(content, '') LIKE '[SISTEMA:%')
-       ORDER BY conversation_history.timestamp ASC
+       ORDER BY conversation_history.timestamp ASC, conversation_history.id ASC
        LIMIT 200`,
       [telefono]
     );
