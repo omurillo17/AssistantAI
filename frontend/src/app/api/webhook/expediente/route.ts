@@ -2,13 +2,13 @@ import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { candidatoMachine } from '@/lib/stateMachine';
 import { createActor } from 'xstate';
-import { verifyWebhookApiKey } from '@/lib/auth';
+import { verifyInternalApiKey } from '@/lib/auth';
 import { WAHA_BASE, WAHA_API_KEY, WAHA_SESSION } from '@/lib/waha';
 import { resolveEmpresaYGrupo } from '@/lib/empresaResolution';
 import { asignarReclutadorPorVacante } from '@/lib/asignacionReclutador';
 
 export async function POST(request: Request) {
-  if (!verifyWebhookApiKey(request)) {
+  if (!verifyInternalApiKey(request)) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
 
@@ -202,7 +202,7 @@ export async function POST(request: Request) {
     // Parseo seguro
     let parsedDatos: any = {};
     if (typeof datos_documento === 'string') {
-      try { parsedDatos = JSON.parse(datos_documento); } catch (e) { parsedDatos = {}; }
+      try { parsedDatos = JSON.parse(datos_documento); } catch { parsedDatos = {}; }
     } else if (datos_documento && typeof datos_documento === 'object') {
       parsedDatos = datos_documento;
     }
@@ -248,7 +248,9 @@ export async function POST(request: Request) {
       ) VALUES (
         $1,
         CAST($2 AS text),
-        COALESCE(NULLIF($3, ''), 'General'),
+        -- NULL (no 'General') cuando el candidato aún no ha elegido vacante:
+        -- ver la nota del UPDATE de más abajo.
+        NULLIF($3, ''),
         CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $5 ELSE NULL END,
         $6, -- resumen ia final
         CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN TRUE ELSE FALSE END,
@@ -273,7 +275,7 @@ export async function POST(request: Request) {
         CASE WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN CAST($2 AS text) ELSE NULL END,
         CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN CAST($2 AS text) ELSE NULL END,
         $19,
-        COALESCE(NULLIF($3, ''), 'General'),
+        NULLIF($3, ''),
         CASE WHEN $4 = 'INE' THEN NULLIF($20, '') ELSE NULL END,
         CASE WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN NULLIF($21, '') ELSE NULL END,
         $22,
@@ -288,8 +290,15 @@ export async function POST(request: Request) {
           WHEN candidatos.nombre IS NULL OR candidatos.nombre = '' OR candidatos.nombre = 'Candidato' THEN CAST($2 AS text)
           ELSE candidatos.nombre
         END,
-        vacante_interes = COALESCE(NULLIF($3, ''), candidatos.vacante_interes, 'General'),
-        vacante_solicitada = COALESCE(NULLIF($3, ''), candidatos.vacante_solicitada, candidatos.vacante_interes, 'General'),
+        -- Sin 'General' como último recurso: escribirlo aquí anulaba el filtro
+        -- de placeholders de arriba (safe_vacante ya llega vacío cuando no se
+        -- conoce la vacante) y dejaba 'General' guardado como si fuera una
+        -- vacante real. definir_agenda lo leía como "vacante desconocida" y
+        -- mandaba la cita al reclutador de respaldo; el bot además le decía al
+        -- candidato "tu entrevista para la vacante de General".
+        -- NULL es la respuesta honesta: todavía no eligió vacante.
+        vacante_interes = COALESCE(NULLIF($3, ''), candidatos.vacante_interes),
+        vacante_solicitada = COALESCE(NULLIF($3, ''), candidatos.vacante_solicitada, candidatos.vacante_interes),
         experiencia = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $5 ELSE candidatos.experiencia END,
         tiene_cv = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN TRUE ELSE candidatos.tiene_cv END,
         cv_manual = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN CAST($8 AS jsonb) ELSE candidatos.cv_manual END,
@@ -323,7 +332,12 @@ export async function POST(request: Request) {
     const upsertRes = await pool.query(upsertQuery, [
       telefono,                 // $1
       safe_nombre,              // $2
-      vacante,                  // $3
+      // safe_vacante, NO `vacante`: el valor crudo trae el placeholder
+      // 'General' que manda el analizador cuando el documento no revela
+      // ninguna vacante. Se calculaba la versión limpia arriba pero la query
+      // seguía recibiendo la cruda, así que el filtro de placeholders no
+      // servía de nada y 'General' acababa guardado como vacante real.
+      safe_vacante,             // $3
       tipo_origen,              // $4
       experiencia,               // $5
       resumen_ia_final,         // $6

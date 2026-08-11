@@ -15,11 +15,6 @@ export const ENV = {
     if (!val) throw new Error("CRITICAL: WAHA_API_KEY is missing from environment variables.");
     return val;
   },
-  get N8N_SECRET() {
-    const val = process.env.N8N_SECRET;
-    if (!val) throw new Error("CRITICAL: N8N_SECRET is missing from environment variables.");
-    return val;
-  },
   get DATABASE_URL() {
     const val = process.env.DATABASE_URL;
     if (!val) throw new Error("CRITICAL: DATABASE_URL is missing from environment variables.");

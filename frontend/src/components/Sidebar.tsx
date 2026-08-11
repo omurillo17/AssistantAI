@@ -2,15 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useLocalStorageValue } from "@/hooks/useLocalStorageValue";
 import {
   Home,
-  Kanban,
   MessageSquare,
   Briefcase,
   Users,
   Calendar,
-  Settings,
   FolderOpen,
   ChevronLeft,
   ChevronRight,
@@ -20,13 +19,7 @@ import {
 export function Sidebar() {
   const pathname = usePathname();
   const [isExpanded, setIsExpanded] = useState(false);
-  const [userRole, setUserRole] = useState("");
-
-  // Use effect to check root
-  useEffect(() => {
-    const role = localStorage.getItem("tci_role") || "";
-    setUserRole(role);
-  }, [pathname]);
+  const userRole = useLocalStorageValue("tci_role") || "";
 
   // Ocultar sidebar en la página de login
   if (pathname === "/login") return null;

@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 
 export function WahaStatusBanner() {
   const [isOffline, setIsOffline] = useState(false);
-  const [lastCheck, setLastCheck] = useState<Date | null>(null);
 
-  const checkStatus = async () => {
+  const checkStatus = useCallback(async () => {
     try {
       const res = await fetch("/api/waha-status");
       const data = await res.json();
@@ -16,20 +15,20 @@ export function WahaStatusBanner() {
       } else {
         setIsOffline(false);
       }
-    } catch (error) {
+    } catch {
       setIsOffline(true);
     }
-    setLastCheck(new Date());
-  };
+  }, []);
 
   useEffect(() => {
     // Check immediately on mount
-    checkStatus();
-    
+    const revisar = async () => { await checkStatus(); };
+    revisar();
+
     // Then poll every 15 seconds
-    const interval = setInterval(checkStatus, 15000);
+    const interval = setInterval(revisar, 15000);
     return () => clearInterval(interval);
-  }, []);
+  }, [checkStatus]);
 
   if (!isOffline) return null;
 

@@ -9,9 +9,11 @@ Este archivo sirve como referencia de contexto, arquitectura, comandos y convenc
 - **Frontend**: Dashboard administrativo en Next.js (App Router), React 19, TypeScript, TailwindCSS v4, Lucide React y XState.
 - **Backend / Servicios (Docker)**:
   - **PostgreSQL**: Base de datos principal (`virgo_db`).
-  - **n8n**: Motor de automatización y flujos de trabajo en segundo plano.
+  - **backend (FastAPI + Python)**: Pipeline completo de WhatsApp (ingesta, análisis de CV/INE/RFC con Gemini, agente de chat, agendamiento en Google Calendar) y el scheduler de tareas periódicas.
   - **WAHA (WhatsApp HTTP API)**: API para integraciones con WhatsApp Web.
-- **Data / Virgo Assets (`/virgo_data`)**: Scripts de base de datos SQL (`database_setup.sql`), prompts y funciones personalizadas.
+- **Data / Virgo Assets (`/virgo_data`)**: Scripts de base de datos SQL (`database_setup.sql`), prompts y el catálogo generado para la IA.
+
+> n8n fue retirado del proyecto (agosto 2026). No agregues dependencias nuevas hacia él: todo el flujo corre en `backend/`.
 
 ---
 
@@ -38,8 +40,11 @@ npm run audit
 
 ### Servicios Docker (`/`)
 ```bash
-# Iniciar todos los servicios (Postgres, n8n, WAHA) en segundo plano
+# Iniciar todos los servicios (Postgres, backend, WAHA) en segundo plano
 docker compose up -d
+
+# Reconstruir el backend tras cambiar codigo Python (no esta montado como volumen)
+docker compose up -d --build backend
 
 # Ver logs de servicios
 docker compose logs -f
@@ -56,11 +61,15 @@ docker compose down
   - `src/app/`: Rutas y páginas del App Router
   - `src/components/`: Componentes UI modulares
   - `src/lib/`: Utilidades, conexión a base de datos (`pg`), autenticación (`jose`, `bcryptjs`), validaciones (`zod`)
+- `backend/`: Servicio FastAPI (pipeline de WhatsApp)
+  - `app/chat/`: ingesta, analizador (CV/INE/RFC), agente de chat y parser
+  - `app/routers/`: webhooks entrantes (WAHA, calendario, citas)
+  - `app/scheduler.py`: jobs periodicos (outbox, limpieza, recordatorios)
 - `virgo_data/`: Recursos de datos y automatización
   - `scripts/database_setup.sql`: Esquema e inicialización de PostgreSQL
-  - `functions/`: Funciones auxiliares para flujos
   - `prompts/`: Prompts y configuraciones para agentes/IA
-- `docker-compose.yml`: Orquestación de Postgres, n8n y WAHA
+  - `data/prompt_context.json`: Catálogo de vacantes generado desde la BD
+- `docker-compose.yml`: Orquestación de Postgres, backend y WAHA
 - `.env.example`: Plantilla de variables de entorno
 
 ---

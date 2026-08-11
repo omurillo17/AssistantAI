@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { candidatoMachine, ESTADOS_VALIDOS } from '@/lib/stateMachine';
 import { createActor } from 'xstate';
-import { verifyWebhookApiKey } from '@/lib/auth';
+import { verifyInternalApiKey } from '@/lib/auth';
 import { resolveEmpresaYGrupo } from '@/lib/empresaResolution';
 import { asignarReclutadorPorVacante } from '@/lib/asignacionReclutador';
 
@@ -17,7 +17,7 @@ import { asignarReclutadorPorVacante } from '@/lib/asignacionReclutador';
 const esVerdadero = (v: unknown): boolean => v === true || v === 'true';
 
 export async function POST(request: Request) {
-  if (!verifyWebhookApiKey(request)) {
+  if (!verifyInternalApiKey(request)) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
 
@@ -182,7 +182,7 @@ export async function POST(request: Request) {
           else if (parsed.viable === false) veredicto = 'NO VIABLE';
           if (parsed.motivo) motivo_analisis = parsed.motivo;
         }
-      } catch (e) {
+      } catch {
         // Ignorar si no es JSON válido
       }
     }

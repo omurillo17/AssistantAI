@@ -1,39 +1,37 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Building2, X, Save } from "lucide-react";
+import type { Empresa } from "@/types";
 
 interface EmpresaModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  empresa: any;
+  empresa: Empresa | null;
   showToast: (msg: string, isError?: boolean) => void;
 }
 
-export default function EmpresaModal({
-  isOpen,
+// Wrapper: monta el contenido solo mientras el modal está abierto y lo remonta
+// (key) al cambiar de registro, así el formulario arranca con los valores del
+// prop y se limpia al cerrar. Antes eso se hacía copiando el prop al estado
+// desde un useEffect, lo que provoca un render en cascada
+// (react-hooks/set-state-in-effect).
+export default function EmpresaModal(props: EmpresaModalProps) {
+  if (!props.isOpen) return null;
+  return <EmpresaModalContent key={props.empresa?.id ?? "nueva"} {...props} />;
+}
+
+function EmpresaModalContent({
   onClose,
   onSuccess,
   empresa,
   showToast,
 }: EmpresaModalProps) {
-  const [nombre, setNombre] = useState("");
-  const [promptIa, setPromptIa] = useState("");
-  const [retencionDias, setRetencionDias] = useState("30");
+  const [nombre, setNombre] = useState(empresa?.nombre || "");
+  const [promptIa, setPromptIa] = useState(empresa?.prompt_ia || "");
+  const [retencionDias, setRetencionDias] = useState(
+    empresa ? String(empresa.retencion_archivos_dias ?? 30) : "30"
+  );
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (empresa && isOpen) {
-      setNombre(empresa.nombre || "");
-      setPromptIa(empresa.prompt_ia || "");
-      setRetencionDias(String(empresa.retencion_archivos_dias ?? 30));
-    } else if (!isOpen) {
-      setNombre("");
-      setPromptIa("");
-      setRetencionDias("30");
-    }
-  }, [empresa, isOpen]);
-
-  if (!isOpen) return null;
 
   const handleSaveEmpresa = async () => {
     if (!nombre) return showToast("El nombre de la empresa es obligatorio", true);
@@ -66,7 +64,7 @@ export default function EmpresaModal({
       } else {
         showToast(data.error || "Error al guardar", true);
       }
-    } catch (e) {
+    } catch {
       showToast("Error de conexión", true);
     } finally {
       setSaving(false);

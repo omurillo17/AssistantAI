@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { pool } from '@/lib/db';
 import { getSession, requireRole } from '@/lib/auth';
+import { syncPromptContextDisk } from '@/lib/syncPromptContext';
 
 export const dynamic = 'force-dynamic';
 
@@ -86,6 +87,11 @@ export async function PATCH(request: Request) {
       `UPDATE empresas SET nombre = $1, prompt_ia = $2, retencion_archivos_dias = $3 WHERE id = $4 RETURNING *`,
       [nombre, prompt_ia || '', Number.isInteger(retencion_archivos_dias) && retencion_archivos_dias > 0 ? retencion_archivos_dias : 30, id]
     );
+
+    // El agente lee `prompt_base` desde virgo_data/data/prompt_context.json,
+    // no de esta tabla: sin regenerar el archivo, el prompt editado aquí no
+    // llegaba al bot hasta que alguien guardara una vacante por otro lado.
+    await syncPromptContextDisk(id);
 
     return NextResponse.json({ success: true, empresa: res.rows[0] });
   } catch (err) {

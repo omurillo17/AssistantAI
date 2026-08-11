@@ -19,6 +19,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from app.config import ENV
 from app.db import get_pool
+from app.internal_api import auth_headers
 from app.recordatorios import job_recordatorio_entrevista, job_vigilante
 
 logger = logging.getLogger("scheduler")
@@ -35,30 +36,12 @@ _DELETE_SQL = (
     "DELETE FROM processed_webhooks WHERE processed_at < NOW() - INTERVAL '24 hours';"
 )
 
-_warned_no_key = False
-
-
-def _headers() -> dict[str, str]:
-    global _warned_no_key
-    key = ENV.N8N_API_KEY
-    if not key:
-        if not _warned_no_key:
-            logger.warning(
-                "N8N_API_KEY no está configurada: las llamadas del scheduler a "
-                "%s/api/cron/* saldrán sin header X-Api-Key (el frontend las "
-                "acepta en modo fail-open, con su propia advertencia).",
-                ENV.FRONTEND_API_BASE,
-            )
-            _warned_no_key = True
-        return {}
-    return {"X-Api-Key": key}
-
 
 async def job_process_outbox() -> None:
     url = f"{ENV.FRONTEND_API_BASE}/api/cron/process-outbox"
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.get(url, headers=_headers())
+            resp = await client.get(url, headers=auth_headers())
             resp.raise_for_status()
         logger.info("process_outbox OK: %s", resp.text)
     except Exception:
@@ -69,7 +52,7 @@ async def job_limpiar_archivos() -> None:
     url = f"{ENV.FRONTEND_API_BASE}/api/cron/limpiar-archivos"
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.get(url, headers=_headers())
+            resp = await client.get(url, headers=auth_headers())
             resp.raise_for_status()
         logger.info("limpiar_archivos OK: %s", resp.text)
     except Exception:

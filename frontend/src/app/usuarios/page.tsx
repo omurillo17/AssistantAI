@@ -1,24 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 import { Edit, Trash2 } from "lucide-react";
 import NewUserModal from "@/components/usuarios/NewUserModal";
 import EditUserModal from "@/components/usuarios/EditUserModal";
 import GroupsModal from "@/components/usuarios/GroupsModal";
 import DeleteUserModal from "@/components/usuarios/DeleteUserModal";
+import { useLocalStorageValue } from "@/hooks/useLocalStorageValue";
 
 export default function UsuariosPage() {
-  const router = useRouter();
-
   const [usuarios, setUsuarios] = useState<any[]>([]);
   const [naves, setNaves] = useState<any[]>([]);
   const [grupos, setGrupos] = useState<any[]>([]);
   const [empresas, setEmpresas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [role, setRole] = useState("USER");
-  const [myGrupoId, setMyGrupoId] = useState<string | null>(null);
-  const [myEmpresaId, setMyEmpresaId] = useState<string | null>(null);
+  const role = useLocalStorageValue("tci_role") || "USER";
+  const myGrupoId = useLocalStorageValue("tci_grupo_id");
 
   const [showNewUserModal, setShowNewUserModal] = useState(false);
   const [showGruposModal, setShowGruposModal] = useState(false);
@@ -32,17 +29,7 @@ export default function UsuariosPage() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  useEffect(() => {
-    document.title = "Gestión de Usuarios | TCi";
-    setRole(localStorage.getItem("tci_role") || "USER");
-    setMyGrupoId(localStorage.getItem("tci_grupo_id"));
-    setMyEmpresaId(localStorage.getItem("tci_empresa_id"));
-    cargarUsuarios();
-    cargarNaves();
-    cargarGrupos();
-  }, [router]);
-
-  const cargarUsuarios = async () => {
+  const cargarUsuarios = useCallback(async () => {
     try {
       const res = await fetch("/api/db/usuarios");
       if (res.ok) {
@@ -53,16 +40,16 @@ export default function UsuariosPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const cargarGrupos = async () => {
+  const cargarGrupos = useCallback(async () => {
     try {
       const res = await fetch("/api/db/grupos");
       if (res.ok) setGrupos(await res.json());
-    } catch (e) {}
-  };
+    } catch {}
+  }, []);
 
-  const cargarNaves = async () => {
+  const cargarNaves = useCallback(async () => {
     try {
       const res = await fetch("/api/db/empresas");
       if (res.ok) {
@@ -74,7 +61,15 @@ export default function UsuariosPage() {
     } catch (e) {
       console.error(e);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    document.title = "Gestión de Usuarios | TCi";
+    const cargarTodo = async () => {
+      await Promise.all([cargarUsuarios(), cargarNaves(), cargarGrupos()]);
+    };
+    cargarTodo();
+  }, [cargarUsuarios, cargarNaves, cargarGrupos]);
 
   if (loading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-500">Cargando...</div>;
 
@@ -111,6 +106,7 @@ export default function UsuariosPage() {
         <table className="w-full text-left border-collapse">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200/80">
+              <th className="px-6 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Nombre</th>
               <th className="px-6 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Usuario</th>
               <th className="px-6 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Contraseña</th>
               <th className="px-6 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Rol</th>
@@ -119,9 +115,14 @@ export default function UsuariosPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200">
-            {usuarios.filter(u => u.usuario !== 'root' && u.usuario !== 'omurillo17').map(u => (
+            {/* Sin filtro por nombre de usuario: quién puede ver a quién ya lo
+                decide la API (el superusuario protegido no se devuelve a nadie
+                más). Filtrarlo aquí por un nombre fijo además le impedía verse
+                a sí mismo, que es justo lo que sí debe poder hacer. */}
+            {usuarios.map(u => (
               <tr key={u.id} className="hover:bg-slate-50/50 transition-colors">
-                <td className="px-6 py-4 font-semibold text-slate-900">{u.usuario}</td>
+                <td className="px-6 py-4 font-semibold text-slate-900">{u.nombre || u.usuario}</td>
+                <td className="px-6 py-4 font-mono text-sm text-slate-500">{u.usuario}</td>
                 <td className="px-6 py-4">
                   <span className="font-mono text-sm bg-slate-100/80 text-slate-700 px-2.5 py-1 rounded-lg border border-slate-200/50">
                     ********

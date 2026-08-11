@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Conversacion, Mensaje, Candidato } from "@/types";
+import { useLocalStorageValue } from "./useLocalStorageValue";
 import { useTenantChange } from "./useTenant";
 
 const normalize = (str?: string | null) => str ? str.trim().toUpperCase() : "";
@@ -12,6 +13,9 @@ export function useMensajes() {
   const searchParams = useSearchParams();
 
   // ─── State ──────────────────────────────────────────────
+  const nombre = useLocalStorageValue("tci_username") || "Reclutador";
+  const reclutadorId = useLocalStorageValue("tci_reclutador_id");
+
   const [activeTab, setActiveTab] = useState<"mis_chats" | "compartida">("mis_chats");
   const [conversaciones, setConversaciones] = useState<Conversacion[]>([]);
   const [loading, setLoading] = useState(true);
@@ -21,8 +25,6 @@ export function useMensajes() {
   const [loadingChat, setLoadingChat] = useState(false);
   const [sending, setSending] = useState(false);
   const [texto, setTexto] = useState("");
-  const [nombre, setNombre] = useState("");
-  const [reclutadorId, setReclutadorId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filterVacante, setFilterVacante] = useState("");
   const [filterNave, setFilterNave] = useState("");
@@ -49,69 +51,8 @@ export function useMensajes() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  // ─── Init ───────────────────────────────────────────────
-  useEffect(() => {
-    const n = localStorage.getItem("tci_username") || "Reclutador";
-    setNombre(n);
-    setReclutadorId(localStorage.getItem("tci_reclutador_id"));
-
-    loadConversaciones();
-    loadReclutadores();
-    const tel = searchParams.get("tel");
-    if (tel) {
-      setActivePhone(tel);
-      loadChat(tel, true);
-    }
-    loadMisVacantes(n);
-  }, []);
-
-  // ─── Polling ────────────────────────────────────────────
-  useEffect(() => {
-    if (pollingRef.current) clearInterval(pollingRef.current);
-    pollingRef.current = setInterval(() => {
-      const phone = activePhoneRef.current;
-      if (phone) loadChat(phone, false);
-      loadConversaciones(false);
-    }, 4000);
-    return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
-  }, []);
-
-  // Re-cargar (sin recargar la página) cuando el usuario cambia de empresa/nave en el TopNavbar
-  useTenantChange(() => {
-    loadConversaciones();
-    loadReclutadores();
-    loadMisVacantes(nombre);
-    const phone = activePhoneRef.current;
-    if (phone) loadChat(phone, false);
-  });
-
-  // ─── URL sync ──────────────────────────────────────────
-  useEffect(() => {
-    if (activePhone) {
-      router.push(`?tel=${activePhone}`, { scroll: false });
-    }
-  }, [activePhone]);
-
-  // ─── Auto-scroll ───────────────────────────────────────
-  useEffect(() => {
-    if (chatScrollRef.current && isNearBottom.current) {
-      if (mensajes.length > prevMessagesLength.current) {
-        chatScrollRef.current.scrollTo({ top: chatScrollRef.current.scrollHeight, behavior: 'smooth' });
-      } else if (mensajes.length !== prevMessagesLength.current) {
-        chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
-      }
-    }
-    prevMessagesLength.current = mensajes.length;
-  }, [mensajes]);
-
-  const handleScroll = () => {
-    if (!chatScrollRef.current) return;
-    const { scrollTop, scrollHeight, clientHeight } = chatScrollRef.current;
-    isNearBottom.current = scrollHeight - scrollTop - clientHeight < 100;
-  };
-
   // ─── Data Loading ──────────────────────────────────────
-  const loadMisVacantes = async (nombreUser: string) => {
+  const loadMisVacantes = useCallback(async (nombreUser: string) => {
     try {
       const storedEmpresaId = localStorage.getItem("tci_empresa_id");
       const storedNaveId = localStorage.getItem("tci_nave_id");
@@ -134,9 +75,9 @@ export function useMensajes() {
     } catch (e) {
       console.error("Error cargando mis vacantes", e);
     }
-  };
+  }, []);
 
-  const loadReclutadores = async () => {
+  const loadReclutadores = useCallback(async () => {
     try {
       const storedEmpresaId = localStorage.getItem("tci_empresa_id");
       let query = "?grouped=true";
@@ -164,7 +105,7 @@ export function useMensajes() {
     } catch (e) {
       console.error("Error cargando reclutadores", e);
     }
-  };
+  }, []);
 
   const loadConversaciones = useCallback(async (showLoad = true) => {
     if (showLoad) setLoading(true);
@@ -230,6 +171,67 @@ export function useMensajes() {
       if (showLoad) setLoadingChat(false);
     }
   }, []);
+
+  // ─── Init ───────────────────────────────────────────────
+  useEffect(() => {
+    const tel = searchParams.get("tel");
+    const arrancar = async () => {
+      if (tel) {
+        setActivePhone(tel);
+        await loadChat(tel, true);
+      }
+      await Promise.all([loadConversaciones(), loadReclutadores(), loadMisVacantes(nombre)]);
+    };
+    arrancar();
+    // Solo al montar: searchParams cambia con cada navegacion y relanzaria la
+    // carga completa, y `nombre` solo se usa como semilla inicial.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadChat, loadConversaciones, loadReclutadores, loadMisVacantes]);
+
+  // ─── Polling ────────────────────────────────────────────
+  useEffect(() => {
+    if (pollingRef.current) clearInterval(pollingRef.current);
+    pollingRef.current = setInterval(() => {
+      const phone = activePhoneRef.current;
+      if (phone) loadChat(phone, false);
+      loadConversaciones(false);
+    }, 4000);
+    return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
+  }, [loadChat, loadConversaciones]);
+
+  // Re-cargar (sin recargar la página) cuando el usuario cambia de empresa/nave en el TopNavbar
+  useTenantChange(() => {
+    loadConversaciones();
+    loadReclutadores();
+    loadMisVacantes(nombre);
+    const phone = activePhoneRef.current;
+    if (phone) loadChat(phone, false);
+  });
+
+  // ─── URL sync ──────────────────────────────────────────
+  useEffect(() => {
+    if (activePhone) {
+      router.push(`?tel=${activePhone}`, { scroll: false });
+    }
+  }, [activePhone, router]);
+
+  // ─── Auto-scroll ───────────────────────────────────────
+  useEffect(() => {
+    if (chatScrollRef.current && isNearBottom.current) {
+      if (mensajes.length > prevMessagesLength.current) {
+        chatScrollRef.current.scrollTo({ top: chatScrollRef.current.scrollHeight, behavior: 'smooth' });
+      } else if (mensajes.length !== prevMessagesLength.current) {
+        chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+      }
+    }
+    prevMessagesLength.current = mensajes.length;
+  }, [mensajes]);
+
+  const handleScroll = () => {
+    if (!chatScrollRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = chatScrollRef.current;
+    isNearBottom.current = scrollHeight - scrollTop - clientHeight < 100;
+  };
 
   // ─── Chat Actions ──────────────────────────────────────
   const enviarMensaje = async () => {

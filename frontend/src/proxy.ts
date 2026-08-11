@@ -17,12 +17,15 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/_next") || // Archivos estáticos de Next.js
     pathname.startsWith("/login") || // Página de Login
     pathname.startsWith("/api/auth/login") || // Endpoint de Login
-    pathname.startsWith("/api/webhook") || // Webhooks de n8n no requieren JWT
-    pathname.startsWith("/api/upload-cv") || // Endpoints de subida de archivos de n8n no requieren JWT
-    pathname.startsWith("/api/prompt-context") || // Consumido por n8n server-to-server, protegido por x-api-key propio
-    pathname.startsWith("/api/cron") || // Disparado por n8n (Schedule Trigger), protegido por x-api-key propio
-    pathname.startsWith("/api/db/reclutador_vacantes") || // Consumido por n8n; la ruta valida sesión o x-api-key
-    pathname.startsWith("/api/db/encargados-por-nave") || // Consumido por n8n; la ruta valida sesión o x-api-key
+    // Rutas internas: las llama el backend Python server-to-server, sin sesión
+    // de navegador. No llevan JWT; se protegen con x-api-key = INTERNAL_API_KEY
+    // (ver verifyInternalApiKey en src/lib/auth.ts).
+    pathname.startsWith("/api/webhook") ||
+    pathname.startsWith("/api/upload-cv") ||
+    pathname.startsWith("/api/prompt-context") ||
+    pathname.startsWith("/api/cron") || // Disparado por el scheduler de backend
+    pathname.startsWith("/api/db/reclutador_vacantes") || // La ruta valida sesión o x-api-key
+    pathname.startsWith("/api/db/encargados-por-nave") || // La ruta valida sesión o x-api-key
     pathname.startsWith("/api/waha-status") || // Chequeo de estado de WAHA
     pathname.startsWith("/portal") || // Portal público de candidatos
     pathname.startsWith("/api/portal") || // API pública del portal de candidatos

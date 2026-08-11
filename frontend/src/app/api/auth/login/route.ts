@@ -34,7 +34,7 @@ export async function POST(request: Request) {
 
     // Query using normalized username
     const res = await pool.query(
-      `SELECT u.id, u.usuario, u.password_hash, u.rol, u.reclutador_id, u.empresa_id, u.grupo_id, g.naves_asignadas 
+      `SELECT u.id, u.usuario, u.nombre, u.password_hash, u.rol, u.reclutador_id, u.empresa_id, u.grupo_id, g.naves_asignadas
        FROM usuarios u
        LEFT JOIN grupos_reclutamiento g ON u.grupo_id = g.id 
        WHERE u.usuario = $1`,
@@ -66,10 +66,14 @@ export async function POST(request: Request) {
         .sign(secretKey);
 
       // Create response and set HttpOnly Cookie
-      const response = NextResponse.json({ 
-        success: true, 
-        usuario: user.usuario, 
-        rol: user.rol, 
+      const response = NextResponse.json({
+        success: true,
+        usuario: user.usuario,
+        // Nombre de la persona: es lo que se pinta en la interfaz. Si la
+        // cuenta es anterior a este campo, se cae al usuario para no dejar
+        // la pantalla en blanco.
+        nombre: user.nombre || user.usuario,
+        rol: user.rol,
         reclutador_id: user.reclutador_id,
         empresa_id: user.empresa_id,
         grupo_id: user.grupo_id,

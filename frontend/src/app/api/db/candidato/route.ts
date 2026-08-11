@@ -52,7 +52,7 @@ export async function GET(request: Request) {
 
   try {
     let filterClause = "telefono LIKE $1";
-    const queryParams: any[] = [`%${telefono}%`];
+    const queryParams: unknown[] = [`%${telefono}%`];
     let idx = 2;
 
     if (filter_empresa_id) {

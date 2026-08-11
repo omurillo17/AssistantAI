@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
+import type { Usuario } from "@/types";
 
 interface DeleteUserModalProps {
   isOpen: boolean;
@@ -6,12 +7,19 @@ interface DeleteUserModalProps {
   onSuccess: () => void;
   userId: number | null;
   username: string;
-  usuarios: any[];
+  usuarios: Usuario[];
   showToast: (msg: string, isError?: boolean) => void;
 }
 
-export default function DeleteUserModal({
-  isOpen,
+// Wrapper: al cerrarse desmonta el contenido, y con el desmontaje se reinicia
+// el formulario. Reiniciarlo desde un useEffect provocaba un render en cascada
+// (react-hooks/set-state-in-effect).
+export default function DeleteUserModal(props: DeleteUserModalProps) {
+  if (!props.isOpen || props.userId === null) return null;
+  return <DeleteUserModalContent {...props} />;
+}
+
+function DeleteUserModalContent({
   onClose,
   onSuccess,
   userId,
@@ -21,14 +29,6 @@ export default function DeleteUserModal({
 }: DeleteUserModalProps) {
   const [deleteTransferTo, setDeleteTransferTo] = useState("");
   const [deleting, setDeleting] = useState(false);
-
-  useEffect(() => {
-    if (!isOpen) {
-      setDeleteTransferTo("");
-    }
-  }, [isOpen]);
-
-  if (!isOpen || userId === null) return null;
 
   const ejecutarEliminar = async () => {
     setDeleting(true);
@@ -47,7 +47,7 @@ export default function DeleteUserModal({
         const data = await res.json();
         showToast(data.error || "Error al eliminar", true);
       }
-    } catch (err) {
+    } catch {
       showToast("Error de red al eliminar", true);
     } finally {
       setDeleting(false);
@@ -74,7 +74,7 @@ export default function DeleteUserModal({
           >
             <option value="">No transferir (Perder chats)</option>
             {usuarios.filter(u => u.id !== userId && u.reclutador_id).map(u => (
-              <option key={u.id} value={u.reclutador_id}>{u.usuario} ({u.rol})</option>
+              <option key={u.id} value={u.reclutador_id ?? ""}>{u.usuario} ({u.rol})</option>
             ))}
           </select>
         </div>

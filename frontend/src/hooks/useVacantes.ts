@@ -1,21 +1,22 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useState, useEffect } from "react";
 import type { Recruiter, Vacante } from "@/types";
 import { COUNTRY_CODES } from "@/types";
 import { useTenant, useTenantChange } from "./useTenant";
+import { useIsHydrated, useLocalStorageValue } from "./useLocalStorageValue";
 
 const API_URL = `/api/db/vacantes`;
 
 export function useVacantes() {
-  const router = useRouter();
   const { setTenant } = useTenant();
 
   const [recruiters, setRecruiters] = useState<Recruiter[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [myRecId, setMyRecId] = useState<string | null>(null);
+  const hidratado = useIsHydrated();
+  const rol = useLocalStorageValue("tci_role");
+  const isAdmin = rol === "ADMIN" || rol === "ROOT" || rol === "ENCARGADO";
+  const myRecId = useLocalStorageValue("tci_reclutador_id");
   const [toast, setToast] = useState<{ msg: string; isError: boolean } | null>(null);
   const [availableNaves, setAvailableNaves] = useState<{id: string, nombre: string}[]>([]);
 
@@ -53,37 +54,7 @@ export function useVacantes() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  // ─── Auth & Init ────────────────────────────────────────
-  useEffect(() => {
-    document.title = "Gestión de Vacantes | TCi";
-    const role = localStorage.getItem("tci_role");
-    setIsAdmin(role === "ADMIN" || role === "ROOT" || role === "ENCARGADO");
-    setMyRecId(localStorage.getItem("tci_reclutador_id"));
-
-    // ADMIN/ROOT administran TODA la empresa: si llegan aquí con una nave/grupo
-    // todavía seleccionado de otra página (Dashboards, Mensajes, etc.), Vacantes
-    // se veía recortado a esa nave sin que quedara claro por qué ("vacantes que
-    // nada que ver"). Al entrar aquí se resetea a "todas" -- el selector de
-    // Nave/Grupo del TopNavbar sigue funcionando normal después, para quien sí
-    // quiera filtrar mientras está en esta página.
-    // ENCARGADO no se toca: su grupo es fijo (asignado en el login), no un
-    // filtro opcional.
-    if (role === "ADMIN" || role === "ROOT") {
-      const storedEmpresaId = localStorage.getItem("tci_empresa_id");
-      setTenant(storedEmpresaId, null, null);
-    }
-
-    loadData();
-    loadNaves();
-  }, [router]);
-
-  // Re-cargar (sin recargar la página) cuando el usuario cambia de empresa/nave en el TopNavbar
-  useTenantChange(() => {
-    loadData();
-    loadNaves();
-  });
-
-  const loadNaves = async () => {
+  const loadNaves = useCallback(async () => {
     try {
       const role = localStorage.getItem("tci_role") || "USER";
       const res = await fetch("/api/db/empresas");
@@ -102,7 +73,7 @@ export function useVacantes() {
               })).filter((emp: any) => emp.naves.length > 0);
             }
           }
-        } catch (e) {}
+        } catch {}
 
         const allNaves = fetchedEmpresas.flatMap((e: any) => e.naves || []);
         setAvailableNaves(allNaves);
@@ -110,10 +81,9 @@ export function useVacantes() {
     } catch (e) {
       console.error(e);
     }
-  };
+  }, []);
 
-  // ─── Data Operations ────────────────────────────────────
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const storedEmpresaId = localStorage.getItem("tci_empresa_id");
@@ -145,12 +115,49 @@ export function useVacantes() {
 
       setRecruiters(normalized);
       showToast("Datos cargados", false);
-    } catch (e) {
+    } catch {
       showToast("Error al cargar datos de n8n.", true);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  // ─── Auth & Init ────────────────────────────────────────
+  useEffect(() => {
+    document.title = "Gestión de Vacantes | TCi";
+    // Espera a la hidratación: antes de eso no se conoce el rol y se
+    // cargarían los datos dos veces.
+    if (!hidratado) return;
+
+    // ADMIN/ROOT administran TODA la empresa: si llegan aquí con una nave/grupo
+    // todavía seleccionado de otra página (Dashboards, Mensajes, etc.), Vacantes
+    // se veía recortado a esa nave sin que quedara claro por qué ("vacantes que
+    // nada que ver"). Al entrar aquí se resetea a "todas" -- el selector de
+    // Nave/Grupo del TopNavbar sigue funcionando normal después, para quien sí
+    // quiera filtrar mientras está en esta página.
+    // ENCARGADO no se toca: su grupo es fijo (asignado en el login), no un
+    // filtro opcional.
+    if (rol === "ADMIN" || rol === "ROOT") {
+      setTenant(localStorage.getItem("tci_empresa_id"), null, null);
+    }
+
+    const cargar = async () => {
+      await Promise.all([loadData(), loadNaves()]);
+    };
+    cargar();
+    // setTenant se recrea en cada render del hook y solo escribe en
+    // localStorage; incluirlo relanzaría la carga en bucle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hidratado, rol, loadData, loadNaves]);
+
+  // Re-cargar (sin recargar la página) cuando el usuario cambia de empresa/nave en el TopNavbar
+  useTenantChange(() => {
+    loadData();
+    loadNaves();
+  });
+
+
+  // ─── Data Operations ────────────────────────────────────
 
   const saveData = async () => {
     try {
@@ -173,7 +180,7 @@ export function useVacantes() {
       if (!res.ok) throw new Error();
       showToast("✅ Cambios guardados con éxito", false);
       setTransferMap([]); // Clear transfer map after successful save
-    } catch (e) {
+    } catch {
       showToast("❌ Error al guardar en n8n.", true);
     }
   };
@@ -190,7 +197,7 @@ export function useVacantes() {
     setEditingRecId(rec.reclutador_id);
     setRNombre(rec.nombre);
 
-    let tel = rec.telefono || "";
+    const tel = rec.telefono || "";
     let matchedCode = "52";
     let matchedNum = tel;
     const sortedCodes = [...COUNTRY_CODES].sort((a, b) => b.code.length - a.code.length);

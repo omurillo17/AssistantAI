@@ -48,14 +48,23 @@ class _Env:
         return os.environ.get("FRONTEND_API_BASE") or "http://host.docker.internal:3001"
 
     @property
-    def N8N_API_KEY(self) -> str | None:
-        """Reutiliza la misma llave que n8n ya le mandaba a estos
-        endpoints. No es PYTHON_SERVICE_API_KEY (esa protege la superficie
-        ENTRANTE de backend); esta es la llave SALIENTE que backend manda
-        hacia el frontend, jugando ahora el mismo rol que jugaba n8n.
-        Opcional: si falta, frontend acepta la llamada en modo fail-open
-        (ver verifyInternalApiKey en frontend/src/lib/auth.ts)."""
-        return os.environ.get("N8N_API_KEY") or None
+    def INTERNAL_API_KEY(self) -> str | None:
+        """Llave SALIENTE que backend manda como `x-api-key` en TODAS sus
+        llamadas al frontend Next.js (/api/webhook/*, /api/upload-cv,
+        /api/prompt-context, /api/cron/*, /api/db/*). No confundir con
+        PYTHON_SERVICE_API_KEY, que protege la superficie ENTRANTE de backend.
+
+        Acepta los nombres viejos N8N_API_KEY y WEBHOOK_API_KEY como respaldo
+        para no romper despliegues que aún no renombran la variable: cuando
+        n8n orquestaba el flujo hacían falta dos llaves separadas (n8n no se
+        podía redesplegar junto con el frontend); hoy los dos extremos son
+        nuestros y se despliegan juntos, así que una sola llave basta."""
+        return (
+            os.environ.get("INTERNAL_API_KEY")
+            or os.environ.get("N8N_API_KEY")
+            or os.environ.get("WEBHOOK_API_KEY")
+            or None
+        )
 
     @property
     def GEMINI_API_KEY(self) -> str:
@@ -74,6 +83,41 @@ class _Env:
     @property
     def WAHA_BASE_URL(self) -> str:
         return os.environ.get("WAHA_BASE_URL") or "http://waha:3000"
+
+    @property
+    def WAHA_SEGUNDOS_ENTRE_MENSAJES(self) -> float:
+        """Separación mínima entre dos mensajes salientes, en segundos.
+
+        Con 8 s salen como mucho ~7 mensajes por minuto (menos aún con el
+        jitter). Meta bloqueó el número de producción por responder a muchos
+        de golpe, así que el valor por defecto es deliberadamente conservador:
+        más vale que un candidato espere medio minuto a perder la línea.
+        Poner 0 (junto con el jitter) desactiva el regulador."""
+        try:
+            return max(0.0, float(os.environ.get("WAHA_SEGUNDOS_ENTRE_MENSAJES", "8")))
+        except ValueError:
+            return 8.0
+
+    @property
+    def WAHA_JITTER_SEGUNDOS(self) -> float:
+        """Segundos aleatorios extra que se suman a la separación anterior.
+        Un ritmo exacto es tan reconocible como no esperar nada."""
+        try:
+            return max(0.0, float(os.environ.get("WAHA_JITTER_SEGUNDOS", "7")))
+        except ValueError:
+            return 7.0
+
+    @property
+    def ALERTAS_ADMIN_TELEFONO(self) -> str | None:
+        """WhatsApp del administrador del sistema (el ROOT). Recibe una copia
+        de las alertas de fallo del agente, además del reclutador afectado.
+
+        Va aquí y no en la BD porque es configuración de despliegue: tiene que
+        funcionar aunque la base esté vacía o inaccesible, que es justo cuando
+        más falta hace enterarse. Formato: solo dígitos, con código de país
+        (ej. 5213323379399). Si no se define, solo se avisa al reclutador."""
+        valor = (os.environ.get("ALERTAS_ADMIN_TELEFONO") or "").strip()
+        return valor or None
 
     @property
     def VIRGO_FILES_DIR(self) -> str:

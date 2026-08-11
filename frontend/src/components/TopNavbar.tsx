@@ -1,17 +1,18 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, UserCircle, Search, LogOut, Building2, ChevronDown, Trash2 } from "lucide-react";
-import { useEffect, useState, useRef } from "react";
+import { Bell, UserCircle, Building2, ChevronDown, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { useTenant } from "@/hooks/useTenant";
+import { useLocalStorageValue } from "@/hooks/useLocalStorageValue";
 
 export function TopNavbar() {
   const pathname = usePathname();
   const router = useRouter();
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [username, setUsername] = useState("Usuario");
-  const [role, setRole] = useState("USER");
+  const username = useLocalStorageValue("tci_username") || "Usuario";
+  const role = useLocalStorageValue("tci_role") || "USER";
   
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -25,11 +26,6 @@ export function TopNavbar() {
   const [isEmpresaMenuOpen, setIsEmpresaMenuOpen] = useState(false);
   // Solo para ADMIN: alterna entre filtrar por Nave o por Grupo de reclutamiento.
   const [filterMode, setFilterMode] = useState<"nave" | "grupo">("nave");
-
-  useEffect(() => {
-    setUsername(localStorage.getItem("tci_username") || "Usuario");
-    setRole(localStorage.getItem("tci_role") || "USER");
-  }, [pathname]);
 
   useEffect(() => {
 
@@ -65,7 +61,7 @@ export function TopNavbar() {
                 naves: emp.naves ? emp.naves.filter((n: any) => allowedNaves.includes(n.id)) : []
               })).filter((emp: any) => emp.naves.length > 0);
             }
-          } catch (e) {}
+          } catch {}
 
           setEmpresas(fetchedEmpresas);
         }
@@ -73,7 +69,7 @@ export function TopNavbar() {
       .catch(e => console.error(e));
   }, [role]);
 
-  const fetchNotifs = async () => {
+  const fetchNotifs = useCallback(async () => {
     try {
       const res = await fetch("/api/db/notificaciones");
       if (res.ok) {
@@ -81,21 +77,22 @@ export function TopNavbar() {
         setUnreadCount(data.unread || 0);
         setNotifications(data.items || []);
       }
-    } catch (e) {}
-  };
+    } catch {}
+  }, []);
 
   useEffect(() => {
-    fetchNotifs();
-    const interval = setInterval(fetchNotifs, 10000); // Check every 10 seconds
+    const cargar = async () => { await fetchNotifs(); };
+    cargar();
+    const interval = setInterval(cargar, 10000); // Check every 10 seconds
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchNotifs]);
 
   const markAllAsRead = async () => {
     setUnreadCount(0);
     setNotifications(prev => prev.map(n => ({ ...n, leida: true })));
     try {
       await fetch("/api/db/notificaciones", { method: "PATCH", body: JSON.stringify({}) });
-    } catch (e) {}
+    } catch {}
   };
 
   const deleteNotif = async (id: string, e: React.MouseEvent) => {
@@ -162,6 +159,7 @@ export function TopNavbar() {
 
   const handleLogout = () => {
     localStorage.removeItem("tci_username");
+    localStorage.removeItem("tci_login");
     localStorage.removeItem("tci_role");
     localStorage.removeItem("tci_reclutador_id");
     localStorage.removeItem("tci_naves_asignadas");

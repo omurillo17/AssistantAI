@@ -123,6 +123,67 @@ export type Toast = {
   isError: boolean;
 };
 
+// ─── Multi-tenant ──────────────────────────────────────────
+// Estos tipos describen lo que devuelven /api/db/empresas, /api/db/grupos y
+// /api/db/usuarios. Los campos opcionales lo son porque cada endpoint proyecta
+// un subconjunto distinto (p.ej. las naves solo vienen anidadas en empresas).
+
+export type Nave = {
+  id: string;
+  nombre: string;
+  rfc?: string;
+  ubicacion_maps?: string;
+  empresa_id?: string;
+  created_at?: string;
+};
+
+export type Grupo = {
+  id: string;
+  nombre: string;
+  empresa_id?: string;
+  naves_asignadas?: string[];
+  telefono_whatsapp?: string;
+  created_at?: string;
+};
+
+export type Empresa = {
+  id: string;
+  nombre: string;
+  prompt_ia?: string;
+  retencion_archivos_dias?: number;
+  naves?: Nave[];
+  grupos?: Grupo[];
+  created_at?: string;
+};
+
+export type Usuario = {
+  id: number;
+  usuario: string;
+  rol: string;
+  correo?: string | null;
+  telefono?: string | null;
+  reclutador_id?: string | null;
+  grupo_id?: string | null;
+  empresa_id?: string | null;
+  created_at?: string;
+};
+
+export type Notificacion = {
+  id: number | string;
+  tipo?: string;
+  mensaje?: string;
+  telefono?: string | null;
+  leida?: boolean;
+  created_at?: string;
+};
+
+/** Reclutadores agrupados que devuelve /api/db/reclutadores?grouped=true */
+export type GrupoReclutadores = {
+  grupo_nombre?: string;
+  empresa_nombre?: string;
+  reclutadores?: { id?: string; nombre: string; rol?: string }[];
+};
+
 // ─── Constants ─────────────────────────────────────────────
 
 export const COUNTRY_CODES = [

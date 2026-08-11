@@ -53,7 +53,7 @@ export async function POST(request: Request) {
       FROM candidatos
       WHERE (telefono ILIKE $1 OR REPLACE(telefono, '+', '') ILIKE $1)
     `;
-    const params: any[] = [searchPattern];
+    const params: unknown[] = [searchPattern];
     let idx = 2;
 
     if (empresa_id) {

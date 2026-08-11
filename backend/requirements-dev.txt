@@ -1,0 +1,9 @@
+# Dependencias solo para correr los tests (no van en la imagen de producción:
+# el Dockerfile instala únicamente requirements.txt).
+#
+#   cd backend
+#   pip install -r requirements.txt -r requirements-dev.txt
+#   pytest
+-r requirements.txt
+pytest==8.3.4
+pytest-asyncio==0.25.2

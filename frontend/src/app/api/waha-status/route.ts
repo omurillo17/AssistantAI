@@ -31,7 +31,7 @@ export async function GET() {
     } else {
       return NextResponse.json({ status: "offline", reason: "status_not_ok", code: res.status });
     }
-  } catch (error) {
+  } catch {
     return NextResponse.json({ status: "offline", reason: "network_error" });
   }
 }

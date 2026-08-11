@@ -174,7 +174,11 @@ function TarjetaConversacion({ conv, isActive, onClick }: { conv: Conversacion; 
 // ─── PÁGINA PRINCIPAL ─────────────────────────────────────
 function MensajesInner() {
   const router = useRouter();
-  const m = useMensajes();
+  // El ref se extrae aparte: si viaja dentro del objeto `m`, el compilador de
+  // React trata CUALQUIER lectura de `m.algo` durante el render como un acceso
+  // a ref (react-hooks/refs). Sacándolo, `ref={chatScrollRef}` es un paso
+  // directo de ref (permitido) y el resto de `m` queda limpio.
+  const { chatScrollRef, ...m } = useMensajes();
 
   return (
     <div className="flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 text-[#111b21] overflow-hidden" style={{ height: 'calc(100vh - 130px)' }}>
@@ -329,7 +333,7 @@ function MensajesInner() {
                   )}
                 </div>
               </div>
-              <div ref={m.chatScrollRef} onScroll={m.handleScroll} className="flex-1 overflow-y-auto px-[5%] md:px-[10%] py-6" style={{ backgroundImage: `url('https://static.whatsapp.net/rsrc.php/v3/yl/r/r_QZ352iVXR.png')`, backgroundRepeat: 'repeat', backgroundSize: '400px' }}>
+              <div ref={chatScrollRef} onScroll={m.handleScroll} className="flex-1 overflow-y-auto px-[5%] md:px-[10%] py-6" style={{ backgroundImage: `url('https://static.whatsapp.net/rsrc.php/v3/yl/r/r_QZ352iVXR.png')`, backgroundRepeat: 'repeat', backgroundSize: '400px' }}>
                 {m.loadingChat ? <div className="flex justify-center mt-10"><div className="flex items-center gap-2 text-sm text-slate-600 bg-white/90 shadow-sm px-4 py-2 rounded-full font-medium"><Loader2 size={16} className="animate-spin text-primary" /> Cargando mensajes...</div></div> : m.mensajes.map((msg: any) => <BurbujaMensaje key={msg.id} msg={msg} />)}
               </div>
               <div className="flex-shrink-0 bg-[#f0f2f5] px-4 py-3 relative z-10 border-t border-slate-200">

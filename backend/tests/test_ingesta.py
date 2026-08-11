@@ -1,0 +1,84 @@
+"""Regresión del filtro de entrada de `app.chat.ingesta`.
+
+WhatsApp entrega estados/historias, mensajes de grupo y canales por el mismo
+webhook que los mensajes de un candidato. Sin filtrarlos, cada estado publicado
+por un contacto entraba al pipeline: se gastaba una llamada a Gemini (que
+reventaba con "Unsupported MIME type: application/mp4" en los estados de video)
+y quedaba un candidato basura con teléfono "status" en la base.
+"""
+
+import time
+
+from app.chat.ingesta import _es_mensaje_valido, _es_remitente_ignorado
+
+
+def _mensaje(**payload_extra) -> dict:
+    payload = {
+        "from": "5213323379399@c.us",
+        "timestamp": time.time(),
+        "type": "chat",
+        "fromMe": False,
+    }
+    payload.update(payload_extra)
+    return {"event": "message", "payload": payload}
+
+
+# --- Remitentes que no son un candidato -------------------------------------
+
+def test_ignora_los_estados_de_whatsapp():
+    """status@broadcast son las historias de 24 h de los contactos."""
+    assert _es_remitente_ignorado("status@broadcast")
+    assert not _es_mensaje_valido(_mensaje(from_="x") | {"payload": {
+        "from": "status@broadcast", "timestamp": time.time(), "type": "chat", "fromMe": False,
+    }})
+
+
+def test_ignora_mensajes_de_grupo():
+    """El bot conversa 1 a 1; en un grupo no debe contestar."""
+    assert _es_remitente_ignorado("120363001234567890@g.us")
+    assert not _es_mensaje_valido({"event": "message", "payload": {
+        "from": "120363001234567890@g.us", "timestamp": time.time(), "type": "chat", "fromMe": False,
+    }})
+
+
+def test_ignora_canales_de_difusion():
+    assert _es_remitente_ignorado("1234567890@newsletter")
+
+
+def test_no_distingue_mayusculas_en_el_remitente():
+    assert _es_remitente_ignorado("STATUS@BROADCAST")
+
+
+def test_remitente_vacio_no_revienta():
+    assert not _es_remitente_ignorado("")
+    assert not _es_remitente_ignorado(None)  # type: ignore[arg-type]
+
+
+# --- Un candidato normal sigue pasando --------------------------------------
+
+def test_acepta_el_mensaje_de_un_candidato():
+    assert _es_mensaje_valido(_mensaje())
+
+
+def test_acepta_al_candidato_con_id_lid():
+    """WAHA entrega algunos remitentes como @lid; esos sí son personas."""
+    assert _es_mensaje_valido(_mensaje(**{"from": "28153510625455@lid"}))
+
+
+# --- Filtros que ya existían (no deben romperse) ----------------------------
+
+def test_ignora_los_mensajes_propios():
+    assert not _es_mensaje_valido(_mensaje(fromMe=True))
+
+
+def test_ignora_mensajes_viejos():
+    """Evita responder a una avalancha al reconectar la sesión."""
+    assert not _es_mensaje_valido(_mensaje(timestamp=time.time() - 300))
+
+
+def test_ignora_eventos_que_no_son_mensajes():
+    assert not _es_mensaje_valido({"event": "session.status", "payload": {}})
+
+
+def test_ignora_notificaciones_de_protocolo():
+    assert not _es_mensaje_valido(_mensaje(type="e2e_notification"))

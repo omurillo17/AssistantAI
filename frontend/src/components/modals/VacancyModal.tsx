@@ -1,7 +1,5 @@
 "use client";
 
-import type { Vacante } from "@/types";
-
 
 type Props = {
   isEditing: boolean;

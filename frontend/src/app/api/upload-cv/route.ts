@@ -2,13 +2,13 @@ import { NextResponse } from 'next/server';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import fs from 'fs';
-import { verifyWebhookApiKey } from '@/lib/auth';
+import { verifyInternalApiKey } from '@/lib/auth';
 import { sniffDocumentType } from '@/lib/file-validation';
 
 const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15 MB
 
 export async function POST(request: Request) {
-  if (!verifyWebhookApiKey(request)) {
+  if (!verifyInternalApiKey(request)) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
 
