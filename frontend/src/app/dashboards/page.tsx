@@ -171,7 +171,7 @@ export default function DashboardsPage() {
     const counts: Record<string, number> = {};
     candidatos.forEach(c => {
       const numero = (c.nave_interes || "").trim();
-      const nombre = naveNombrePorNumero[numero] || (numero && numero !== "Pendiente" ? `Sucursal ${numero}` : "Sin sucursal");
+      const nombre = naveNombrePorNumero[numero] || (numero && numero !== "Pendiente" ? `${numero}` : "Sin sucursal");
       counts[nombre] = (counts[nombre] || 0) + 1;
     });
     return Object.entries(counts)
@@ -304,7 +304,7 @@ export default function DashboardsPage() {
                   {/* FUNNEL */}
                   <div className="bg-white p-6 rounded-2xl border border-black/5 shadow-sm lg:col-span-2">
                     <h3 className="text-base font-bold text-slate-700 mb-6 flex items-center gap-2">
-                      <TrendingUp size={18} className="text-indigo-500"/> Embudo de Reclutamiento
+                      <TrendingUp size={18} className="text-indigo-500" /> Embudo de Reclutamiento
                     </h3>
                     <div className="h-72 w-full">
                       <ResponsiveContainer width="100%" height="100%">
@@ -312,7 +312,7 @@ export default function DashboardsPage() {
                           <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
                           <XAxis type="number" hide />
                           <YAxis dataKey="name" type="category" width={140} tick={{ fill: "#475569", fontSize: 12, fontWeight: 600 }} axisLine={false} tickLine={false} />
-                          <Tooltip contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }} cursor={{fill: '#f8fafc'}} />
+                          <Tooltip contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }} cursor={{ fill: '#f8fafc' }} />
                           <Bar dataKey="count" radius={[0, 6, 6, 0]} barSize={24} label={{ position: 'right', fill: '#64748b', fontWeight: 'bold' }}>
                             {kpis.funnel.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                           </Bar>
@@ -342,7 +342,7 @@ export default function DashboardsPage() {
                   {/* LINE CHART */}
                   <div className="bg-white p-6 rounded-2xl border border-black/5 shadow-sm lg:col-span-2">
                     <h3 className="text-base font-bold text-slate-700 mb-6 flex items-center gap-2">
-                      <Activity size={18} className="text-indigo-500"/> Candidatos por Día
+                      <Activity size={18} className="text-indigo-500" /> Candidatos por Día
                     </h3>
                     <div className="h-64 w-full">
                       <ResponsiveContainer width="100%" height="100%">
@@ -360,7 +360,7 @@ export default function DashboardsPage() {
                   {/* RENDIMIENTO POR RECLUTADOR */}
                   <div className="bg-white p-6 rounded-2xl border border-black/5 shadow-sm">
                     <h3 className="text-base font-bold text-slate-700 mb-6 flex items-center gap-2">
-                      <Users size={18} className="text-indigo-500"/> Rendimiento por Reclutador
+                      <Users size={18} className="text-indigo-500" /> Rendimiento por Reclutador
                     </h3>
                     <div className="space-y-4">
                       {reclutadorPerf.length === 0 ? (
@@ -391,7 +391,7 @@ export default function DashboardsPage() {
                   {/* DISTRIBUCIÓN POR NAVE */}
                   <div className="bg-white p-6 rounded-2xl border border-black/5 shadow-sm">
                     <h3 className="text-base font-bold text-slate-700 mb-6 flex items-center gap-2">
-                      <Building2 size={18} className="text-indigo-500"/> Distribución por Nave
+                      <Building2 size={18} className="text-indigo-500" /> Distribución por Nave
                     </h3>
                     <div className="h-64 w-full">
                       <ResponsiveContainer width="100%" height="100%">
@@ -399,7 +399,7 @@ export default function DashboardsPage() {
                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                           <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} angle={-15} textAnchor="end" height={50} />
                           <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                          <Tooltip contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }} cursor={{fill: '#f8fafc'}} />
+                          <Tooltip contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }} cursor={{ fill: '#f8fafc' }} />
                           <Bar dataKey="count" radius={[6, 6, 0, 0]} barSize={32}>
                             {naveDist.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                           </Bar>
@@ -411,7 +411,7 @@ export default function DashboardsPage() {
                   {/* HORAS CON MAYOR ACTIVIDAD */}
                   <div className="bg-white p-6 rounded-2xl border border-black/5 shadow-sm">
                     <h3 className="text-base font-bold text-slate-700 mb-4 flex items-center gap-2">
-                      <Clock size={18} className="text-indigo-500"/> Horas con Mayor Actividad
+                      <Clock size={18} className="text-indigo-500" /> Horas con Mayor Actividad
                     </h3>
                     {actividadHoraria.length === 0 ? (
                       <div className="h-56 flex items-center justify-center text-slate-400 text-sm italic">Sin actividad registrada en los últimos 90 días.</div>
@@ -448,7 +448,7 @@ export default function DashboardsPage() {
                 {/* BARRAS CONTRATACION */}
                 <div className="bg-white p-6 rounded-2xl border border-black/5 shadow-sm">
                   <h3 className="text-base font-bold text-slate-700 mb-6 flex items-center gap-2">
-                    <Briefcase size={18} className="text-indigo-500"/> Contrataciones por Vacante (Top 10)
+                    <Briefcase size={18} className="text-indigo-500" /> Contrataciones por Vacante (Top 10)
                   </h3>
                   <div className="h-72 w-full">
                     <ResponsiveContainer width="100%" height="100%">
@@ -456,7 +456,7 @@ export default function DashboardsPage() {
                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                         <XAxis dataKey="name" tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} />
                         <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} />
-                        <Tooltip contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }} cursor={{fill: '#f8fafc'}} />
+                        <Tooltip contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }} cursor={{ fill: '#f8fafc' }} />
                         <Bar dataKey="count" radius={[6, 6, 0, 0]} barSize={32} label={{ position: 'top', fill: '#64748b', fontWeight: 'bold' }}>
                           {kpis.barrasVacante.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                         </Bar>
@@ -468,7 +468,7 @@ export default function DashboardsPage() {
                 {/* CONVERSIÓN POR VACANTE */}
                 <div className="bg-white p-6 rounded-2xl border border-black/5 shadow-sm">
                   <h3 className="text-base font-bold text-slate-700 mb-6 flex items-center gap-2">
-                    <TrendingUp size={18} className="text-indigo-500"/> Conversión por Vacante
+                    <TrendingUp size={18} className="text-indigo-500" /> Conversión por Vacante
                   </h3>
                   {conversionPorVacante.length === 0 ? (
                     <div className="text-slate-400 text-sm italic">Sin datos de vacantes todavía.</div>
@@ -516,7 +516,7 @@ export default function DashboardsPage() {
               <div className="animate-fade-in space-y-6">
                 <div className="bg-white p-6 rounded-2xl border border-black/5 shadow-sm">
                   <h3 className="text-base font-bold text-slate-700 mb-2 flex items-center gap-2">
-                    <Bot size={18} className="text-purple-500"/> Automatización de Sofía
+                    <Bot size={18} className="text-purple-500" /> Automatización de Sofía
                   </h3>
                   <p className="text-xs text-slate-400 mb-4">Candidatos atendidos de principio a fin sin necesitar un reclutador humano.</p>
                   <div className="h-56 w-full relative">

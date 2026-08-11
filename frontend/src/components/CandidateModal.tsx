@@ -288,6 +288,25 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
               );
             })()}
 
+            {/* EXPERIENCIA EN LAS ACTIVIDADES DEL PUESTO
+                Lo que el candidato contestó cuando Sofía le leyó las actividades
+                de la vacante. Va antes de los documentos porque es lo que el
+                reclutador quiere leer para decidir si vale la pena la cita. */}
+            {(cand as any).experiencia_actividades && (
+              <div className="bg-emerald-50/60 border border-emerald-200/70 rounded-2xl p-4">
+                <h3 className="text-sm font-bold text-emerald-900 flex items-center gap-2 mb-2">
+                  <Briefcase size={18} className="text-emerald-600" />
+                  Experiencia en las actividades del puesto
+                </h3>
+                <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
+                  {(cand as any).experiencia_actividades}
+                </p>
+                <p className="text-[11px] text-emerald-700/70 mt-2">
+                  Respuesta del candidato cuando se le mostraron las actividades a realizar.
+                </p>
+              </div>
+            )}
+
             {/* DOCUMENTOS Y COMPARACIÓN INE vs RFC */}
             {(() => {
               const ineData = typeof cand.datos_ine === 'string' ? (() => { try { return JSON.parse(cand.datos_ine); } catch { return null; } })() : cand.datos_ine;
