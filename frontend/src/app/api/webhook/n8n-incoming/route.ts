@@ -32,6 +32,7 @@ export async function POST(request: Request) {
       resumen,
       cita_cancelada,
       filtros,
+      experiencia_actividades,
       cv_manual,
       fecha_entrevista,
       privacidad,
@@ -204,12 +205,14 @@ export async function POST(request: Request) {
         telefono, nombre, estado, ultima_interaccion, vacante_interes, 
         resumen_ia, filtros_tecnicos, cv_manual, fecha_entrevista, privacidad_aceptada, 
         nombre_chat, nombre_solicitud, edad, correo, experiencia, nave_interes, mensajes_bot_enviados,
-        veredicto, motivo_analisis, empresa_id, escalado, escalation_reason
+        veredicto, motivo_analisis, empresa_id, escalado, escalation_reason,
+        experiencia_actividades
       )
       VALUES (
         $1, $9, $2, NOW(), $3, $4, $5, $6, $7, $8,
         $9, $10, $11, $12, $13, $14, 1,
-        $15, $16, $17, $18, $19
+        $15, $16, $17, $18, $19,
+        NULLIF($20, '')
       )
       ON CONFLICT (telefono, empresa_id) DO UPDATE SET 
         nombre = CASE 
@@ -228,6 +231,9 @@ export async function POST(request: Request) {
         vacante_interes = COALESCE(NULLIF(TRIM(EXCLUDED.vacante_interes), ''), NULLIF(TRIM(candidatos.vacante_interes), '')),
         resumen_ia = COALESCE(NULLIF(EXCLUDED.resumen_ia, ''), candidatos.resumen_ia),
         filtros_tecnicos = COALESCE(NULLIF(EXCLUDED.filtros_tecnicos, ''), candidatos.filtros_tecnicos),
+        -- Solo se pregunta una vez, al mostrar las actividades: si el turno no
+        -- la trae, se conserva la respuesta anterior.
+        experiencia_actividades = COALESCE(NULLIF($20, ''), candidatos.experiencia_actividades),
         cv_manual = CASE WHEN EXCLUDED.cv_manual IS NOT NULL THEN EXCLUDED.cv_manual ELSE candidatos.cv_manual END,
         fecha_entrevista = COALESCE(NULLIF(EXCLUDED.fecha_entrevista, ''), candidatos.fecha_entrevista),
         privacidad_aceptada = EXCLUDED.privacidad_aceptada OR candidatos.privacidad_aceptada,
@@ -262,7 +268,8 @@ export async function POST(request: Request) {
       motivo_analisis,
       empresaId,
       esEscalado,
-      motivoEscalamiento
+      motivoEscalamiento,
+      experiencia_actividades || ''   // $20
     ]);
 
     const candidatoId = upsertRes.rows[0].id;

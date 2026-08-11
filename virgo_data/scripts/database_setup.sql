@@ -244,6 +244,11 @@ CREATE TABLE IF NOT EXISTS candidatos (
     link_cv TEXT,
 
     experiencia TEXT,
+    -- Lo que el candidato contesta cuando Sofia le lee las actividades del
+    -- puesto y le pregunta en cuáles tiene experiencia. Se guarda aparte de
+    -- `experiencia` (que sale del CV) porque es su respuesta textual sobre
+    -- ESTA vacante, y es lo que el reclutador quiere leer antes de la cita.
+    experiencia_actividades TEXT,
     veredicto VARCHAR(50),
     vacante_solicitada VARCHAR(100),
     vacante_sugerida VARCHAR(100),

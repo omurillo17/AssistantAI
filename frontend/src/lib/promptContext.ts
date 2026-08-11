@@ -57,7 +57,13 @@ function criterioFiltro(f: Filtro): string {
 // filtros estructurados que se configuran en /vacantes/[id], en vez de depender
 // de que alguien lo transcriba a mano en el campo de texto libre "detalles".
 function buildReglasEvaluacion(filtros: Filtro[]): string {
-  const activos = filtros.filter((f) => f.activo !== false && !f.es_pregunta_base);
+  // TODAS las preguntas activas, incluidas las marcadas como "pregunta base".
+  // Antes se excluían, y como las base solo se usan en el flujo "sin CV"
+  // (sección 5.3), a un candidato que mandaba su CV -- la mayoría -- nunca se
+  // le preguntaba nada: los filtros configurados en /vacantes/[id] parecían no
+  // servir para nada. Una pregunta como "¿cuentas con computadora en casa?" es
+  // un filtro real, tenga CV o no.
+  const activos = filtros.filter((f) => f.activo !== false);
   if (activos.length === 0) return '';
   const lineas = activos.map((f, i) => {
     const criterio = criterioFiltro(f);

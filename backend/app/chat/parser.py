@@ -37,6 +37,7 @@ _CLEANUP_RE = re.compile(
     r"|CITA_CONFIRMADA[\s:|]*.*?(?:[|\n]|$)"
     r"|CITA_CANCELADA[\s:|]*.*?(?:[|\n]|$)"
     r"|ENVIAR_UBICACION[\s:|]*.*?(?:[|\n]|$)"
+    r"|EXPERIENCIA_ACTIVIDADES[\s:|]*.*?(?:[|\n]|$)"
     r"|```json|```",
     re.IGNORECASE,
 )
@@ -395,6 +396,19 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
         except (json.JSONDecodeError, AttributeError):
             result["datos_cv_manual"] = {"error": "La IA formateó mal el JSON", "experiencia": "Candidato llenó solicitud manual por chat."}
             result["es_cv_manual"] = True
+
+    # EXPERIENCIA_ACTIVIDADES -- lo que contestó cuando Sofia le leyó las
+    # actividades del puesto. Se acepta la etiqueta de texto plano y la clave
+    # del JSON de etiquetas internas, igual que el resto de marcadores.
+    exp_match = re.search(
+        r'(?:EXPERIENCIA_ACTIVIDADES\s*\|\s*|"experiencia_actividades"\s*:\s*")([^"|\n]+)',
+        ai_response_str,
+        re.IGNORECASE,
+    )
+    if exp_match and exp_match.group(1):
+        experiencia_act = _strip_quotes_pipes(exp_match.group(1).strip())
+        if experiencia_act:
+            result["experiencia_actividades"] = experiencia_act
 
     # RESPUESTAS_FILTRO
     filtro_match = re.search(r"RESPUESTAS_FILTRO[\s:|]*([\s\S]*?)(?=\n[A-Z_]+\s*\||$)", ai_response_str, re.IGNORECASE)
