@@ -239,6 +239,20 @@ npm run typecheck
 - ✅ Puertos de Postgres/WAHA/backend en loopback
 - ✅ Alertas por WhatsApp cuando falla una herramienta del agente
 - ✅ 29 tests de regresión del flujo de agendamiento
+- ✅ Prompt de Sofía (`chat_prompt.md`): ya no manda "Actividades a realizar"
+  en vacantes sin ese bloque, ya no infiere respuestas de filtros (Sí/No)
+  a partir del CV sin preguntarlas, y ya no deja un turno sin mensaje tras
+  la última pregunta de filtro
+- ✅ Módulo de mensajes: se corrigió el botón "Transferir" (asignaba un id
+  equivocado y el chat quedaba huérfano), la Bandeja General ya no muestra
+  chats que otro reclutador ya tomó, el orden del historial ya no se
+  desordena entre polls, y la vista previa del chat ya refleja el último
+  mensaje real (bot o candidato)
+- ✅ Reagendar/Cancelar cita: el motivo escrito en el modal del CRM y el
+  teléfono del reclutador ahora sí llegan al candidato por WhatsApp
+  (antes el backend los descartaba en silencio)
 - ⏳ **Pendiente tuyo:** publicar la app OAuth (bloque 1)
 - ⏳ **Pendiente tuyo:** autorizar `rhumanossdvirgo@gmail.com` (bloque 2)
 - ⏳ **Pendiente tuyo:** configurar backups (bloque 3)
+- ⏳ **Pendiente tuyo:** probar en el servidor Debian 13 (GNOME) antes de
+  darlo por definitivo — es la primera vez que corre fuera de desarrollo
