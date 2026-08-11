@@ -443,6 +443,7 @@ async def _almacenar_mensajes(contacto: dict, candidato: dict, item: dict, junta
         "resumen": _extraer_resumen_n8n_incoming(item.get("resumen_generado")),
         "cita_cancelada": bool(item.get("cita_cancelada")),
         "filtros": item.get("respuestas_filtro_detectadas"),
+        "experiencia_actividades": item.get("experiencia_actividades"),
         "cv_manual": json.dumps(item["datos_cv_manual"]) if item.get("datos_cv_manual") else None,
         "fecha_entrevista": item.get("fecha_entrevista_detectada"),
         "privacidad": bool(item.get("acepto_privacidad")),
