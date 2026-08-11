@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Building2, MapPin, Plus, Trash2, Edit, X, Phone, ChevronDown, Briefcase } from "lucide-react";
+import { Building2, MapPin, Plus, Trash2, Edit, Phone, ChevronDown, Briefcase } from "lucide-react";
 import SaasGrupoModal from "@/components/saas/SaasGrupoModal";
 import AdminModal from "@/components/saas/AdminModal";
 import EmpresaModal from "@/components/saas/EmpresaModal";
 import NaveModal from "@/components/saas/NaveModal";
+import { useIsHydrated, useLocalStorageValue } from "@/hooks/useLocalStorageValue";
 
 type Nave = {
   id: string;
@@ -26,7 +27,11 @@ type Empresa = {
 
 export default function SaasAdminPage() {
   const router = useRouter();
-  const [isRoot, setIsRoot] = useState<boolean | null>(null);
+  const hidratado = useIsHydrated();
+  const rolGuardado = useLocalStorageValue("tci_role");
+  // null hasta que hidrata (en el servidor no hay localStorage): la vista
+  // muestra "cargando" mientras tanto y solo después decide si hay permiso.
+  const isRoot = hidratado ? rolGuardado === "ROOT" : null;
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [grupos, setGrupos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,46 +54,26 @@ export default function SaasAdminPage() {
   const [expandedEmpresa, setExpandedEmpresa] = useState<string | null>(null);
   const [toast, setToast] = useState<{ msg: string; isError: boolean } | null>(null);
 
-  useEffect(() => {
-    document.title = "SaaS Admin | TCi";
-    const role = localStorage.getItem("tci_role");
-    if (role === "ROOT") {
-      setIsRoot(true);
-      fetchData();
-    } else {
-      setIsRoot(false);
-    }
-  }, [router]);
-
   const showToast = (msg: string, isError: boolean = false) => {
     setToast({ msg, isError });
     setTimeout(() => setToast(null), 3000);
   };
 
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      await Promise.all([fetchEmpresas(), fetchGrupos()]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchGrupos = async () => {
+  const fetchGrupos = useCallback(async () => {
     try {
       const res = await fetch("/api/db/grupos");
       if (res.ok) setGrupos(await res.json());
     } catch (err) {
       console.error(err);
     }
-  };
+  }, []);
 
   const handleDeleteGrupo = async (grupoId: string) => {
     if (!confirm("¿Eliminar este grupo? Los reclutadores asignados a él perderán su asignación.")) return;
     try {
       const res = await fetch(`/api/db/grupos?id=${grupoId}`, { method: "DELETE" });
       if (res.ok) { showToast("Grupo eliminado"); fetchGrupos(); }
-    } catch (e) { showToast("Error", true); }
+    } catch { showToast("Error", true); }
   };
 
   const handleChangeNaveGrupo = async (naveId: string, empresaId: string, nuevoGrupoId: string) => {
@@ -127,22 +112,38 @@ export default function SaasAdminPage() {
 
       showToast("Grupo de la nave actualizado");
       fetchGrupos();
-    } catch (e) {
+    } catch {
       showToast("Error al actualizar el grupo de la nave", true);
     }
   };
 
-  const fetchEmpresas = async () => {
+  const fetchEmpresas = useCallback(async () => {
     try {
       const res = await fetch("/api/db/empresas");
       const data = await res.json();
       if (data.empresas) {
         setEmpresas(data.empresas);
       }
-    } catch (err) {
+    } catch {
       showToast("Error al cargar empresas", true);
     }
-  };
+  }, []);
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      await Promise.all([fetchEmpresas(), fetchGrupos()]);
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchEmpresas, fetchGrupos]);
+
+  useEffect(() => {
+    document.title = "SaaS Admin | TCi";
+    if (!isRoot) return;
+    const cargar = async () => { await fetchData(); };
+    cargar();
+  }, [isRoot, fetchData]);
 
   const handleDeleteEmpresa = async (id: string) => {
     if (!confirm("¿Estás seguro de eliminar esta Empresa? Se eliminarán todas sus Naves y Vacantes.")) return;
@@ -152,7 +153,7 @@ export default function SaasAdminPage() {
         showToast("Empresa eliminada");
         fetchEmpresas();
       }
-    } catch (e) {
+    } catch {
       showToast("Error al eliminar", true);
     }
   };
@@ -165,7 +166,7 @@ export default function SaasAdminPage() {
         showToast("Nave eliminada");
         fetchEmpresas();
       }
-    } catch (e) {
+    } catch {
       showToast("Error al eliminar", true);
     }
   };

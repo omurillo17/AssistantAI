@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { Plus, Trash2, Save, ChevronLeft, AlertTriangle, CheckCircle2, Users, Filter, ToggleLeft, ToggleRight, HelpCircle, X } from "lucide-react";
+import { Plus, Trash2, Save, ChevronLeft, CheckCircle2, Users, Filter, ToggleLeft, ToggleRight, HelpCircle, X } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 import type { TipoFiltro, Filtro, Vacante, Recruiter } from "@/types";
@@ -80,6 +80,17 @@ function tenantQuery() {
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
+/**
+ * Id local para un filtro recien agregado. Vive fuera del componente porque
+ * Date.now()/Math.random() son impuros y no deben ejecutarse durante el render
+ * (react-hooks/purity); aqui solo corren cuando un handler lo llama.
+ */
+let contadorFiltros = 0;
+function nuevoFiltroId(prefijo: string): string {
+  contadorFiltros += 1;
+  return `${prefijo}_${Date.now()}_${contadorFiltros}`;
+}
+
 export default function VacanteFiltrosPage() {
   const router = useRouter();
   const params = useParams();
@@ -191,9 +202,11 @@ export default function VacanteFiltrosPage() {
   }, [vacId, router]);
 
   useEffect(() => {
-    loadData();
-    loadNaves();
-  }, [loadData, loadNaves, router]);
+    const cargar = async () => {
+      await Promise.all([loadData(), loadNaves()]);
+    };
+    cargar();
+  }, [loadData, loadNaves]);
 
   // Re-cargar (sin recargar la página) cuando el usuario cambia de empresa/nave en el TopNavbar
   useTenantChange(() => {
@@ -236,7 +249,7 @@ export default function VacanteFiltrosPage() {
     if (!vacante) return;
     const existing = (vacante.filtros || []).find((f) => f.clave === template.clave);
     if (existing) { showToast("Este filtro ya está agregado", true); return; }
-    const newF: Filtro = { ...template, id: `f_${Date.now()}`, activo: true };
+    const newF: Filtro = { ...template, id: nuevoFiltroId("f"), activo: true };
     const updated = [...(vacante.filtros || []), newF];
     saveFiltros(updated);
     setShowTemplatePanel(false);
@@ -247,7 +260,7 @@ export default function VacanteFiltrosPage() {
       showToast("Completa todos los campos del filtro", true);
       return;
     }
-    const newF: Filtro = { ...newFiltro, id: `f_${Date.now()}`, activo: true };
+    const newF: Filtro = { ...newFiltro, id: nuevoFiltroId("f"), activo: true };
     const updated = [...(vacante?.filtros || []), newF];
     saveFiltros(updated);
     setNewFiltro({ clave: "", etiqueta: "", tipo: "booleano", pregunta: "", requiere_si: true });
@@ -268,7 +281,7 @@ export default function VacanteFiltrosPage() {
     if (existing) {
       updated = (vacante.filtros || []).filter((f) => f.clave !== template.clave);
     } else {
-      const newF: Filtro = { ...template, id: `fb_${Date.now()}_${Math.floor(Math.random() * 1000)}`, activo: true, es_pregunta_base: true };
+      const newF: Filtro = { ...template, id: nuevoFiltroId("fb"), activo: true, es_pregunta_base: true };
       updated = [...(vacante.filtros || []), newF];
     }
     saveFiltros(updated);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { X } from "lucide-react";
 
 interface SaasGrupoModalProps {
@@ -10,32 +10,27 @@ interface SaasGrupoModalProps {
   showToast: (msg: string, isError?: boolean) => void;
 }
 
-export default function SaasGrupoModal({
-  isOpen,
+// Wrapper: monta el contenido solo mientras el modal está abierto y lo remonta
+// (key) al cambiar de registro, así el formulario arranca con los valores del
+// prop y se limpia al cerrar. Antes eso se hacía copiando el prop al estado
+// desde un useEffect, lo que provoca un render en cascada
+// (react-hooks/set-state-in-effect).
+export default function SaasGrupoModal(props: SaasGrupoModalProps) {
+  if (!props.isOpen || !props.empresa) return null;
+  return <SaasGrupoModalContent key={props.grupo?.id ?? "nuevo"} {...props} />;
+}
+
+function SaasGrupoModalContent({
   onClose,
   onSuccess,
   empresa,
   grupo,
   showToast,
 }: SaasGrupoModalProps) {
-  const [grupoNombre, setGrupoNombre] = useState("");
-  const [grupoNaves, setGrupoNaves] = useState<string[]>([]);
-  const [grupoTelefono, setGrupoTelefono] = useState("");
+  const [grupoNombre, setGrupoNombre] = useState(grupo?.nombre || "");
+  const [grupoNaves, setGrupoNaves] = useState<string[]>(grupo?.naves_asignadas || []);
+  const [grupoTelefono, setGrupoTelefono] = useState(grupo?.telefono_whatsapp || "");
   const [savingGrupo, setSavingGrupo] = useState(false);
-
-  useEffect(() => {
-    if (isOpen && grupo) {
-      setGrupoNombre(grupo.nombre || "");
-      setGrupoNaves(grupo.naves_asignadas || []);
-      setGrupoTelefono(grupo.telefono_whatsapp || "");
-    } else if (!isOpen) {
-      setGrupoNombre("");
-      setGrupoNaves([]);
-      setGrupoTelefono("");
-    }
-  }, [isOpen, grupo]);
-
-  if (!isOpen || !empresa) return null;
 
   const isEditing = !!grupo?.id;
 
@@ -65,7 +60,7 @@ export default function SaasGrupoModal({
       } else {
         showToast("Error al guardar grupo", true);
       }
-    } catch (e) {
+    } catch {
       showToast("Error de conexión", true);
     } finally {
       setSavingGrupo(false);

@@ -157,17 +157,61 @@ CREATE TRIGGER update_vacantes_def_updated_at
 
 CREATE TABLE IF NOT EXISTS usuarios (
     id SERIAL PRIMARY KEY,
+    -- `usuario` es la credencial de inicio de sesion (sin acentos ni espacios,
+    -- ver normalizeUsername); `nombre` es como se le llama a la persona en toda
+    -- la interfaz. Separarlos permite renombrar a alguien en pantalla sin
+    -- romperle el login.
     usuario VARCHAR(100) UNIQUE NOT NULL,
+    nombre VARCHAR(255) DEFAULT '',
     password_hash TEXT NOT NULL,
     rol VARCHAR(50) DEFAULT 'USER',
     reclutador_id VARCHAR(100) REFERENCES reclutadores(id) ON DELETE SET NULL,
     grupo_id UUID REFERENCES grupos_reclutamiento(id) ON DELETE SET NULL,
     empresa_id UUID REFERENCES empresas(id) ON DELETE SET NULL,
     created_at TIMESTAMP DEFAULT NOW(),
+    -- Superusuario del sistema: invisible en el módulo de usuarios (ni para
+    -- otros ROOT), imborrable, y el único que puede otorgar el rol ROOT. Es la
+    -- cuenta de último recurso para recuperar el control de la plataforma, así
+    -- que no debe poder quedarse fuera ni por error ni por un ROOT hostil.
+    protegido BOOLEAN DEFAULT FALSE,
     CONSTRAINT valid_rol CHECK (rol IN ('ROOT', 'ADMIN', 'USER', 'RECLUTADOR', 'ENCARGADO'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_usuarios_empresa ON usuarios(empresa_id);
+
+-- Solo puede haber un superusuario protegido.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_usuarios_protegido ON usuarios(protegido) WHERE protegido;
+
+-- Defensa en profundidad: la API ya bloquea borrar o degradar al superusuario,
+-- pero esto cubre el acceso directo por SQL (psql, un script de migración, una
+-- restauración a medias). Perder esta cuenta deja al sistema sin nadie capaz de
+-- repartir el rol ROOT.
+CREATE OR REPLACE FUNCTION proteger_superusuario()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        IF OLD.protegido THEN
+            RAISE EXCEPTION 'El superusuario % no se puede eliminar', OLD.usuario;
+        END IF;
+        RETURN OLD;
+    END IF;
+
+    -- UPDATE: no se le puede quitar la marca ni degradar el rol.
+    IF OLD.protegido AND NOT NEW.protegido THEN
+        RAISE EXCEPTION 'No se puede quitar la proteccion al superusuario %', OLD.usuario;
+    END IF;
+    IF OLD.protegido AND NEW.rol <> 'ROOT' THEN
+        RAISE EXCEPTION 'El superusuario % debe conservar el rol ROOT', OLD.usuario;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_proteger_superusuario ON usuarios;
+CREATE TRIGGER trg_proteger_superusuario
+    BEFORE UPDATE OR DELETE ON usuarios
+    FOR EACH ROW
+    EXECUTE FUNCTION proteger_superusuario();
 
 -- ============================================
 -- TABLA: candidatos
@@ -641,9 +685,22 @@ VALUES (
 )
 ON CONFLICT (usuario) DO NOTHING;
 
--- Migracion: eliminar la columna de contraseñas en texto plano si existe
+-- ============================================
+-- MIGRACIONES SOBRE BASES YA EXISTENTES
+-- ============================================
+-- Los CREATE TABLE de arriba son IF NOT EXISTS, asi que NO agregan columnas
+-- nuevas a una base que ya fue creada. Toda columna que se agregue despues del
+-- primer despliegue necesita ademas su ALTER TABLE idempotente aqui.
+
+-- Eliminar la columna de contraseñas en texto plano si existe
 -- (las contraseñas solo se guardan como hash bcrypt en password_hash).
 ALTER TABLE usuarios DROP COLUMN IF EXISTS actual_password;
+
+-- Actividades del puesto que Sofia manda al candidato tras los detalles.
+ALTER TABLE vacantes_def ADD COLUMN IF NOT EXISTS funciones TEXT DEFAULT '';
+
+-- Sinonimos con los que el candidato puede referirse a la vacante.
+ALTER TABLE vacantes_def ADD COLUMN IF NOT EXISTS palabras_clave TEXT DEFAULT '';
 
 -- ============================================
 DO $$

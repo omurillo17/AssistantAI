@@ -5,42 +5,63 @@ Guía completa para levantar la plataforma desde cero. Cubre dos escenarios:
 - **Desarrollo local (Windows/Mac)** — para programar y probar.
 - **Producción (Debian 13)** — para poner el sistema en línea con usuarios reales.
 
-La plataforma tiene 4 componentes: **PostgreSQL**, **n8n**, **WAHA** (WhatsApp) y
-el **frontend Next.js**. Los tres primeros siempre corren en Docker. El frontend
-corre con `npm run dev` en desarrollo y como servicio de systemd en producción
-(deliberadamente fuera de Docker — ver sección 7).
+La plataforma tiene 4 componentes: **PostgreSQL**, **backend Python** (FastAPI),
+**WAHA** (WhatsApp) y el **frontend Next.js**. Los tres primeros siempre corren
+en Docker. El frontend corre con `npm run dev` en desarrollo y como servicio de
+systemd en producción (deliberadamente fuera de Docker — ver sección 7).
 
 ---
 
 ## Índice
 
-0. [Contenido de la carpeta `virgo_data/workflows`](#0-contenido-de-la-carpeta-virgo_dataworkflows)
+0. [Arquitectura del flujo de WhatsApp](#0-arquitectura-del-flujo-de-whatsapp)
 1. [Instalación virgen — Desarrollo local (Windows)](#1-instalación-virgen--desarrollo-local-windows)
 2. [Instalación virgen — Producción (Debian 13)](#2-instalación-virgen--producción-debian-13)
 3. [Clonar el repositorio y configurar variables de entorno](#3-clonar-el-repositorio-y-configurar-variables-de-entorno)
-4. [Levantar Postgres, n8n y WAHA (Docker)](#4-levantar-postgres-n8n-y-waha-docker)
+4. [Levantar Postgres, backend y WAHA (Docker)](#4-levantar-postgres-backend-y-waha-docker)
 5. [Levantar el Frontend (Next.js) — desarrollo](#5-levantar-el-frontend-nextjs--desarrollo)
 6. [Inicialización de la base de datos y usuario ROOT](#6-inicialización-de-la-base-de-datos-y-usuario-root)
 7. [Levantar el Frontend — producción con systemd](#7-levantar-el-frontend--producción-con-systemd)
-8. [Importar los workflows en n8n](#8-importar-los-workflows-en-n8n)
-9. [Nota sobre el calendario — cuentas de Google Calendar fijas](#9-nota-sobre-el-calendario--cuentas-de-google-calendar-fijas)
+8. [Vincular WhatsApp y probar el flujo](#8-vincular-whatsapp-y-probar-el-flujo)
+9. [Nota sobre el calendario — OAuth por reclutador](#9-nota-sobre-el-calendario--oauth-por-reclutador)
 10. [Resiliencia ante cortes de luz o reinicios](#10-resiliencia-ante-cortes-de-luz-o-reinicios)
 11. [WAHA — el dashboard y el reverse proxy](#11-waha--el-dashboard-y-el-reverse-proxy)
 12. [Checklist final](#12-checklist-final)
 
 ---
 
-## 0. Contenido de la carpeta `virgo_data/workflows`
+## 0. Arquitectura del flujo de WhatsApp
 
-| Archivo | Workflow de n8n | Función |
-|---|---|---|
-| `Orquestador.json` | Orquestador | Webhooks del CRM: candidatos, historial, cancelar/reagendar/bloquear citas, listar eventos de Google Calendar |
-| `1_Sofia - Inicio.json` | Sofia - Inicio | Punto de entrada del webhook de WhatsApp (WAHA), normaliza el mensaje entrante |
-| `2_Sofia - Analizador CV-Audio.json` | Sofia - Analizador CV-Audio | Arma el prompt (via `/api/prompt-context`), procesa CV/INE/RFC/audio |
-| `3_Sofia - Flujo de Chat.json` | Sofia - Flujo de Chat | Llama al LLM y ejecuta las etiquetas internas (agendar, escalar, etc.) |
-| `4_Sofia - Recordatorios.json` | Sofia - Recordatorios | Envía recordatorios de citas próximas (cron) |
-| `5_Sofia - Mantenimiento y Errores.json` | Sofia - Mantenimiento y Errores | Limpieza de rate-limiting, monitoreo de errores y reintento automático del outbox de WhatsApp (cron, cada 2 min) |
-| `EventosCalendario.json` | EventosCalendario | Sub-workflow: crear/borrar eventos en Google Calendar |
+Todo el pipeline de conversación vive en el **backend Python** (`backend/app`).
+n8n fue retirado del proyecto: ya no hay workflows que importar ni activar.
+
+```
+WhatsApp -> WAHA -> POST /webhook/messages (backend)
+                     |
+                     +-> ingesta.py    debounce y agrupado de mensajes rapidos
+                     +-> analizador.py CV / INE / RFC / audio (Gemini)
+                     +-> agente.py     LLM del chat y etiquetas internas
+                     +-> parser.py     extrae etiquetas y limpia la respuesta
+                     |
+                     +-> frontend Next.js (x-api-key = INTERNAL_API_KEY)
+                          /api/webhook/n8n-incoming  guarda mensaje y estado
+                          /api/webhook/expediente    actualiza el expediente
+                          /api/upload-cv             guarda el archivo
+                          /api/prompt-context        catalogo de vacantes
+                          /api/cron/*                outbox y limpieza
+```
+
+| Módulo | Función |
+|---|---|
+| `routers/whatsapp.py` | Recibe el webhook de WAHA (`/webhook/messages`) |
+| `chat/ingesta.py` | Debounce de mensajes consecutivos y ruteo por tipo |
+| `chat/analizador.py` | Procesa CV/INE/RFC/audio y arma el expediente |
+| `chat/agente.py` | Llama a Gemini y ejecuta las etiquetas internas |
+| `scheduler.py` | Cron interno: outbox cada 2 min, limpieza semanal, recordatorios |
+| `google_calendar.py` | Crear/borrar eventos con el OAuth de cada reclutador |
+
+> El nombre `/api/webhook/n8n-incoming` se conserva por compatibilidad: es la
+> ruta que ya existía y renombrarla obligaría a tocar el frontend sin ganancia.
 
 ---
 
@@ -108,7 +129,7 @@ Visual Studio Code: https://code.visualstudio.com/. Instala la extensión
 |---|---|
 | Git | Clonar el repositorio y control de versiones |
 | Node.js 20 | Correr el frontend Next.js (`npm run dev`, `npm run build`) |
-| Docker Desktop | Correr PostgreSQL, n8n y WAHA en contenedores |
+| Docker Desktop | Correr PostgreSQL, el backend Python y WAHA en contenedores |
 
 Con esto instalado, salta a la **sección 3** para clonar el repo y configurar
 las variables de entorno.
@@ -129,12 +150,13 @@ sudo apt install -y ca-certificates curl gnupg git ufw
 # Firewall: permitir SSH y los puertos que vamos a usar
 sudo ufw allow OpenSSH
 sudo ufw allow 3001/tcp   # Frontend Next.js
-sudo ufw allow 5678/tcp   # n8n (solo si necesitas acceder desde fuera)
 sudo ufw enable
 ```
 
-Si vas a usar un reverse proxy (Caddy/Nginx) para TLS, no expongas los puertos
-3001 ni 5678 directamente — en ese caso solo permite 80 y 443.
+No abras los puertos 3000 (WAHA) ni 8000 (backend) al exterior: solo se llaman
+desde la red de Docker y desde el propio host. Si vas a usar un reverse proxy
+(Caddy/Nginx) para TLS, tampoco expongas el 3001 — en ese caso solo permite 80
+y 443.
 
 ### 2.2 Docker Engine (repo oficial, no `docker.io`)
 
@@ -200,7 +222,7 @@ git clone <url-del-repo> AssistantAI
 cd AssistantAI
 ```
 
-### 3.2 Archivo `.env` de la raíz (para Docker y n8n)
+### 3.2 Archivo `.env` de la raíz (para Docker)
 
 ```bash
 cp .env.example .env
@@ -227,9 +249,10 @@ openssl rand -base64 32
 | `WAHA_API_KEY` | Autenticación contra la API de WAHA | Genera uno aleatorio |
 | `WAHA_DASHBOARD_USERNAME` | Usuario del dashboard de WAHA | Lo que quieras, no dejar `admin` |
 | `WAHA_DASHBOARD_PASSWORD` | Contraseña del dashboard de WAHA | Fuerte y distinta a las demás |
-| `N8N_ENCRYPTION_KEY` | Cifrado de credenciales en n8n | Genéralo UNA vez y **nunca lo cambies** |
-| `N8N_API_KEY` | Header `x-api-key` que n8n envía al frontend | Debe coincidir en ambos `.env` |
-| `TCI_API_BASE` | URL del frontend vista desde n8n (Docker) | `http://host.docker.internal:3001` |
+| `INTERNAL_API_KEY` | Header `x-api-key` que el backend envía al frontend | Debe coincidir en ambos `.env` |
+| `PYTHON_SERVICE_API_KEY` | Header `x-api-key` que el frontend envía al backend | Obligatoria: el backend responde 401 a todo si falta |
+| `GOOGLE_TOKEN_ENCRYPTION_KEY` | Cifra los refresh tokens de Google Calendar | Genérala UNA vez y **nunca la cambies** |
+| `GEMINI_API_KEY` | API key de Google Gemini | aistudio.google.com/apikey |
 | `TCI_EMPRESA_ID` | UUID de la empresa activa (multi-tenant) | Déjalo vacío si solo hay una empresa |
 
 ### 3.3 Archivo `frontend/.env.local` (para Next.js)
@@ -248,8 +271,9 @@ APP_PASSWORD=<contraseña de arranque, opcional>
 WAHA_API_KEY=<mismo valor que en la raíz>
 WAHA_BASE_URL=http://localhost:3000
 WAHA_SESSION=default
-N8N_SECRET=<mismo valor que en la raíz>
-N8N_API_KEY=<mismo valor que en la raíz>
+BACKEND_API_BASE=http://localhost:8000
+INTERNAL_API_KEY=<mismo valor que en la raíz>
+PYTHON_SERVICE_API_KEY=<mismo valor que en la raíz>
 ```
 
 **¿Por qué `localhost:5433` y no `5432`?** Porque `docker-compose.yml` publica
@@ -266,14 +290,14 @@ puerto 3000 del host. El frontend Next.js corre en el puerto **3001**
 | Puerto | Servicio | Quién lo usa |
 |---|---|---|
 | 3000 | WAHA (WhatsApp API) | El frontend lo llama desde el servidor |
-| 3001 | Frontend Next.js | Navegador del usuario, n8n via `host.docker.internal` |
-| 5432 | PostgreSQL (red interna Docker) | n8n dentro de Docker |
+| 3001 | Frontend Next.js | Navegador del usuario, backend via `host.docker.internal` |
+| 5432 | PostgreSQL (red interna Docker) | Backend y WAHA dentro de Docker |
 | 5433 | PostgreSQL (publicado al host) | Frontend desde el host |
-| 5678 | n8n | Navegador para administrar workflows |
+| 8000 | Backend Python (FastAPI) | WAHA y el frontend |
 
 ---
 
-## 4. Levantar Postgres, n8n y WAHA (Docker)
+## 4. Levantar Postgres, backend y WAHA (Docker)
 
 ### 4.1 Windows (Docker Desktop)
 
@@ -292,8 +316,12 @@ docker compose up -d
 docker compose ps
 ```
 
-Los tres servicios (`postgres`, `n8n`, `waha`) deben aparecer con estado `Up`
-o `healthy`.
+Los tres servicios (`postgres`, `backend`, `waha`) deben aparecer con estado
+`Up` o `healthy`. Comprueba el backend con `curl http://localhost:8000/health`.
+
+> Si cambias código de `backend/`, recuerda reconstruir la imagen:
+> `docker compose up -d --build backend`. El código no está montado como
+> volumen, va dentro de la imagen.
 
 **La primera vez** que se crea el volumen de Postgres, se ejecuta
 automáticamente `virgo_data/scripts/database_setup.sql`. Este script crea las
@@ -314,7 +342,7 @@ Debe listar las 18 tablas (candidatos, empresas, naves, reclutadores, etc.).
 ```bash
 # Ver logs de un servicio específico
 docker compose logs postgres
-docker compose logs n8n
+docker compose logs backend
 docker compose logs waha
 
 # Destruir y recrear todo (BORRA todos los datos)
@@ -323,8 +351,8 @@ docker compose up -d
 ```
 
 **Cuidado:** `docker compose down -v` borra los volúmenes (toda la base de
-datos, credenciales de n8n y sesión de WhatsApp). Solo úsalo si realmente
-quieres empezar de cero.
+datos y la sesión de WhatsApp). Solo úsalo si realmente quieres empezar de
+cero.
 
 ---
 
@@ -358,11 +386,13 @@ npm run start       # Sirve la versión compilada en localhost:3001
 
 ### 6.1 Instalación nueva (volumen de Postgres recién creado)
 
-El script `database_setup.sql` ya siembra automáticamente el usuario ROOT:
+El script `database_setup.sql` ya siembra automáticamente el usuario ROOT
+(`omurillo17`) con un hash bcrypt precalculado.
 
-- **Usuario:** `omurillo17`
-- **Contraseña:** `Gg172125`
-- **Rol:** `ROOT`
+> ⚠️ Esa contraseña semilla está en el historial de git y es pública para
+> cualquiera que tenga acceso al repositorio. **Cámbiala en cuanto entres**
+> (sección 6.3); en un despliegue nuevo, cámbiala antes de exponer el
+> frontend a internet.
 
 Entra a `http://localhost:3001/login`, inicia sesión y ve a `/saas` para dar
 de alta empresas, naves y grupos.
@@ -455,33 +485,37 @@ Con `enable`, el servicio arranca solo tras un reinicio del servidor.
 
 ---
 
-## 8. Importar los workflows en n8n
+## 8. Vincular WhatsApp y probar el flujo
 
-1. Entra a `http://localhost:5678` (o `http://<tu-servidor>:5678` en producción)
-   y crea tu cuenta de owner de n8n (solo la primera vez).
+No hay workflows que importar: el pipeline completo corre en el backend Python
+(sección 0).
 
-2. **Configura credenciales primero** (Settings → Credentials):
+1. Abre `http://localhost:3000` (dashboard de WAHA), entra con
+   `WAHA_DASHBOARD_USERNAME` / `WAHA_DASHBOARD_PASSWORD` y **escanea el QR**
+   con el WhatsApp del número que atenderá a los candidatos.
 
-   | Credencial | Tipo | Datos |
-   |---|---|---|
-   | Postgres | PostgreSQL | Host: `postgres`, puerto: `5432`, base: `virgo_db`, usuario/contraseña de tu `.env` |
-   | WAHA | HTTP Header Auth | Nombre: `Authorization`, valor: `Bearer TU_WAHA_API_KEY` |
-   | Google Calendar | OAuth2 | Una credencial por cada correo de reclutador que use calendario |
+2. Verifica que la sesión entrega los mensajes al backend:
 
-3. Importa cada archivo `.json` de `virgo_data/workflows/` (Workflows → Import
-   from File). Importa los 7 archivos.
+   ```bash
+   curl -H "X-Api-Key: TU_WAHA_API_KEY" http://localhost:3000/api/sessions
+   ```
 
-4. Abre **Orquestador** y en cada nodo de Google Calendar asigna la credencial
-   OAuth correspondiente al correo del reclutador.
+   El campo `config.webhooks[0].url` debe ser
+   `http://backend:8000/webhook/messages`. Si apunta a otro lado (por ejemplo a
+   un n8n viejo), corrígelo:
 
-5. Abre cada workflow y verifica que los nodos de Postgres tienen la credencial
-   correcta (a veces al importar se desvinculan).
+   ```bash
+   curl -X PUT http://localhost:3000/api/sessions/default \
+     -H "X-Api-Key: TU_WAHA_API_KEY" -H "Content-Type: application/json" \
+     -d '{"config":{"webhooks":[{"url":"http://backend:8000/webhook/messages","events":["message"]}]}}'
+   ```
 
-6. **Activa** (toggle "Active") los 7 workflows.
+   > `WAHA_WEBHOOK_URL` en `docker-compose.yml` solo se aplica a sesiones
+   > **nuevas**; una sesión ya creada guarda su webhook en el volumen.
 
-7. Verifica el webhook de WAHA: la variable `WAHA_WEBHOOK_URL` en
-   `docker-compose.yml` ya apunta a `http://n8n:5678/webhook/messages`, que
-   corresponde al nodo webhook de `1_Sofia - Inicio`.
+3. Da de alta al menos una empresa, una nave y una vacante desde el CRM. El
+   catálogo que ve la IA se regenera al guardar una vacante
+   (`frontend/src/lib/syncPromptContext.ts`).
 
 ### 8.1 Prueba rápida
 
@@ -491,24 +525,40 @@ bien configurado, Sofía responderá con el catálogo de vacantes.
 Si no responde, revisa en orden:
 
 1. `docker compose logs waha` → ¿Hay sesión de WhatsApp activa? (Si no, escanea el QR)
-2. n8n → Executions → ¿Llegó el webhook? ¿Hay errores?
-3. `docker compose logs n8n` → Errores de conexión a Postgres o al frontend
+2. `docker compose logs backend` → ¿Llegó el webhook? ¿Hay excepciones?
+3. ¿El frontend está corriendo en el 3001? El backend le escribe el expediente
+   y la respuesta se encola ahí.
 
 ---
 
-## 9. Nota sobre el calendario — cuentas de Google Calendar fijas
+## 9. Nota sobre el calendario — OAuth por reclutador
 
-El nodo `Webhook GCal` de `Orquestador` (usado por `/calendario` en el
-frontend) **no lee dinámicamente la tabla `reclutadores`**: consulta cuentas
-de Google Calendar cableadas a mano en los nodos de n8n.
+El calendario del CRM (`/calendario`) y el agendamiento de Sofía leen las
+credenciales de Google Calendar desde la tabla `google_calendar_credentials`,
+una por reclutador, con el refresh token cifrado con
+`GOOGLE_TOKEN_ENCRYPTION_KEY`.
 
-Si agregas un reclutador nuevo que necesite aparecer en el calendario del CRM:
+Para dar de alta un reclutador nuevo que necesite calendario:
 
-1. Abre el workflow `Orquestador` en n8n.
-2. Agrega un nodo `Google Calendar (getAll)` con la credencial OAuth del nuevo correo.
-3. Agrega un nodo `Code` que le ponga el `calendarId`.
-4. Conéctalo a la cadena de `Merge` existente.
-5. Guarda y reactiva el workflow.
+1. Asegúrate de que tenga su `calendar_id` (correo de Google) en la tabla
+   `reclutadores`.
+2. Corre el script de autorización y sigue el flujo OAuth en el navegador:
+
+   ```bash
+   cd backend
+   python scripts/authorize_recruiter.py
+   ```
+
+3. Verifica que quedó guardado:
+
+   ```bash
+   docker compose exec postgres psql -U virgo_user -d virgo_db \
+     -c "SELECT calendar_id FROM google_calendar_credentials;"
+   ```
+
+> Un reclutador sin credenciales no puede recibir citas: al agendar, el backend
+> solo considera reclutadores con OAuth guardado (ver `definir_agenda` en
+> `backend/app/chat/analizador.py`).
 
 ---
 
@@ -516,10 +566,10 @@ Si agregas un reclutador nuevo que necesite aparecer en el calendario del CRM:
 
 | Componente | Cómo se recupera | Requiere acción manual |
 |---|---|---|
-| Postgres / n8n / WAHA | `restart: always` en `docker-compose.yml` + Docker habilitado en systemd | No |
+| Postgres / backend / WAHA | `restart: always` en `docker-compose.yml` + Docker habilitado en systemd | No |
 | Frontend (producción) | `systemctl enable virgo-frontend.service` (sección 7) | No, una vez habilitado |
 | Sesión de WhatsApp | El volumen `waha_data_final` persiste la sesión, no hay que re-escanear el QR | No, salvo que WhatsApp cierre la sesión |
-| Mensajes salientes | Quedan en `cola_mensajes` (`estado='PENDIENTE'`), el workflow 5 los reintenta cada 2 min (hasta 5 intentos) | No |
+| Mensajes salientes | Quedan en `cola_mensajes` (`estado='PENDIENTE'`), el scheduler del backend los reintenta cada 2 min (hasta 5 intentos) | No |
 
 ### Diferencia Windows vs Linux
 
@@ -577,20 +627,23 @@ En `docker-compose.yml` de producción, cambia el puerto de WAHA a
 
 ### Mínimo para que funcione (desarrollo)
 
-- [ ] Docker corriendo (`docker compose ps` → postgres/n8n/waha en `Up`)
+- [ ] Docker corriendo (`docker compose ps` → postgres/backend/waha en `Up`)
 - [ ] `npm run dev` en `frontend/` → responde en `http://localhost:3001`
-- [ ] Login con `omurillo17` / `Gg172125` funciona
+- [ ] Login con el usuario ROOT funciona
 - [ ] `/saas` carga sin errores
 - [ ] Al menos una empresa, una nave y una vacante dadas de alta
 
 ### Completo para producción
 
-- [ ] `docker compose ps` → postgres/n8n/waha en estado `Up`/`healthy`
+- [ ] `docker compose ps` → postgres/backend/waha en estado `Up`/`healthy`
 - [ ] `systemctl status virgo-frontend` → `active (running)`, responde en `http://<servidor>:3001`
-- [ ] Login con `omurillo17` / `Gg172125` funciona → `/saas` carga
+- [ ] Login con el usuario ROOT funciona → `/saas` carga
 - [ ] Contraseña del usuario ROOT cambiada desde la UI
-- [ ] Los 7 workflows de n8n están **activos** y sin errores de credenciales
-- [ ] `ReintentoOutbox` (workflow 5) corre cada 2 min sin error (revisar Executions en n8n)
+- [ ] `curl http://localhost:8000/health` responde OK
+- [ ] `docker compose logs backend | grep scheduler` → los 5 jobs programados
+- [ ] `process_outbox` corre cada 2 min sin `ConnectError` (necesita el frontend arriba)
+- [ ] `INTERNAL_API_KEY` definida con el MISMO valor en `.env` y `frontend/.env.local`
+      (si falta, los logs del frontend avisan que las rutas internas quedan abiertas)
 - [ ] WAHA vinculado a un número de WhatsApp (QR escaneado)
 - [ ] Puerto 3000 de WAHA NO expuesto públicamente sin reverse proxy
 - [ ] `sudo reboot` de prueba: todos los servicios vuelven solos
@@ -609,22 +662,30 @@ En `docker-compose.yml` de producción, cambia el puerto de WAHA a
 - Verifica que el usuario y contraseña coinciden con `DB_POSTGRESDB_USER` y
   `DB_POSTGRESDB_PASSWORD` del `.env` de la raíz
 
-### n8n no puede llamar al frontend (`ECONNREFUSED`)
+### El backend no puede llamar al frontend (`ConnectError`)
 
-El contenedor de n8n accede al frontend vía `host.docker.internal:3001`. Si
-falla:
+Síntoma típico en `docker compose logs backend`:
+`process_outbox falló al llamar http://host.docker.internal:3001/api/cron/process-outbox`.
 
+- Lo más común: **el frontend no está corriendo**. Levanta `npm run dev` (o el
+  servicio de systemd en producción).
 - **Windows**: Docker Desktop ya resuelve `host.docker.internal` automáticamente.
 - **Linux**: el `docker-compose.yml` ya incluye `extra_hosts: host.docker.internal:host-gateway`.
-  Verifica con: `docker compose exec n8n ping -c 1 host.docker.internal`
-- El frontend debe estar corriendo y escuchando en `0.0.0.0:3001` (no solo
-  `127.0.0.1`). En desarrollo, `npm run dev` ya usa `-H 0.0.0.0` en `package.json`.
+  Verifica con: `docker compose exec backend ping -c 1 host.docker.internal`
+- El frontend debe escuchar en `0.0.0.0:3001` (no solo `127.0.0.1`). En
+  desarrollo, `npm run dev` ya usa `-H 0.0.0.0` en `package.json`.
+
+### El frontend responde 401 a las llamadas del backend
+
+`INTERNAL_API_KEY` no coincide entre `.env` (raíz, la lee el contenedor del
+backend) y `frontend/.env.local`. Deben ser idénticas. Tras cambiarlas:
+`docker compose up -d --build backend` y reinicia el frontend.
 
 ### WAHA no recibe mensajes de WhatsApp
 
 1. Verifica la sesión: `curl http://localhost:3000/api/sessions` (con tu API key)
 2. Si no hay sesión, abre `http://localhost:3000` en el navegador y escanea el QR
-3. Verifica que `WAHA_WEBHOOK_URL` apunta a `http://n8n:5678/webhook/messages`
+3. Verifica que el webhook de la sesión apunta al backend (sección 8, paso 2)
 
 ### "No hay vacantes disponibles" cuando sí las hay
 
@@ -636,12 +697,13 @@ falla:
 
 ### Quiero empezar TODO de cero (nuclear option)
 
-Esto borra la base de datos, credenciales de n8n y sesión de WhatsApp:
+Esto borra la base de datos y la sesión de WhatsApp:
 
 ```bash
 docker compose down -v
-docker compose up -d
+docker compose up -d --build
 ```
 
-Después tendrás que reimportar los workflows en n8n (sección 8), re-escanear
-el QR de WhatsApp, y dar de alta empresas/naves/vacantes desde cero.
+Después tendrás que re-escanear el QR de WhatsApp (sección 8), volver a
+autorizar los calendarios de los reclutadores (sección 9) y dar de alta
+empresas/naves/vacantes desde cero.

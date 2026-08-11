@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useCallback, useEffect, useState, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Calendar, dateFnsLocalizer, View, Views } from "react-big-calendar";
-import { format, parse, startOfWeek, getDay, addMonths, subMonths, addWeeks, subWeeks, addDays, subDays, startOfMonth } from "date-fns";
+import { format, parse, startOfWeek, getDay, addMonths, subMonths, addWeeks, subWeeks, addDays, subDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { MessageSquare, ChevronDown, ChevronRight, XCircle, ChevronLeft, RefreshCw, Calendar as CalendarIcon, LayoutList } from "lucide-react";
 import "react-big-calendar/lib/css/react-big-calendar.css";
@@ -18,10 +18,9 @@ const localizer = dateFnsLocalizer({
   locales,
 });
 
-const N8N_BASE_URL = "/api/n8n";
 const BACKEND_BASE_URL = "/api/backend";
 
-import type { Candidato, ChatMessage } from "@/types";
+import type { Candidato } from "@/types";
 
 interface CalendarEvent {
   id: string;
@@ -152,29 +151,16 @@ export default function CalendarioPage() {
   const [blockTitle, setBlockTitle] = useState("Vacaciones / Bloqueo");
   const [blocking, setBlocking] = useState(false);
 
-  // Modal de chat
-  const [isChatOpen, setIsChatOpen] = useState(false);
-  const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
-  const [loadingChat, setLoadingChat] = useState(false);
-
   // Vista del calendario
   const [view, setView] = useState<View>(Views.MONTH);
   const [date, setDate] = useState(new Date());
-
-  useEffect(() => {
-    document.title = "Calendario Entrevistas | TCi";
-    loadData();
-  }, [router]);
-
-  // Re-cargar (sin recargar la página) cuando el usuario cambia de empresa/grupo en el TopNavbar
-  useTenantChange(() => loadData());
 
   const showToast = (msg: string, isError: boolean) => {
     setToast({ msg, isError });
     setTimeout(() => setToast(null), 3500);
   };
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const storedEmpresaId = localStorage.getItem("tci_empresa_id");
@@ -241,7 +227,18 @@ export default function CalendarioPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    document.title = "Calendario Entrevistas | TCi";
+    const cargar = async () => { await loadData(); };
+    cargar();
+  }, [loadData]);
+
+  // Re-cargar (sin recargar la página) cuando el usuario cambia de empresa/grupo en el TopNavbar
+  useTenantChange(() => loadData());
+
+
 
   // ── Citas huérfanas ──────────────────────────────────────────────────────
   const orphanedCandidatoIds = useMemo(() => {
@@ -314,7 +311,7 @@ export default function CalendarioPage() {
         };
       }).filter(Boolean) as CalendarEvent[];
 
-    const parsedGcalEvents = googleEvents.map((ge) => {
+    const parsedGcalEvents = googleEvents.map((ge, idx) => {
       let nombre = ge.title || ge.summary || "Candidato";
       let vacante = "Sin especificar";
       let telefono = "No registrado";
@@ -347,7 +344,7 @@ export default function CalendarioPage() {
       ).toLowerCase();
 
       return {
-        id: ge.id || Math.random().toString(),
+        id: ge.id || `gcal-sin-id-${idx}`,
         title: ge.title || ge.summary || "Entrevista",
         start: new Date(ge.start?.dateTime || ge.start?.date || ge.start || new Date()),
         end: new Date(ge.end?.dateTime || ge.end?.date || ge.end || new Date()),
@@ -397,7 +394,7 @@ export default function CalendarioPage() {
     }
 
     return allEvents;
-  }, [candidatos, googleEvents, myCalId, orphanedCandidatoIds, recruiterColors]);
+  }, [candidatos, googleEvents, myCalId, orphanedCandidatoIds, recruiterColors, recruiterIdToEmail]);
 
   const formatVisualDate = (d: Date) => format(d, "dd/MM/yyyy HH:mm");
 
@@ -867,7 +864,7 @@ export default function CalendarioPage() {
       )}
 
       {/* ─── MODAL DETALLE EVENTO ─── */}
-      {selectedEvent && !isChatOpen && (
+      {selectedEvent && (
         <div
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000]"
           onClick={() => setSelectedEvent(null)}

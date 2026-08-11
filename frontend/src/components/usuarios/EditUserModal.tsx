@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 
 interface EditUserModalProps {
   isOpen: boolean;
@@ -12,8 +12,33 @@ interface EditUserModalProps {
   showToast: (msg: string, isError?: boolean) => void;
 }
 
-export default function EditUserModal({
-  isOpen,
+/**
+ * Separa un telefono guardado (lada + numero) en sus dos partes, replicando las
+ * ladas que maneja el formulario. Es puro: se llama al inicializar el estado,
+ * no hace falta un efecto que copie el prop al estado.
+ */
+function separarTelefono(fullPhone: string): { prefix: string; num: string } {
+  if (fullPhone.startsWith("521")) return { prefix: "521", num: fullPhone.substring(3) };
+  if (fullPhone.startsWith("502")) return { prefix: "502", num: fullPhone.substring(3) };
+  if (fullPhone.startsWith("52")) return { prefix: "52", num: fullPhone.substring(2) };
+  if (["57", "54", "56", "58", "51"].some(l => fullPhone.startsWith(l))) {
+    return { prefix: fullPhone.substring(0, 2), num: fullPhone.substring(2) };
+  }
+  if (fullPhone.startsWith("1")) return { prefix: "1", num: fullPhone.substring(1) };
+  return { prefix: "521", num: fullPhone };
+}
+
+// Wrapper: monta el contenido solo mientras el modal está abierto y lo remonta
+// (key) al cambiar de usuario, así el formulario arranca con los datos del prop
+// y se limpia al cerrar. Antes eso se hacía copiando el prop al estado desde un
+// useEffect, lo que provoca un render en cascada
+// (react-hooks/set-state-in-effect).
+export default function EditUserModal(props: EditUserModalProps) {
+  if (!props.isOpen || !props.user) return null;
+  return <EditUserModalContent key={props.user.id} {...props} />;
+}
+
+function EditUserModalContent({
   onClose,
   onSuccess,
   user,
@@ -26,68 +51,18 @@ export default function EditUserModal({
   const creatorRole = typeof window !== 'undefined' ? localStorage.getItem("tci_role") : "USER";
   const creatorEmpresaId = typeof window !== 'undefined' ? localStorage.getItem("tci_empresa_id") : null;
 
-  const [newRol, setNewRol] = useState("");
+  const telefonoInicial = separarTelefono(user.telefono || "");
+
+  const [newRol, setNewRol] = useState(user.rol || "");
+  const [nombreInput, setNombreInput] = useState(user.nombre || "");
   const [newPassword, setNewPassword] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
-  const [editingCorreo, setEditingCorreo] = useState("");
-  const [editingTelefono, setEditingTelefono] = useState("");
-  const [editingTelPrefix, setEditingTelPrefix] = useState("521");
+  const [editingCorreo, setEditingCorreo] = useState(user.correo || "");
+  const [editingTelefono, setEditingTelefono] = useState(telefonoInicial.num);
+  const [editingTelPrefix, setEditingTelPrefix] = useState(telefonoInicial.prefix);
   const [editingTransferTo, setEditingTransferTo] = useState("");
-  const [editingSelectedGrupo, setEditingSelectedGrupo] = useState("");
+  const [editingSelectedGrupo, setEditingSelectedGrupo] = useState(user.grupo_id || "");
   const [updating, setUpdating] = useState(false);
-
-  useEffect(() => {
-    if (user && isOpen) {
-      setNewRol(user.rol || "");
-      setNewPassword("");
-      setAdminPassword("");
-      setEditingCorreo(user.correo || "");
-
-      const fullPhone = user.telefono || "";
-      let prefix = "521";
-      let num = fullPhone;
-
-      if (fullPhone.startsWith("521")) {
-        prefix = "521";
-        num = fullPhone.substring(3);
-      } else if (fullPhone.startsWith("52")) {
-        prefix = "52";
-        num = fullPhone.substring(2);
-      } else if (fullPhone.startsWith("502")) {
-        prefix = "502";
-        num = fullPhone.substring(3);
-      } else if (
-        fullPhone.startsWith("57") ||
-        fullPhone.startsWith("54") ||
-        fullPhone.startsWith("56") ||
-        fullPhone.startsWith("58") ||
-        fullPhone.startsWith("51")
-      ) {
-        prefix = fullPhone.substring(0, 2);
-        num = fullPhone.substring(2);
-      } else if (fullPhone.startsWith("1")) {
-        prefix = "1";
-        num = fullPhone.substring(1);
-      }
-
-      setEditingTelPrefix(prefix);
-      setEditingTelefono(num);
-      setEditingTransferTo("");
-      setEditingSelectedGrupo(user.grupo_id || "");
-    }
-    if (!isOpen) {
-      setNewRol("");
-      setNewPassword("");
-      setAdminPassword("");
-      setEditingCorreo("");
-      setEditingTelefono("");
-      setEditingTelPrefix("521");
-      setEditingTransferTo("");
-      setEditingSelectedGrupo("");
-    }
-  }, [user, isOpen]);
-
-  if (!isOpen || !user) return null;
 
   const guardarEdicion = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -102,6 +77,7 @@ export default function EditUserModal({
           newPassword,
           adminPassword,
           newRol,
+          nombre: nombreInput.trim(),
           correo: editingCorreo.toLowerCase(),
           telefono: editingTelefono ? editingTelPrefix + editingTelefono : "",
           transferTo: editingTransferTo,
@@ -117,7 +93,7 @@ export default function EditUserModal({
         onSuccess();
         onClose();
       }
-    } catch (e) {
+    } catch {
       showToast("Error de red al actualizar usuario", true);
     } finally {
       setUpdating(false);
@@ -126,12 +102,35 @@ export default function EditUserModal({
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4" onClick={onClose}>
-      <div className="bg-white w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl p-6 md:p-8 shadow-2xl relative" onClick={e => e.stopPropagation()}>
-        <div className="flex justify-between items-center mb-6">
-          <h3 className="text-xl font-bold text-slate-800">Editar Usuario: {user.usuario}</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-2xl">&times;</button>
+      {/* Formato apaisado, igual que el alta: rejilla de 2 columnas desde
+          pantallas medianas, una sola columna en móvil. */}
+      <div className="bg-white w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl p-6 md:p-8 shadow-2xl relative" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-6 pb-4 border-b border-black/10">
+          <div>
+            <h3 className="text-xl font-bold text-slate-800">Editar Usuario</h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Inicia sesión como <span className="font-mono font-semibold">{user.usuario}</span> (no se puede cambiar)
+            </p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
         </div>
-        <form onSubmit={guardarEdicion} className="space-y-4">
+        <form onSubmit={guardarEdicion}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+          <div>
+            <label htmlFor="edit-user-nombre" className="block text-sm font-semibold mb-1 text-slate-600">Nombre completo</label>
+            <input
+              id="edit-user-nombre"
+              name="nombre"
+              type="text"
+              required
+              minLength={3}
+              className="w-full p-2 border rounded focus:outline-none focus:border-indigo-500 bg-slate-50 focus:bg-white transition-colors"
+              value={nombreInput}
+              onChange={(e) => setNombreInput(e.target.value)}
+            />
+            <p className="text-xs text-slate-400 mt-1">Cambiarlo no afecta cómo inicia sesión.</p>
+          </div>
+
           <div>
             <label htmlFor="edit-user-rol" className="block text-sm font-semibold mb-1 text-slate-600">Rol del Sistema</label>
             <select
@@ -150,8 +149,8 @@ export default function EditUserModal({
 
           {/* Ascenso / Edición a RECLUTADOR */}
           {(newRol === "RECLUTADOR" || newRol === "ENCARGADO") && (
-            <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-lg space-y-3">
-              <p className="text-xs text-indigo-800 font-medium">Datos del perfil CRM para este usuario:</p>
+            <div className="md:col-span-2 p-4 bg-indigo-50 border border-indigo-100 rounded-lg grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-3">
+              <p className="md:col-span-2 text-xs text-indigo-800 font-medium">Datos del perfil CRM para este usuario:</p>
               <div>
                 <label htmlFor="edit-user-email" className="block text-xs font-semibold mb-1 text-indigo-700">Correo (Google Calendar)</label>
                 <input
@@ -199,7 +198,7 @@ export default function EditUserModal({
 
           {/* Descenso de RECLUTADOR */}
           {(user.rol === "RECLUTADOR" || user.rol === "ENCARGADO") && (newRol !== "RECLUTADOR" && newRol !== "ENCARGADO") && (
-            <div className="p-4 bg-red-50 border border-red-100 rounded-lg space-y-3">
+            <div className="md:col-span-2 p-4 bg-red-50 border border-red-100 rounded-lg space-y-3">
               <p className="text-xs text-red-800 font-medium">Este usuario dejará de recibir chats. Si tiene candidatos activos, transfiérelos a:</p>
               <select
                 id="edit-user-transfer"
@@ -218,7 +217,7 @@ export default function EditUserModal({
 
           {/* Grupo Asignado (Editar Usuario) */}
           {(newRol === "RECLUTADOR" || newRol === "ENCARGADO") && (
-            <div className="pt-2">
+            <div className="md:col-span-2">
               <label htmlFor="edit-user-grupo" className="block text-sm font-semibold mb-2 text-slate-600">Grupo de Reclutamiento</label>
               <select
                 id="edit-user-grupo"
@@ -253,7 +252,7 @@ export default function EditUserModal({
             </div>
           )}
 
-          <div>
+          <div className="md:col-span-2">
             <label htmlFor="edit-user-new-password" className="block text-sm font-semibold mb-1 text-slate-600">Nueva Contraseña (Opcional)</label>
             <input
               id="edit-user-new-password"
@@ -267,7 +266,7 @@ export default function EditUserModal({
             />
           </div>
 
-          <div className="pt-4 border-t border-slate-100">
+          <div className="md:col-span-2 pt-4 border-t border-slate-100">
             <label htmlFor="edit-user-admin-password" className="block text-sm font-semibold mb-1 text-red-500">Autorización Requerida</label>
             <p className="text-xs text-slate-500 mb-2">Ingresa tu contraseña de Administrador para confirmar los cambios.</p>
             <input
@@ -282,8 +281,10 @@ export default function EditUserModal({
             />
           </div>
 
-          <div className="flex gap-3 mt-6">
-            <button 
+          </div>
+
+          <div className="flex gap-3 mt-8 pt-4 border-t border-black/10">
+            <button
               type="button"
               onClick={onClose}
               className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded transition-colors"

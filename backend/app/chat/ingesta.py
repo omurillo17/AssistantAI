@@ -20,20 +20,11 @@ from app import waha_client
 from app.chat import agente, analizador
 from app.config import ENV
 from app.db import get_pool
+from app.internal_api import auth_headers
 
 logger = logging.getLogger("ingesta")
 
 _TEST_PHONE = "5213323379399"
-
-# --- Debounce de mensajes rápidos consecutivos ------------------------------
-# En n8n, el camino MsjCorto -> JuntarMsj pasaba por varias llamadas de red
-# (WAHA, catálogo de vacantes) que sin querer daban tiempo a que un segundo
-# mensaje llegara antes de que JuntarMsj corriera. En Python el camino de
-# texto plano es más rápido (sin llamada a Gemini, catálogo local), así que
-# ese colchón casi desaparece -- sin esto, 2 mensajes seguidos generaban 2
-# respuestas en vez de 1. Debounce "trailing" en memoria: cada mensaje
-# empuja el deadline hacia adelante; solo la última tarea en despertar sin
-# más empujones procesa (recogiendo todo lo acumulado vía JuntarMsj).
 _DEBOUNCE_SECONDS = 8.0
 _debounce_deadlines: dict[str, float] = {}
 _debounce_lock = asyncio.Lock()
@@ -45,10 +36,6 @@ async def _procesar_con_debounce(telefono: str, tarea, al_primero=None) -> None:
         _debounce_deadlines[telefono] = time.monotonic() + _DEBOUNCE_SECONDS
 
     if not ya_pendiente and al_primero is not None:
-        # Solo en el primer mensaje del grupo -- avisa "escribiendo..." de
-        # inmediato en vez de hasta que se resuelva el debounce, para que el
-        # candidato no vea puro silencio mientras Sofía "espera" a que
-        # termine de escribir.
         try:
             await al_primero()
         except Exception:
@@ -79,6 +66,24 @@ _MENSAJE_3_FALTAS = (
 )
 
 
+# Remitentes que no son un candidato escribiéndole al bot. WhatsApp entrega
+# todo por el mismo webhook, así que sin este filtro los estados/historias que
+# publican los contactos entraban al pipeline como si fueran mensajes: se
+# gastaba una llamada a Gemini por cada uno (que además reventaba con
+# "Unsupported MIME type: application/mp4" en los estados de video) y se creaba
+# un candidato basura con teléfono "status".
+_SUFIJOS_REMITENTE_IGNORADO = (
+    "@broadcast",    # status@broadcast: estados/historias de 24 h
+    "@g.us",         # grupos: el bot conversa 1 a 1, no en grupos
+    "@newsletter",   # canales de difusión
+)
+
+
+def _es_remitente_ignorado(remitente: str) -> bool:
+    remitente = (remitente or "").lower()
+    return any(remitente.endswith(sufijo) for sufijo in _SUFIJOS_REMITENTE_IGNORADO)
+
+
 def _es_mensaje_valido(body: dict) -> bool:
     payload = body.get("payload") or {}
     if "message" not in (body.get("event") or ""):
@@ -89,6 +94,9 @@ def _es_mensaje_valido(body: dict) -> bool:
     if payload.get("type") in ("protocol", "e2e_notification"):
         return False
     if payload.get("fromMe"):
+        return False
+    if _es_remitente_ignorado(payload.get("from") or ""):
+        logger.debug("mensaje ignorado por remitente: %s", payload.get("from"))
         return False
     return True
 
@@ -121,9 +129,8 @@ async def _reset_sofia_test() -> None:
 async def _es_reclutador(remitente_id: str) -> bool:
     try:
         url = f"{ENV.FRONTEND_API_BASE}/api/db/reclutador_vacantes"
-        headers = {"x-api-key": ENV.N8N_API_KEY} if ENV.N8N_API_KEY else {}
         async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(url, headers=headers)
+            resp = await client.get(url, headers=auth_headers())
             if resp.status_code != 200:
                 return False
             equipo = resp.json()
@@ -222,7 +229,12 @@ async def procesar_webhook(body: dict) -> None:
     await _actualizar_rate_limiting(contacto.get("number") or payload.get("from", "").split("@")[0])
 
     number = contacto.get("number")
-    if not number:
+    # Solo dígitos: un remitente que no sea un teléfono real (p.ej. "status" de
+    # status@broadcast) creaba filas basura en `candidatos` con ese texto como
+    # teléfono. El filtro de remitentes de arriba ya los descarta; esto cubre
+    # cualquier otro identificador especial que WhatsApp añada en el futuro.
+    if not number or not str(number).isdigit():
+        logger.debug("procesar_webhook: remitente sin teléfono válido (%r), se ignora", number)
         return
 
     pool = get_pool()
@@ -268,7 +280,7 @@ async def analizador_y_chat(body: dict, contacto: dict, candidato: dict) -> None
     if resultado_media["mensaje_para_agente"] is not None:
         candidato = await _obtener_candidato(contacto.get("number")) or candidato
 
-    system_prompt = analizador.cargar_prompt(payload, contacto, candidato)
+    system_prompt = await analizador.cargar_prompt(payload, contacto, candidato)
     agenda = await analizador.definir_agenda(
         candidato.get("nave_interes"),
         candidato.get("vacante_interes"),

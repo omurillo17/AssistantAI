@@ -3,10 +3,17 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Save, RotateCcw, Eye, EyeOff, Sparkles, FileText, AlertCircle, CheckCircle } from "lucide-react";
+import { useIsHydrated, useLocalStorageValue } from "@/hooks/useLocalStorageValue";
 
 export default function PromptEditorPage() {
   const router = useRouter();
-  const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
+  const hidratado = useIsHydrated();
+  const rolGuardado = useLocalStorageValue("tci_role");
+  // null hasta que hidrata (en el servidor no hay localStorage): la vista
+  // muestra "cargando" mientras tanto y solo después decide si hay permiso.
+  const isAuthorized = hidratado
+    ? ["ROOT", "ADMIN", "ENCARGADO"].includes(rolGuardado || "")
+    : null;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -15,6 +22,9 @@ export default function PromptEditorPage() {
   const [promptText, setPromptText] = useState("");
   const [originalText, setOriginalText] = useState("");
   const [previewMode, setPreviewMode] = useState(false);
+  // true mientras se muestra la plantilla global porque la empresa todavía no
+  // ha guardado un prompt propio.
+  const [esPlantilla, setEsPlantilla] = useState(false);
 
   // Toast
   const [toast, setToast] = useState<{ msg: string; isError: boolean } | null>(null);
@@ -28,61 +38,65 @@ export default function PromptEditorPage() {
   const lineCount = promptText.split("\n").length;
   const hasChanges = promptText !== originalText;
 
-  useEffect(() => {
-    document.title = "Configurar Prompt IA | TCi";
-    const role = localStorage.getItem("tci_role");
-    if (role === "ROOT" || role === "ADMIN" || role === "ENCARGADO") {
-      setIsAuthorized(true);
-      fetchPrompt();
-    } else {
-      setIsAuthorized(false);
-    }
-  }, []);
-
-  const fetchPrompt = async () => {
+  const fetchPrompt = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/db/empresas");
+      // /api/prompts resuelve la empresa desde la sesión. Antes se pedía la
+      // lista completa y se tomaba `empresas[0]`, así que un ADMIN podía
+      // acabar editando el prompt de OTRA empresa.
+      const res = await fetch("/api/prompts");
       const data = await res.json();
-      if (data.empresas && data.empresas.length > 0) {
-        const emp = data.empresas[0];
-        setEmpresaId(emp.id);
-        setEmpresaNombre(emp.nombre);
-        setPromptText(emp.prompt_ia || "");
-        setOriginalText(emp.prompt_ia || "");
+      if (!res.ok) {
+        showToast(data.error || "Error al cargar el prompt", true);
+        return;
       }
-    } catch (err) {
+      setEmpresaId(data.empresa_id);
+      setEmpresaNombre(data.empresa_nombre);
+      setPromptText(data.prompt || "");
+      // Cuando la empresa aún no tiene prompt propio se carga la plantilla
+      // global; se deja `originalText` vacío para que el botón de guardar
+      // aparezca habilitado y pueda adoptarla tal cual.
+      setOriginalText(data.personalizado ? (data.prompt || "") : "");
+      setEsPlantilla(!data.personalizado);
+    } catch {
       showToast("Error al cargar el prompt", true);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const handleSave = async () => {
+  useEffect(() => {
+    document.title = "Configurar Prompt IA | TCi";
+    if (!isAuthorized) return;
+    const cargar = async () => { await fetchPrompt(); };
+    cargar();
+  }, [isAuthorized, fetchPrompt]);
+
+  const handleSave = useCallback(async () => {
     if (!empresaId) return;
     setSaving(true);
     try {
-      const res = await fetch("/api/db/empresas", {
-        method: "PUT",
+      // PATCH, no PUT: /api/db/empresas nunca expuso PUT, así que el guardado
+      // respondía 405 y el prompt jamás se modificaba.
+      const res = await fetch("/api/prompts", {
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: empresaId,
-          nombre: empresaNombre,
-          prompt_ia: promptText,
-        }),
+        body: JSON.stringify({ empresa_id: empresaId, prompt: promptText }),
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setOriginalText(promptText);
-        showToast("Prompt guardado exitosamente ✨");
+        setEsPlantilla(false);
+        showToast("Prompt guardado. El bot lo usará en el siguiente mensaje ✨");
       } else {
-        showToast("Error al guardar", true);
+        showToast(data.error || "Error al guardar", true);
       }
-    } catch (err) {
+    } catch {
       showToast("Error de conexión", true);
     } finally {
       setSaving(false);
     }
-  };
+  }, [empresaId, empresaNombre, promptText]);
 
   const handleRevert = () => {
     if (confirm("¿Descartar todos los cambios y volver a la versión guardada?")) {
@@ -98,7 +112,7 @@ export default function PromptEditorPage() {
         if (hasChanges && !saving) handleSave();
       }
     },
-    [hasChanges, saving, promptText, empresaId]
+    [hasChanges, saving, handleSave]
   );
 
   useEffect(() => {
@@ -106,7 +120,7 @@ export default function PromptEditorPage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
 
-  if (isAuthorized === null || loading) {
+  if (isAuthorized === null || (isAuthorized && loading)) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <div className="text-slate-400 font-medium animate-pulse">Cargando editor de prompt...</div>
@@ -143,6 +157,12 @@ export default function PromptEditorPage() {
           <p className="text-slate-500 text-sm max-w-xl">
             Edita las instrucciones que recibe la IA para responder en WhatsApp. Empresa: <span className="font-bold text-slate-700">{empresaNombre}</span>
           </p>
+          {esPlantilla && (
+            <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 max-w-xl">
+              Esta empresa aún no tiene un prompt propio: se muestra la plantilla
+              general. Al guardar quedará como su versión personalizada.
+            </p>
+          )}
         </div>
 
         {/* Action buttons */}

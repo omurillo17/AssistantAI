@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useCallback, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  Users, UserCheck, CalendarDays, AlertTriangle,
+  CalendarDays, AlertTriangle,
   LayoutGrid, List, MessageSquare, Search
 } from "lucide-react";
 import { ESTADOS, ESTADOS_CRM, GRUPOS, getEstado, KANBAN_COLUMNAS, type EstadoKey } from "@/lib/estados";

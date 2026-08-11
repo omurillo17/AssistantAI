@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Trash2 } from "lucide-react";
 
 interface GroupsModalProps {
@@ -11,8 +11,15 @@ interface GroupsModalProps {
   showToast: (msg: string, isError?: boolean) => void;
 }
 
-export default function GroupsModal({
-  isOpen,
+// Wrapper: al cerrarse desmonta el contenido, y con el desmontaje se reinicia
+// el formulario. Reiniciarlo desde un useEffect provocaba un render en cascada
+// (react-hooks/set-state-in-effect).
+export default function GroupsModal(props: GroupsModalProps) {
+  if (!props.isOpen) return null;
+  return <GroupsModalContent {...props} />;
+}
+
+function GroupsModalContent({
   onClose,
   onSuccess,
   empresas,
@@ -24,16 +31,6 @@ export default function GroupsModal({
   const [grupoEmpresaInput, setGrupoEmpresaInput] = useState("");
   const [grupoNavesInput, setGrupoNavesInput] = useState<string[]>([]);
   const [creatingGrupo, setCreatingGrupo] = useState(false);
-
-  useEffect(() => {
-    if (!isOpen) {
-      setGrupoNombreInput("");
-      setGrupoEmpresaInput("");
-      setGrupoNavesInput([]);
-    }
-  }, [isOpen]);
-
-  if (!isOpen) return null;
 
   const crearGrupo = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,7 +57,7 @@ export default function GroupsModal({
         const d = await res.json();
         showToast(d.error || "Error al crear grupo", true);
       }
-    } catch (e) {
+    } catch {
       showToast("Error de red al crear grupo", true);
     } finally {
       setCreatingGrupo(false);
@@ -79,7 +76,7 @@ export default function GroupsModal({
         const d = await res.json();
         showToast(d.error || "Error al eliminar", true);
       }
-    } catch (e) {
+    } catch {
       showToast("Error de red", true);
     }
   };

@@ -8,6 +8,7 @@ import logging
 
 import httpx
 
+from app import throttle
 from app.config import ENV
 
 logger = logging.getLogger("waha_client")
@@ -18,6 +19,10 @@ def _headers() -> dict[str, str]:
 
 
 async def send_text(session: str, chat_id: str, text: str) -> None:
+    """Único punto de salida de mensajes de WhatsApp, y por eso el sitio donde
+    se aplica el regulador de ritmo (ver app/throttle.py): así ninguna ruta
+    -- chat, recordatorios, alertas -- puede saltarse el límite por olvido."""
+    await throttle.esperar_turno()
     url = f"{ENV.WAHA_BASE_URL}/api/sendText"
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(url, headers=_headers(), json={"session": session, "chatId": chat_id, "text": text})

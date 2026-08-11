@@ -2,32 +2,33 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useIsHydrated, useLocalStorageValue } from "@/hooks/useLocalStorageValue";
 
 export default function Home() {
-  const router = useRouter();
-  const [loading, setLoading] = useState(true);
   const [noLeidos, setNoLeidos] = useState(0);
-  const [role, setRole] = useState("USER");
+  const hidratado = useIsHydrated();
+  const rolGuardado = useLocalStorageValue("tci_role");
+  const empresaId = useLocalStorageValue("tci_empresa_id");
+  // Mientras no hidrata no se puede leer el rol: se muestra el esqueleto.
+  const loading = !hidratado;
+  const role = rolGuardado || "USER";
 
   useEffect(() => {
     document.title = "Plataforma TCi";
-    setRole(localStorage.getItem("tci_role") || "USER");
-    setLoading(false);
-    const storedEmpresaId = localStorage.getItem("tci_empresa_id");
-    const query = storedEmpresaId ? `?empresa_id=${storedEmpresaId}` : "";
+    const query = empresaId ? `?empresa_id=${empresaId}` : "";
 
     // Cargar badge de mensajes no leídos
-    fetch(`/api/db/mensajes${query}`)
-      .then(r => r.json())
-      .then(data => {
+    const cargarNoLeidos = async () => {
+      try {
+        const data = await (await fetch(`/api/db/mensajes${query}`)).json();
         if (Array.isArray(data)) {
-          const total = data.reduce((acc: number, c: any) => acc + (c.mensajes_no_leidos || 0), 0);
+          const total = data.reduce((acc: number, c: { mensajes_no_leidos?: number }) => acc + (c.mensajes_no_leidos || 0), 0);
           setNoLeidos(total);
         }
-      })
-      .catch(() => { });
-  }, [router]);
+      } catch { }
+    };
+    cargarNoLeidos();
+  }, [empresaId]);
 
   if (loading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-500">Cargando...</div>;
 

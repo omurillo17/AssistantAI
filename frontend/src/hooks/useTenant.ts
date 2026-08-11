@@ -1,7 +1,11 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { usePathname } from "next/navigation";
+import { useEffect, useRef } from "react";
+import {
+  LOCAL_STORAGE_EVENT,
+  notifyLocalStorageChange,
+  useLocalStorageValue,
+} from "./useLocalStorageValue";
 
 // Se dispara cada vez que setTenant() cambia empresa_id/nave_id/grupo_id (mismo
 // tab) o cuando cambian en otra pestaña (evento nativo "storage"). Cualquier
@@ -17,57 +21,20 @@ export function useTenantChange(callback: () => void) {
   useEffect(() => {
     const handler = () => callbackRef.current();
     window.addEventListener("storage", handler);
-    window.addEventListener("tci_tenant_changed", handler);
+    window.addEventListener(LOCAL_STORAGE_EVENT, handler);
     return () => {
       window.removeEventListener("storage", handler);
-      window.removeEventListener("tci_tenant_changed", handler);
+      window.removeEventListener(LOCAL_STORAGE_EVENT, handler);
     };
   }, []);
 }
 
 export function useTenant() {
-  const [empresaId, setEmpresaId] = useState<string | null>(null);
-  const [naveId, setNaveId] = useState<string | null>(null);
+  const empresaId = useLocalStorageValue("tci_empresa_id");
+  const naveId = useLocalStorageValue("tci_nave_id");
   // grupoId es un filtro adicional (solo lo usa el selector Nave/Grupo del
   // TopNavbar para el rol ADMIN) — mutuamente excluyente con naveId.
-  const [grupoId, setGrupoId] = useState<string | null>(null);
-  const pathname = usePathname();
-
-  useEffect(() => {
-    // Escuchar cambios personalizados o locales en tci_empresa_id, tci_nave_id y tci_grupo_id
-    const eId = localStorage.getItem("tci_empresa_id");
-    const nId = localStorage.getItem("tci_nave_id");
-    const gId = localStorage.getItem("tci_grupo_id");
-    setEmpresaId(eId);
-    setNaveId(nId);
-    setGrupoId(gId);
-
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === "tci_empresa_id") {
-        setEmpresaId(e.newValue);
-      }
-      if (e.key === "tci_nave_id") {
-        setNaveId(e.newValue);
-      }
-      if (e.key === "tci_grupo_id") {
-        setGrupoId(e.newValue);
-      }
-    };
-
-    const handleCustomChange = () => {
-      setEmpresaId(localStorage.getItem("tci_empresa_id"));
-      setNaveId(localStorage.getItem("tci_nave_id"));
-      setGrupoId(localStorage.getItem("tci_grupo_id"));
-    };
-
-    window.addEventListener("storage", handleStorageChange);
-    window.addEventListener("tci_tenant_changed", handleCustomChange);
-
-    return () => {
-      window.removeEventListener("storage", handleStorageChange);
-      window.removeEventListener("tci_tenant_changed", handleCustomChange);
-    };
-  }, [pathname]);
+  const grupoId = useLocalStorageValue("tci_grupo_id");
 
   // nvId y grpId son mutuamente excluyentes: seleccionar uno limpia el otro.
   // grpId es opcional: omitirlo (undefined) deja tci_grupo_id intacto — esto
@@ -93,12 +60,10 @@ export function useTenant() {
       } else {
         localStorage.removeItem("tci_grupo_id");
       }
-      setGrupoId(grpId);
     }
 
-    setEmpresaId(empId);
-    setNaveId(nvId);
-    window.dispatchEvent(new Event("tci_tenant_changed"));
+    // Un solo aviso al final: los tres valores se releen de localStorage.
+    notifyLocalStorageChange();
   };
 
   return {

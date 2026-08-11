@@ -118,7 +118,7 @@ export default function PortalCandidatoPage() {
           "No se encontró ninguna solicitud registrada con ese número. Tu proceso aún sigue esperando la autorización de un reclutador."
         );
       }
-    } catch (err) {
+    } catch {
       setNotFoundMsg("Ocurrió un error al buscar tu solicitud. Intenta nuevamente.");
     } finally {
       setSearching(false);
@@ -163,7 +163,7 @@ export default function PortalCandidatoPage() {
       } else {
         setUploadError(data.error || "Ocurrió un error al subir los documentos.");
       }
-    } catch (err) {
+    } catch {
       setUploadError("Error de conexión al subir los archivos.");
     } finally {
       setUploading(false);

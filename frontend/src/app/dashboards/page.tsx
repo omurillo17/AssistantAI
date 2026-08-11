@@ -1,36 +1,20 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback } from "react";
-import { useRouter } from "next/navigation";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, Legend, LineChart, Line,
   RadialBarChart, RadialBar, PolarAngleAxis,
 } from "recharts";
 import {
-  Users, UserCheck, CalendarDays, AlertTriangle, TrendingUp,
-  RefreshCw, Trophy, MessageSquare, Briefcase, Activity, Building2, Clock, Bot
+  Users, UserCheck, TrendingUp,
+  Trophy, MessageSquare, Briefcase, Activity, Building2, Clock, Bot
 } from "lucide-react";
-import { ESTADOS, ESTADOS_ORDENADOS, ESTADOS_CRM, GRUPOS, getEstado, type EstadoKey } from "@/lib/estados";
-import type { Candidato, ChatMessage } from "@/types";
+import { ESTADOS, type EstadoKey } from "@/lib/estados";
+import type { Candidato } from "@/types";
 import { useTenantChange } from "@/hooks/useTenant";
 
 const CHART_COLORS = ["#6366f1", "#8b5cf6", "#ec4899", "#f43f5e", "#f59e0b", "#10b981", "#0ea5e9"];
-
-function getNombre(c: Candidato) {
-  return c.nombre_chat || c.nombre_solicitud || c.nombre_ine || c.nombre || "Candidato Desconocido";
-}
-
-// ─── BADGE ESTADO ──────────────────────────────────────────────
-function EstadoBadge({ estado }: { estado: string }) {
-  const def = getEstado(estado);
-  return (
-    <span className={`inline-flex items-center gap-1.5 font-bold rounded-full px-3 py-1 text-xs ${def.bg} ${def.color}`}>
-      <span>{def.emoji}</span>
-      <span>{def.label}</span>
-    </span>
-  );
-}
 
 type NaveInfo = { id: string; nombre: string; created_at: string };
 type HoraActividad = { dia_semana: number; hora: number; total: number };
@@ -38,7 +22,6 @@ type HoraActividad = { dia_semana: number; hora: number; total: number };
 const DIAS_SEMANA = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 
 export default function DashboardsPage() {
-  const router = useRouter();
   const [activeTab, setActiveTab] = useState<"ejecutivo" | "ia">("ejecutivo");
   const [candidatos, setCandidatos] = useState<Candidato[]>([]);
   const [mensajes, setMensajes] = useState<any[]>([]);
@@ -101,29 +84,20 @@ export default function DashboardsPage() {
 
   useEffect(() => {
     document.title = "Dashboards | Grupo Virgo";
-    loadData();
+    const cargar = async () => { await loadData(); };
+    cargar();
   }, [loadData]);
 
   // Re-cargar (sin recargar la página) cuando el usuario cambia de empresa/nave en el TopNavbar
   useTenantChange(loadData);
 
 
-  // ─── ALERTS ───────────────────────────────────────────────
-  const pendingChats = useMemo(() => {
-    return mensajes.filter(m => m.mensajes_no_leidos > 0);
-  }, [mensajes]);
-
-  const todayInterviews = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
-    return candidatos.filter(c => c.fecha_entrevista && c.fecha_entrevista.startsWith(today));
-  }, [candidatos]);
-
   // ─── EJECUTIVO KPI CALCS ─────────────────────────────────────
   const kpis = useMemo(() => {
-    let total = candidatos.length;
+    const total = candidatos.length;
     let contratados = 0;
     let nuevos = 0;
-    let chatsActivos = mensajes.length;
+    const chatsActivos = mensajes.length;
 
     const vacanteCounts: Record<string, number> = {};
     const estadosCounts: Record<string, number> = {};

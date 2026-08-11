@@ -70,39 +70,36 @@ function safeCompare(a: string, b: string): boolean {
   return timingSafeEqual(bufA, bufB);
 }
 
-function checkApiKey(request: Request, envVar: string, endpoints: string): boolean {
-  const expectedKey = process.env[envVar];
+/**
+ * Autenticación server-to-server (backend Python → frontend) vía header
+ * `x-api-key`, comparado contra INTERNAL_API_KEY. La usan todas las rutas
+ * internas: /api/webhook/*, /api/upload-cv, /api/prompt-context, /api/cron/*
+ * y las lecturas server-to-server de /api/db/*.
+ *
+ * Se acepta N8N_API_KEY / WEBHOOK_API_KEY como respaldo para no romper
+ * despliegues que aún no renombran la variable (mismo respaldo que
+ * ENV.INTERNAL_API_KEY en backend/app/config.py). Eran dos llaves separadas
+ * porque n8n no se podía redesplegar junto con el frontend; ahora los dos
+ * extremos son nuestros y se despliegan juntos, así que basta una.
+ *
+ * Fail-open deliberado: si no hay ninguna llave configurada se permite el
+ * acceso y se registra una advertencia, para que un despliegue sin la
+ * variable siga funcionando en vez de tumbar la ingesta de WhatsApp.
+ */
+export function verifyInternalApiKey(request: Request): boolean {
+  const expectedKey =
+    process.env.INTERNAL_API_KEY || process.env.N8N_API_KEY || process.env.WEBHOOK_API_KEY;
   if (!expectedKey) {
-    if (!warned.has(envVar)) {
+    if (!warned.has("INTERNAL_API_KEY")) {
       console.warn(
-        `[seguridad] ${envVar} no está configurada: ${endpoints} quedan sin autenticación. Configúrala en frontend/.env.local y asegúrate de que n8n mande el header x-api-key con el mismo valor.`
+        "[seguridad] INTERNAL_API_KEY no está configurada: /api/webhook/*, /api/upload-cv, " +
+          "/api/prompt-context y /api/cron quedan sin autenticación. Configúrala en " +
+          "frontend/.env.local con el mismo valor que la del backend."
       );
-      warned.add(envVar);
+      warned.add("INTERNAL_API_KEY");
     }
     return true;
   }
   const provided = request.headers.get("x-api-key");
   return provided !== null && safeCompare(provided, expectedKey);
-}
-
-/**
- * Autenticación server-to-server (n8n → frontend) vía header `x-api-key`,
- * comparado contra N8N_API_KEY. Usada por /api/prompt-context y
- * /api/cron/process-outbox (el flujo 5 de n8n ya envía este header).
- */
-export function verifyInternalApiKey(request: Request): boolean {
-  return checkApiKey(request, "N8N_API_KEY", "/api/prompt-context y /api/cron");
-}
-
-/**
- * Autenticación de los webhooks que reciben datos desde n8n
- * (/api/webhook/*, /api/upload-cv), comparada contra WEBHOOK_API_KEY.
- * Es una variable separada de N8N_API_KEY para poder activar la protección
- * solo cuando los flujos de n8n ya envíen el header (los JSON de
- * virgo_data/workflows ya lo incluyen; hay que reimportarlos en n8n).
- * Mientras WEBHOOK_API_KEY no esté configurada, se permite el acceso y se
- * registra una advertencia.
- */
-export function verifyWebhookApiKey(request: Request): boolean {
-  return checkApiKey(request, "WEBHOOK_API_KEY", "/api/webhook/* y /api/upload-cv");
 }

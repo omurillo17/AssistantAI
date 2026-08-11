@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 
 type AlertaIdentidad = {
@@ -20,7 +20,7 @@ export function IdentityAlertModal() {
   const [cerradas, setCerradas] = useState<string[]>([]);
   const [processing, setProcessing] = useState(false);
 
-  const fetchAlertas = async () => {
+  const fetchAlertas = useCallback(async () => {
     try {
       const res = await fetch("/api/db/alertas-identidad");
       if (res.ok) {
@@ -30,19 +30,21 @@ export function IdentityAlertModal() {
     } catch {
       // silencioso, se reintenta en el siguiente ciclo
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchAlertas();
-    const interval = setInterval(fetchAlertas, 10000);
+    const cargar = async () => { await fetchAlertas(); };
+    cargar();
+    const interval = setInterval(cargar, 10000);
 
-    const handleOpenEvent = (e: any) => {
-      if (e.detail?.telefono) {
-        setCerradas((prev) => prev.filter((t) => t !== e.detail.telefono));
+    const handleOpenEvent = (e: Event) => {
+      const telefono = (e as CustomEvent<{ telefono?: string }>).detail?.telefono;
+      if (telefono) {
+        setCerradas((prev) => prev.filter((t) => t !== telefono));
       } else {
         setCerradas([]);
       }
-      fetchAlertas();
+      cargar();
     };
 
     window.addEventListener("open-identity-modal", handleOpenEvent);
@@ -50,7 +52,7 @@ export function IdentityAlertModal() {
       clearInterval(interval);
       window.removeEventListener("open-identity-modal", handleOpenEvent);
     };
-  }, []);
+  }, [fetchAlertas]);
 
   if (pathname === "/login") return null;
 

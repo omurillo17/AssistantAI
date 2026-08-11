@@ -20,37 +20,37 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
   const [loadingChat, setLoadingChat] = useState(true);
   const [justUpdated, setJustUpdated] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
-  const prevCandidatoRef = useRef(candidato);
-  const isFirstCandidatoRef = useRef(true);
   // Se activa justo antes de un cambio local (estado/validación) hecho por
   // el propio usuario desde este modal, para no mostrarle el aviso de
   // "actualización" cuando el candidato que vuelve a bajar desde el padre
   // es simplemente la confirmación de su propia edición.
-  const suppressNextUpdateRef = useRef(false);
+  const [suppressNextUpdate, setSuppressNextUpdate] = useState(false);
+  const [prevCandidato, setPrevCandidato] = useState(candidato);
 
   // Detecta cuando la actualización automática de Expedientes trae nueva
   // información para este candidato (no en la carga inicial del modal, ni
   // en la confirmación de una edición propia) y muestra un aviso breve.
-  useEffect(() => {
+  //
+  // Se ajusta DURANTE el render, no desde un efecto: es el patrón que React
+  // documenta para "adjusting state when a prop changes" y evita el render en
+  // cascada que provoca hacerlo con useEffect.
+  if (candidato !== prevCandidato) {
+    setPrevCandidato(candidato);
     setCand(candidato);
-    if (isFirstCandidatoRef.current) {
-      isFirstCandidatoRef.current = false;
-      prevCandidatoRef.current = candidato;
-      return;
-    }
-    if (suppressNextUpdateRef.current) {
-      suppressNextUpdateRef.current = false;
-      prevCandidatoRef.current = candidato;
-      return;
-    }
-    if (JSON.stringify(candidato) !== JSON.stringify(prevCandidatoRef.current)) {
-      prevCandidatoRef.current = candidato;
+    if (suppressNextUpdate) {
+      setSuppressNextUpdate(false);
+    } else if (JSON.stringify(candidato) !== JSON.stringify(prevCandidato)) {
       setJustUpdated(true);
-      const t = setTimeout(() => setJustUpdated(false), 4000);
-      return () => clearTimeout(t);
     }
-    prevCandidatoRef.current = candidato;
-  }, [candidato]);
+  }
+
+  // El aviso se esconde solo a los 4s. El setState va dentro del timeout, no
+  // en el cuerpo del efecto.
+  useEffect(() => {
+    if (!justUpdated) return;
+    const t = setTimeout(() => setJustUpdated(false), 4000);
+    return () => clearTimeout(t);
+  }, [justUpdated]);
 
   const nombre = getCandidateDisplayName(cand);
 
@@ -64,10 +64,9 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
         body: JSON.stringify({ telefono: cand.telefono, decision }),
       });
       if (res.ok) {
-        const data = await res.json();
         const newStatus = decision === "validar" ? "INE_VALIDADA" : "DOCUMENTOS_NO_COINCIDEN";
         const newAlertaState = decision === "validar" ? "VALIDADO" : "RECHAZADO";
-        suppressNextUpdateRef.current = true;
+        setSuppressNextUpdate(true);
         setCand(prev => ({
           ...prev,
           estado: newStatus,
@@ -178,7 +177,7 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                 value={cand.estado}
                 onChange={(e) => {
                   const newStatus = e.target.value;
-                  suppressNextUpdateRef.current = true;
+                  setSuppressNextUpdate(true);
                   setCand(prev => ({ ...prev, estado: newStatus }));
                   onStatusChange(cand.telefono, newStatus);
                 }}
@@ -219,8 +218,7 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                 return { items: [], notes: text };
               };
 
-              const { items, notes } = parseResumenIa(cand.resumen_ia);
-              const experienciaTexto = cand.experiencia || cand.motivo_analisis || notes || ((cand.cv_manual as any)?.experiencia || (cand.cv_manual as any)?.resumen_excel);
+              const { items } = parseResumenIa(cand.resumen_ia);
 
               return (
                 <div className="bg-gradient-to-br from-purple-50/70 to-indigo-50/50 border border-purple-100 rounded-2xl p-5 shadow-sm space-y-4">
@@ -268,7 +266,7 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                                   });
                                   return v.replace(isoMatch[0], formatted);
                                 }
-                              } catch (e) { }
+                              } catch { }
                             }
                             return v;
                           };
@@ -292,8 +290,8 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
 
             {/* DOCUMENTOS Y COMPARACIÓN INE vs RFC */}
             {(() => {
-              const ineData = typeof cand.datos_ine === 'string' ? (() => { try { return JSON.parse(cand.datos_ine); } catch (e) { return null; } })() : cand.datos_ine;
-              const csfData = typeof cand.datos_rfc === 'string' ? (() => { try { return JSON.parse(cand.datos_rfc); } catch (e) { return null; } })() : cand.datos_rfc;
+              const ineData = typeof cand.datos_ine === 'string' ? (() => { try { return JSON.parse(cand.datos_ine); } catch { return null; } })() : cand.datos_ine;
+              const csfData = typeof cand.datos_rfc === 'string' ? (() => { try { return JSON.parse(cand.datos_rfc); } catch { return null; } })() : cand.datos_rfc;
 
               const ineName = String(ineData?.nombre_completo || ineData?.nombre || cand.nombre_ine || "").trim();
               const rfcName = String(csfData?.nombre_completo || csfData?.nombre || csfData?.razon_social || cand.nombre_constancia || "").trim();

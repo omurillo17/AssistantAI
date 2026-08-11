@@ -1,41 +1,37 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { MapPin, X, Save } from "lucide-react";
+import type { Nave } from "@/types";
 
 interface NaveModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  nave: any;
+  nave: Nave | null;
   empresaId: string;
   showToast: (msg: string, isError?: boolean) => void;
 }
 
-export default function NaveModal({
-  isOpen,
+// Wrapper: monta el contenido solo mientras el modal está abierto y lo remonta
+// (key) al cambiar de registro, así el formulario arranca con los valores del
+// prop y se limpia al cerrar. Antes eso se hacía copiando el prop al estado
+// desde un useEffect, lo que provoca un render en cascada
+// (react-hooks/set-state-in-effect).
+export default function NaveModal(props: NaveModalProps) {
+  if (!props.isOpen) return null;
+  return <NaveModalContent key={props.nave?.id ?? "nueva"} {...props} />;
+}
+
+function NaveModalContent({
   onClose,
   onSuccess,
   nave,
   empresaId,
   showToast,
 }: NaveModalProps) {
-  const [nombre, setNombre] = useState("");
-  const [rfc, setRfc] = useState("");
-  const [ubicacionMaps, setUbicacionMaps] = useState("");
+  const [nombre, setNombre] = useState(nave?.nombre || "");
+  const [rfc, setRfc] = useState(nave?.rfc || "");
+  const [ubicacionMaps, setUbicacionMaps] = useState(nave?.ubicacion_maps || "");
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (nave && isOpen) {
-      setNombre(nave.nombre || "");
-      setRfc(nave.rfc || "");
-      setUbicacionMaps(nave.ubicacion_maps || "");
-    } else if (!isOpen) {
-      setNombre("");
-      setRfc("");
-      setUbicacionMaps("");
-    }
-  }, [nave, isOpen]);
-
-  if (!isOpen) return null;
 
   const handleSaveNave = async () => {
     if (!nombre) return showToast("El nombre de la nave es obligatorio", true);
@@ -68,7 +64,7 @@ export default function NaveModal({
       } else {
         showToast(data.error || "Error al guardar", true);
       }
-    } catch (e) {
+    } catch {
       showToast("Error de conexión", true);
     } finally {
       setSaving(false);

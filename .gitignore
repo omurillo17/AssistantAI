@@ -9,3 +9,18 @@ waha_files_final/
 *.dump
 node_modules/
 *.vscode/
+
+# Herramientas de agentes: los worktrees son copias temporales del repo (si se
+# commitean quedan como gitlink roto) y settings.local.json es por máquina.
+# .claude/settings.json sí se versiona: es la config compartida del proyecto.
+.claude/worktrees/
+.claude/settings.local.json
+
+# Bytecode de Python
+__pycache__/
+*.py[cod]
+
+# Catalogo de vacantes generado por el frontend (syncPromptContext.ts) en cada
+# alta/edicion de vacante. Es una cache: si falta, el backend lo pide a
+# /api/prompt-context. Versionarlo solo genera conflictos.
+virgo_data/data/prompt_context.json

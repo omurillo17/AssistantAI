@@ -27,7 +27,10 @@ export default function LoginPage() {
         // En lugar de localStorage, el token ya se guardó como Cookie HttpOnly
         // Guardamos información inofensiva para renderizado de UI
         // Guardamos información inofensiva para renderizado de UI
-        localStorage.setItem("tci_username", data.usuario || usuarioInput);
+        // `tci_username` es lo que se PINTA en la interfaz, así que guarda el
+        // nombre de la persona; la credencial de login queda aparte.
+        localStorage.setItem("tci_username", data.nombre || data.usuario || usuarioInput);
+        localStorage.setItem("tci_login", data.usuario || usuarioInput);
         localStorage.setItem("tci_role", data.rol || "USER");
         if (data.reclutador_id) {
           localStorage.setItem("tci_reclutador_id", data.reclutador_id);
@@ -53,7 +56,7 @@ export default function LoginPage() {
       } else {
         alert(data.error || "Credenciales incorrectas");
       }
-    } catch (err) {
+    } catch {
       alert("Error al conectar con el servidor");
     } finally {
       setLoading(false);

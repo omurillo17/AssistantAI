@@ -1,33 +1,33 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { X } from "lucide-react";
+import type { Empresa } from "@/types";
 
 interface AdminModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  empresa: any;
+  empresa: Empresa | null;
   showToast: (msg: string, isError?: boolean) => void;
 }
 
-export default function AdminModal({
-  isOpen,
+// Wrapper: al cerrarse desmonta el contenido, y con el desmontaje se reinicia
+// el formulario. Reiniciarlo desde un useEffect provocaba un render en cascada
+// (react-hooks/set-state-in-effect).
+export default function AdminModal(props: AdminModalProps) {
+  const { empresa } = props;
+  if (!props.isOpen || !empresa) return null;
+  return <AdminModalContent {...props} empresa={empresa} />;
+}
+
+function AdminModalContent({
   onClose,
   onSuccess,
   empresa,
   showToast,
-}: AdminModalProps) {
+}: AdminModalProps & { empresa: Empresa }) {
   const [usuario, setUsuario] = useState("");
   const [password, setPassword] = useState("");
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (!isOpen) {
-      setUsuario("");
-      setPassword("");
-    }
-  }, [isOpen]);
-
-  if (!isOpen || !empresa) return null;
 
   const handleSaveAdmin = async () => {
     if (!usuario || !password) {
@@ -57,7 +57,7 @@ export default function AdminModal({
       } else {
         showToast(data.error || "Error al crear administrador", true);
       }
-    } catch (e) {
+    } catch {
       showToast("Error de conexión", true);
     } finally {
       setSaving(false);

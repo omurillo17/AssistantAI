@@ -19,6 +19,7 @@ import httpx
 from app import gemini_client, waha_client
 from app.config import ENV
 from app.db import get_pool
+from app.internal_api import auth_headers
 
 logger = logging.getLogger("analizador")
 
@@ -131,24 +132,55 @@ def _evaluar_curps(c1_raw: str | None, c2_raw: str | None) -> dict:
 
 # --- Vacantes (catálogo para el prompt de análisis de documento) -----------
 
-async def obtener_detalle_vacantes(nave_interes: str | None, empresa_id: str | None) -> str:
-    """Puerto de 'Vacantes': catálogo de vacantes para el PROMPT DE ANÁLISIS
-    DE DOCUMENTO (Gemini), vía /api/prompt-context. Distinto de
-    cargar_prompt(), que arma el system prompt del AGENTE DE CHAT leyendo
-    directo del archivo local -- son dos fuentes separadas en el original,
-    se preservan separadas aquí."""
-    nave_actual = str(nave_interes or "1").strip()
-    detalle_txt = "Informacion no disponible."
+async def _prompt_context_api(empresa_id: str | None) -> dict | None:
+    """Catálogo desde GET /api/prompt-context (lo arma el frontend leyendo
+    PostgreSQL). Devuelve None si la llamada falla."""
     try:
         url = f"{ENV.FRONTEND_API_BASE}/api/prompt-context"
         params = {"empresa_id": empresa_id} if empresa_id else {}
         async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(url, params=params)
+            resp = await client.get(url, params=params, headers=auth_headers())
             if resp.status_code == 200:
                 ctx = resp.json()
-                detalle_txt = ctx.get("detalle_vacantes") or detalle_txt
+                return ctx if isinstance(ctx, dict) else None
+            logger.warning("prompt-context respondió %s", resp.status_code)
     except Exception:
-        logger.exception("obtener_detalle_vacantes: fetch prompt-context falló")
+        logger.exception("_prompt_context_api: fetch prompt-context falló")
+    return None
+
+
+def _prompt_context_archivo() -> dict | None:
+    """Catálogo desde virgo_data/data/prompt_context.json, que el frontend
+    reescribe en cada alta/edición de vacante (ver syncPromptContext.ts).
+    Devuelve None si no existe o no se puede parsear."""
+    ctx_path = os.path.join(ENV.VIRGO_FILES_DIR, "data", "prompt_context.json")
+    try:
+        with open(ctx_path, "r", encoding="utf-8") as f:
+            ctx = json.load(f)
+        return ctx if isinstance(ctx, dict) else None
+    except FileNotFoundError:
+        logger.info("prompt_context.json no existe todavía (%s); se usará la API", ctx_path)
+    except (OSError, json.JSONDecodeError):
+        logger.exception("no se pudo leer/parsear %s", ctx_path)
+    return None
+
+
+async def obtener_prompt_context(empresa_id: str | None) -> dict:
+    """Catálogo de vacantes para los prompts. El archivo local es una caché
+    que el frontend regenera al guardar una vacante; se prefiere porque evita
+    una llamada de red por cada mensaje. Si no está (despliegue nuevo, antes
+    del primer guardado) se cae a la API, que es la fuente de verdad."""
+    return _prompt_context_archivo() or await _prompt_context_api(empresa_id) or {}
+
+
+async def obtener_detalle_vacantes(nave_interes: str | None, empresa_id: str | None) -> str:
+    """Puerto de 'Vacantes': catálogo de vacantes para el PROMPT DE ANÁLISIS
+    DE DOCUMENTO (Gemini). Distinto de cargar_prompt(), que arma el system
+    prompt del AGENTE DE CHAT -- son dos prompts separados en el original y
+    se preservan separados aquí, aunque hoy compartan el mismo catálogo."""
+    nave_actual = str(nave_interes or "1").strip()
+    ctx = await _prompt_context_api(empresa_id) or _prompt_context_archivo() or {}
+    detalle_txt = ctx.get("detalle_vacantes") or "Informacion no disponible."
 
     if nave_actual and nave_actual != "Pendiente":
         detalle_txt = _extraer_seccion_nave(detalle_txt, nave_actual)
@@ -285,7 +317,7 @@ async def subir_cv(telefono: str, data: bytes, mime_type: str) -> str | None:
     ext = ".pdf" if "pdf" in mime_type else (".png" if "png" in mime_type else ".jpg")
     files = {"data": (f"documento{ext}", data, mime_type)}
     async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(url, params={"telefono": telefono}, files=files)
+        resp = await client.post(url, params={"telefono": telefono}, files=files, headers=auth_headers())
         resp.raise_for_status()
         body = resp.json()
         return body.get("url")
@@ -294,7 +326,7 @@ async def subir_cv(telefono: str, data: bytes, mime_type: str) -> str | None:
 async def actualizar_expediente(payload: dict) -> None:
     url = f"{ENV.FRONTEND_API_BASE}/api/webhook/expediente"
     async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(url, json=payload)
+        resp = await client.post(url, json=payload, headers=auth_headers())
         resp.raise_for_status()
 
 
@@ -324,6 +356,25 @@ async def _calendarios_con_credenciales() -> set[str]:
     except Exception:
         logger.exception("_calendarios_con_credenciales: query falló")
         return set()
+
+
+def _reclutador_asignado(
+    equipo: list[dict], asignado_a_id: str | None, calendarios_ok: set[str]
+) -> dict | None:
+    """El reclutador que la plataforma ya tiene asignado al candidato
+    (`candidatos.asignado_a_id`), siempre que siga activo y con calendario
+    autorizado. Devuelve None si no aplica, para que el llamador siga con su
+    lógica normal."""
+    if not asignado_a_id:
+        return None
+    return next(
+        (
+            r for r in equipo
+            if str(r.get("reclutador_id")) == str(asignado_a_id)
+            and (r.get("calendar_id") or "").strip() in calendarios_ok
+        ),
+        None,
+    )
 
 
 def _elegir_gerente(equipo: list[dict], calendarios_ok: set[str]) -> dict:
@@ -379,9 +430,8 @@ async def definir_agenda(
     try:
         url = f"{ENV.FRONTEND_API_BASE}/api/db/reclutador_vacantes"
         params = {"empresa_id": empresa_id} if empresa_id else {}
-        headers = {"x-api-key": ENV.N8N_API_KEY} if ENV.N8N_API_KEY else {}
         async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(url, params=params, headers=headers)
+            resp = await client.get(url, params=params, headers=auth_headers())
             if resp.status_code == 200:
                 equipo = resp.json()
                 if not isinstance(equipo, list):
@@ -401,37 +451,11 @@ async def definir_agenda(
     vacante_clean = _clean_str(vacante)
     vacante_desconocida = not vacante_clean or vacante_clean == "GENERAL"
 
-    if vacante_desconocida:
-        # Antes de caer al respaldo: si la plataforma ya le asignó un
-        # reclutador a este candidato y ese reclutador tiene calendario
-        # autorizado, la cita le corresponde a él.
-        asignado = next(
-            (
-                r for r in equipo
-                if asignado_a_id and r.get("reclutador_id") == asignado_a_id
-                and (r.get("calendar_id") or "").strip() in calendarios_ok
-            ),
-            None,
-        )
-        if asignado:
-            return {
-                "nombre_reclutador": asignado.get("nombre") or "Equipo de Reclutamiento",
-                "telefono_reclutador": asignado.get("telefono") or "5213323379399",
-                "calendar_id": (asignado.get("calendar_id") or "").strip() or default_calendar,
-                "vacante_detectada": vacante,
-                "nave_candidato": nave_actual,
-                "grupo_turno": None,
-                "turno_total": 1,
-                "candidatos_turno": None,
-            }
-        logger.warning(
-            "definir_agenda: vacante desconocida (%r) y sin reclutador asignado usable -- usando respaldo %r",
-            vacante, gerente.get("nombre"),
-        )
+    def _agenda_de(rec: dict) -> dict:
         return {
-            "nombre_reclutador": "Equipo de Reclutamiento",
-            "telefono_reclutador": gerente.get("telefono") or "5213323379399",
-            "calendar_id": default_calendar,
+            "nombre_reclutador": rec.get("nombre") or "Equipo de Reclutamiento",
+            "telefono_reclutador": rec.get("telefono") or "5213323379399",
+            "calendar_id": (rec.get("calendar_id") or "").strip() or default_calendar,
             "vacante_detectada": vacante,
             "nave_candidato": nave_actual,
             "grupo_turno": None,
@@ -439,8 +463,32 @@ async def definir_agenda(
             "candidatos_turno": None,
         }
 
+    if vacante_desconocida:
+        # Antes de caer al respaldo: si la plataforma ya le asignó un
+        # reclutador a este candidato y ese reclutador tiene calendario
+        # autorizado, la cita le corresponde a él.
+        asignado = _reclutador_asignado(equipo, asignado_a_id, calendarios_ok)
+        if asignado:
+            return _agenda_de(asignado)
+        logger.warning(
+            "definir_agenda: vacante desconocida (%r) y sin reclutador asignado usable -- usando respaldo %r",
+            vacante, gerente.get("nombre"),
+        )
+        # Se devuelve el nombre REAL del reclutador de respaldo, no un
+        # "Equipo de Reclutamiento" genérico: la cita se crea en SU calendario,
+        # así que es a esa persona a quien tiene que preguntar el candidato al
+        # llegar. Decirle un nombre abstracto dejaba a recepción sin saber a
+        # quién llamar.
+        return _agenda_de(gerente)
+
     def _matches(r: dict) -> bool:
-        if r.get("nombre") == gerente.get("nombre"):
+        # Solo se excluye al "Gerente de Reclutamiento" explícito, que es una
+        # figura de escalamiento y no atiende vacantes. Antes se excluía a
+        # QUIEN hiciera de respaldo, y como el respaldo se elige entre los
+        # reclutadores reales, esa persona nunca recibía candidatos por su
+        # propia vacante: con dos reclutadores compartiendo una vacante, el
+        # turno rotativo no repartía nada y todo caía en el otro.
+        if r.get("nombre") == "Gerente de Reclutamiento":
             return False
         vacantes = r.get("vacantes") or []
         if not vacantes:
@@ -468,6 +516,26 @@ async def definir_agenda(
         return False
 
     matches = [r for r in equipo if _matches(r)]
+
+    if not matches:
+        # La vacante no corresponde a nadie (nombre que no está en el catálogo,
+        # o no existe en la nave del candidato). Antes se caía directo al
+        # respaldo, ignorando que la plataforma ya le había asignado un
+        # reclutador a este candidato: el CRM decía una cosa y la cita se
+        # agendaba con otra persona. Se respeta al asignado siempre que tenga
+        # calendario autorizado.
+        asignado = _reclutador_asignado(equipo, asignado_a_id, calendarios_ok)
+        if asignado:
+            logger.info(
+                "definir_agenda: vacante %r sin dueño; se respeta el reclutador ya asignado (%s)",
+                vacante, asignado.get("nombre"),
+            )
+            return _agenda_de(asignado)
+        logger.warning(
+            "definir_agenda: vacante %r no corresponde a ningún reclutador -- usando respaldo %r",
+            vacante, gerente.get("nombre"),
+        )
+
     candidatos = matches if matches else [gerente]
 
     if len(candidatos) == 1:
@@ -531,21 +599,28 @@ def _extraer_seccion_nave(texto: str, nave: str) -> str:
     return m.group(1).strip() if m else texto
 
 
-def cargar_prompt(webhook_payload: dict, contacto: dict, candidato: dict) -> str:
-    """Puerto de 'CargarPrompt'. Lee la base desde
-    virgo_data/prompts/chat_prompt.md (fuente única real hoy -- Vacantes
-    nunca propagaba prompt_base desde la API) y el catálogo desde
-    virgo_data/data/prompt_context.json (mantenido por
-    frontend/src/lib/syncPromptContext.ts)."""
-    dbData = candidato or {}
-
+def _leer_prompt_archivo() -> str:
+    """Plantilla global en disco (virgo_data/prompts/chat_prompt.md). Es el
+    respaldo cuando la empresa no tiene un prompt propio configurado."""
     prompt_path = os.path.join(ENV.VIRGO_FILES_DIR, "prompts", "chat_prompt.md")
     try:
         with open(prompt_path, "r", encoding="utf-8") as f:
-            prompt = f.read()
+            return f.read()
     except OSError:
         logger.exception("cargar_prompt: no se pudo leer %s", prompt_path)
-        prompt = "Error: No se pudo cargar el prompt base del sistema."
+        return ""
+
+
+async def cargar_prompt(webhook_payload: dict, contacto: dict, candidato: dict) -> str:
+    """Puerto de 'CargarPrompt'. La base sale de `prompt_base` del contexto
+    -- que es `empresas.prompt_ia` cuando la empresa tiene uno configurado
+    en el panel, y si no la plantilla global del archivo -- y el catálogo de
+    obtener_prompt_context().
+
+    Antes se leía el archivo directo y `prompt_base` se ignoraba, así que
+    editar el prompt desde el CRM no tenía ningún efecto sobre el bot: la
+    pantalla guardaba en la BD y el agente seguía con el archivo."""
+    dbData = candidato or {}
 
     nave_actual = dbData.get("nave_interes") or "Pendiente"
     estado_actual = dbData.get("estado") or "NUEVO"
@@ -556,24 +631,24 @@ def cargar_prompt(webhook_payload: dict, contacto: dict, candidato: dict) -> str
     manana = now_mx + timedelta(days=1)
     fecha_manana = _formatear_fecha_corta(manana)
 
+    ctx = await obtener_prompt_context(dbData.get("empresa_id"))
+
+    prompt = (ctx.get("prompt_base") or "").strip() or _leer_prompt_archivo()
+    if not prompt:
+        prompt = "Error: No se pudo cargar el prompt base del sistema."
+
     menu_naves_txt = ""
     menu_txt = ""
     detalle_txt = ""
 
     necesita_catalogo = estado_actual not in _ESTADOS_SIN_CATALOGO
     if necesita_catalogo:
-        ctx_path = os.path.join(ENV.VIRGO_FILES_DIR, "data", "prompt_context.json")
-        try:
-            with open(ctx_path, "r", encoding="utf-8") as f:
-                ctx = json.load(f)
-            menu_naves_txt = ctx.get("menu_naves") or ""
-            menu_txt = ctx.get("menu_vacantes") or ""
-            detalle_txt = ctx.get("detalle_vacantes") or ""
-            if nave_actual and nave_actual != "Pendiente":
-                menu_txt = _extraer_seccion_nave(menu_txt, str(nave_actual))
-                detalle_txt = _extraer_seccion_nave(detalle_txt, str(nave_actual))
-        except (OSError, json.JSONDecodeError):
-            logger.exception("cargar_prompt: no se pudo leer/parsear %s", ctx_path)
+        menu_naves_txt = ctx.get("menu_naves") or ""
+        menu_txt = ctx.get("menu_vacantes") or ""
+        detalle_txt = ctx.get("detalle_vacantes") or ""
+        if nave_actual and nave_actual != "Pendiente":
+            menu_txt = _extraer_seccion_nave(menu_txt, str(nave_actual))
+            detalle_txt = _extraer_seccion_nave(detalle_txt, str(nave_actual))
     else:
         menu_naves_txt = menu_txt = detalle_txt = "[Catalogo omitido: no aplica en esta etapa del proceso]"
 

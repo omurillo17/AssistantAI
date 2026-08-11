@@ -24,6 +24,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -36,6 +37,7 @@ from app.chat import memoria, parser
 from app.config import ENV
 from app.db import get_pool
 from app.google_calendar import list_events
+from app.internal_api import auth_headers
 from app.routers.eventos_calendario import (
     CrearEventoRequest,
     EliminarEventoRequest,
@@ -195,6 +197,79 @@ async def _tool_eliminar_evento(candidato: dict, reclutador: dict) -> dict:
     return await _eliminar_evento_endpoint(payload)
 
 
+_ALERTA_FALLO_VENTANA_SEGUNDOS = 1800  # 30 min
+_alertas_fallo_enviadas: dict[str, float] = {}
+
+
+def _explicar_fallo(exc: Exception) -> str:
+    """Traduce las fallas conocidas a una instrucción accionable. Un
+    traceback crudo no le dice nada a quien recibe la alerta por WhatsApp."""
+    nombre_exc = type(exc).__name__
+    texto = str(exc)
+    if nombre_exc == "CredencialesNoEncontradas" or "No hay credenciales OAuth" in texto:
+        return ("Ese calendario nunca se autorizó con Google. Corre:\n"
+                "cd backend && python -m scripts.authorize_recruiter --email <correo>")
+    if "invalid_grant" in texto or "Token has been expired or revoked" in texto:
+        return ("Google revocó el permiso del calendario (pasa cada 7 días si la app OAuth "
+                "sigue en modo Testing). Hay que volver a autorizar al reclutador.")
+    if "Missing time zone" in texto:
+        return "Google rechazó la fecha por falta de zona horaria."
+    if "quota" in texto.lower() or "rate" in texto.lower():
+        return "Se agotó la cuota de la API. Hay que esperar o subir el límite."
+    return "Revisa los logs del backend para el detalle."
+
+
+async def _alertar_fallo_tool(nombre_tool: str, exc: Exception, candidato: dict, reclutador: dict) -> None:
+    """Avisa por WhatsApp a la persona responsable cuando una herramienta
+    falla. Sin esto el candidato recibe un "tuvimos un inconveniente
+    técnico" y nadie más se entera: los fallos de calendario de producción
+    solo salieron a la luz porque alguien fue a leer los logs a mano.
+
+    Se deduplica por (tool + tipo de error) durante 30 min para que una
+    caída sostenida de Google no genere una avalancha de mensajes."""
+    clave = f"{nombre_tool}:{type(exc).__name__}"
+    ahora = time.monotonic()
+    ultimo = _alertas_fallo_enviadas.get(clave)
+    if ultimo is not None and (ahora - ultimo) < _ALERTA_FALLO_VENTANA_SEGUNDOS:
+        return
+    _alertas_fallo_enviadas[clave] = ahora
+
+    nombre_candidato = candidato.get("nombre") or candidato.get("nombre_chat") or "Candidato"
+    telefono_candidato = candidato.get("telefono") or "desconocido"
+
+    mensaje = (
+        "⚠️ *FALLA DEL SISTEMA DE AGENDAMIENTO*\n\n"
+        f"La herramienta *{nombre_tool}* falló y el candidato recibió un mensaje de disculpa "
+        "en vez de su cita.\n\n"
+        f"👤 *Candidato:* {nombre_candidato}\n"
+        f"📱 wa.me/{telefono_candidato}\n"
+        f"📅 *Calendario:* {reclutador.get('calendar_id') or 'no definido'}\n\n"
+        f"🔧 *Qué hacer:*\n{_explicar_fallo(exc)}\n\n"
+        f"_Detalle: {type(exc).__name__}: {str(exc)[:180]}_\n"
+        "_(No se repetirá este aviso por 30 min)_"
+    )
+
+    # Al reclutador afectado y al administrador del sistema. Se usa un dict
+    # ordenado como conjunto para no mandar dos mensajes iguales cuando el
+    # administrador es además el reclutador de esa vacante.
+    destinos: dict[str, None] = {}
+    reclutador_tel = (reclutador.get("telefono_reclutador") or _DEFAULT_TELEFONO_RECLUTADOR).replace("@c.us", "").strip()
+    if reclutador_tel:
+        destinos[reclutador_tel] = None
+    admin_tel = (ENV.ALERTAS_ADMIN_TELEFONO or "").replace("@c.us", "").strip()
+    if admin_tel:
+        destinos[admin_tel] = None
+
+    for destino in destinos:
+        # Cada destinatario se envía por separado: que WAHA rechace uno no
+        # debe dejar al otro sin enterarse.
+        try:
+            await waha_client.send_text("default", f"{destino}@c.us", mensaje)
+            logger.info("_alertar_fallo_tool: alerta enviada a %s por fallo en %s", destino, nombre_tool)
+        except Exception:
+            logger.exception("_alertar_fallo_tool: no se pudo avisar a %s del fallo en %s", destino, nombre_tool)
+
+
 async def _ejecutar_tool(nombre: str, args: dict, candidato: dict, reclutador: dict) -> dict:
     try:
         if nombre == "revisar_calendario":
@@ -206,6 +281,12 @@ async def _ejecutar_tool(nombre: str, args: dict, candidato: dict, reclutador: d
         return {"error": f"Herramienta desconocida: {nombre}"}
     except Exception as e:
         logger.exception("_ejecutar_tool: fallo en %s", nombre)
+        # La alerta nunca debe tumbar el turno: si falla, el candidato igual
+        # recibe su mensaje y el error queda en los logs como antes.
+        try:
+            await _alertar_fallo_tool(nombre, e, candidato, reclutador)
+        except Exception:
+            logger.exception("_ejecutar_tool: fallo al alertar del fallo en %s", nombre)
         return {"error": str(e)}
 
 
@@ -376,7 +457,7 @@ async def _almacenar_mensajes(contacto: dict, candidato: dict, item: dict, junta
     url = f"{ENV.FRONTEND_API_BASE}/api/webhook/n8n-incoming"
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(url, json=body)
+            resp = await client.post(url, json=body, headers=auth_headers())
             resp.raise_for_status()
     except Exception:
         logger.exception("_almacenar_mensajes: POST n8n-incoming falló para telefono=%s", contacto.get("number"))
