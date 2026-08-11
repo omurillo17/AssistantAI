@@ -141,6 +141,16 @@ las variables de entorno.
 Empezando desde un servidor Debian 13 (trixie) recién instalado, sin nada
 excepto el sistema operativo base y acceso SSH.
 
+> **Nota si instalaste Debian 13 con entorno de escritorio (GNOME):** todos los
+> pasos de esta sección son los mismos que en un Debian 13 mínimo/headless — el
+> escritorio no interfiere con Docker, Node ni systemd. La única diferencia
+> práctica es que, al tener un navegador disponible en la propia máquina, puedes
+> abrir `http://localhost:3000` (WAHA) y `http://localhost:3001` (frontend)
+> directamente en Firefox del escritorio para escanear el QR de WhatsApp
+> (sección 8) y autorizar los calendarios de Google (sección 9), sin necesitar
+> el túnel SSH (`ssh -L 3000:localhost:3000 ...`) que sí hace falta en un
+> servidor sin GUI.
+
 ### 2.1 Paquetes base y firewall
 
 ```bash
