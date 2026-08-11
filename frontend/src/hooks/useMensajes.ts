@@ -440,7 +440,13 @@ export function useMensajes() {
     const matchesNave = filterNave ? normalize(c.nave_interes) === filterNave : true;
 
     const isAsignadoAMi = !!reclutadorId && c.asignado_a_id === reclutadorId;
-    const isCompartida = !c.asignado_a_id || c.asignado_a_id !== reclutadorId;
+    // Un chat que YA tomó otro reclutador no debe aparecer en la Bandeja
+    // General de nadie más -- solo los chats sin dueño van ahí. Antes se
+    // consideraba "compartido" cualquier chat que no fuera mío, así que el
+    // chat de un candidato que otro reclutador ya había tomado seguía
+    // visible (y tomable) para todos los demás hasta que alguien lo
+    // transfería explícitamente.
+    const isCompartida = !c.asignado_a_id;
     const matchesTab = activeTab === "mis_chats" ? isAsignadoAMi : isCompartida;
 
     return matchesSearch && matchesVacante && matchesNave && matchesTab;

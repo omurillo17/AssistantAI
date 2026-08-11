@@ -32,6 +32,7 @@ export async function POST(request: Request) {
       resumen,
       cita_cancelada,
       filtros,
+      experiencia_actividades,
       cv_manual,
       fecha_entrevista,
       privacidad,
@@ -201,26 +202,28 @@ export async function POST(request: Request) {
 
     const upsertQuery = `
       INSERT INTO candidatos (
-        telefono, nombre, estado, ultima_interaccion, vacante_interes, 
-        resumen_ia, filtros_tecnicos, cv_manual, fecha_entrevista, privacidad_aceptada, 
+        telefono, nombre, estado, ultima_interaccion, vacante_interes,
+        resumen_ia, filtros_tecnicos, cv_manual, fecha_entrevista, privacidad_aceptada,
         nombre_chat, nombre_solicitud, edad, correo, experiencia, nave_interes, mensajes_bot_enviados,
-        veredicto, motivo_analisis, empresa_id, escalado, escalation_reason
+        veredicto, motivo_analisis, empresa_id, escalado, escalation_reason,
+        experiencia_actividades
       )
       VALUES (
         $1, $9, $2, NOW(), $3, $4, $5, $6, $7, $8,
         $9, $10, $11, $12, $13, $14, 1,
-        $15, $16, $17, $18, $19
+        $15, $16, $17, $18, $19,
+        NULLIF($20, '')
       )
-      ON CONFLICT (telefono, empresa_id) DO UPDATE SET 
-        nombre = CASE 
+      ON CONFLICT (telefono, empresa_id) DO UPDATE SET
+        nombre = CASE
           WHEN EXCLUDED.nombre IS NOT NULL AND EXCLUDED.nombre != 'Candidato' AND EXCLUDED.nombre != '' AND EXCLUDED.nombre !~ '^[^\\w\\s]+$' THEN EXCLUDED.nombre
-          WHEN candidatos.nombre IS NULL OR candidatos.nombre = '' OR candidatos.nombre = 'Candidato' OR candidatos.nombre ~ '^[^\\w\\s]+$' THEN EXCLUDED.nombre 
-          ELSE candidatos.nombre 
+          WHEN candidatos.nombre IS NULL OR candidatos.nombre = '' OR candidatos.nombre = 'Candidato' OR candidatos.nombre ~ '^[^\\w\\s]+$' THEN EXCLUDED.nombre
+          ELSE candidatos.nombre
         END,
-        nombre_chat = CASE 
+        nombre_chat = CASE
           WHEN EXCLUDED.nombre_chat IS NOT NULL AND EXCLUDED.nombre_chat != 'Candidato' AND EXCLUDED.nombre_chat != '' AND EXCLUDED.nombre_chat !~ '^[^\\w\\s]+$' THEN EXCLUDED.nombre_chat
           WHEN candidatos.nombre_chat IS NULL OR candidatos.nombre_chat = '' OR candidatos.nombre_chat = 'Candidato' OR candidatos.nombre_chat ~ '^[^\\w\\s]+$' THEN EXCLUDED.nombre_chat
-          ELSE candidatos.nombre_chat 
+          ELSE candidatos.nombre_chat
         END,
         estado = EXCLUDED.estado,
         ultima_interaccion = NOW(),
@@ -228,6 +231,9 @@ export async function POST(request: Request) {
         vacante_interes = COALESCE(NULLIF(TRIM(EXCLUDED.vacante_interes), ''), NULLIF(TRIM(candidatos.vacante_interes), '')),
         resumen_ia = COALESCE(NULLIF(EXCLUDED.resumen_ia, ''), candidatos.resumen_ia),
         filtros_tecnicos = COALESCE(NULLIF(EXCLUDED.filtros_tecnicos, ''), candidatos.filtros_tecnicos),
+        -- Solo se pregunta una vez, al mostrar las actividades: si el turno no
+        -- la trae, se conserva la respuesta anterior.
+        experiencia_actividades = COALESCE(NULLIF($20, ''), candidatos.experiencia_actividades),
         cv_manual = CASE WHEN EXCLUDED.cv_manual IS NOT NULL THEN EXCLUDED.cv_manual ELSE candidatos.cv_manual END,
         fecha_entrevista = COALESCE(NULLIF(EXCLUDED.fecha_entrevista, ''), candidatos.fecha_entrevista),
         privacidad_aceptada = EXCLUDED.privacidad_aceptada OR candidatos.privacidad_aceptada,
@@ -262,7 +268,8 @@ export async function POST(request: Request) {
       motivo_analisis,
       empresaId,
       esEscalado,
-      motivoEscalamiento
+      motivoEscalamiento,
+      experiencia_actividades || ''   // $20
     ]);
 
     const candidatoId = upsertRes.rows[0].id;
@@ -286,15 +293,24 @@ export async function POST(request: Request) {
     }
 
     // 6. Actualizar bandeja compartida (mensajes_bandeja)
+    // La vista previa del chat debe reflejar el ÚLTIMO mensaje real del turno:
+    // si el bot respondió (mensaje_ia), ese es el último, no el mensaje del
+    // candidato que lo disparó. Antes esto quedaba hardcodeado a
+    // ultimo_mensaje = mensaje_candidato / ultimo_mensaje_rol = 'user' sin
+    // importar si Sofía ya había contestado, así que la bandeja mostraba
+    // permanentemente la pregunta del candidato en vez de la respuesta.
+    const ultimoMensajeTexto = mensaje_ia || mensaje_candidato;
+    const ultimoMensajeRol = mensaje_ia ? 'assistant' : 'user';
     await pool.query(`
       INSERT INTO mensajes_bandeja (candidato_id, telefono, ultimo_mensaje, ultimo_mensaje_rol, mensajes_no_leidos, activo, ultimo_mensaje_at)
-      VALUES ($1, $2, $3, 'user', 1, true, NOW())
-      ON CONFLICT (candidato_id) DO UPDATE SET 
+      VALUES ($1, $2, $3, $4, 1, true, NOW())
+      ON CONFLICT (candidato_id) DO UPDATE SET
         ultimo_mensaje = EXCLUDED.ultimo_mensaje,
+        ultimo_mensaje_rol = EXCLUDED.ultimo_mensaje_rol,
         ultimo_mensaje_at = NOW(),
         mensajes_no_leidos = mensajes_bandeja.mensajes_no_leidos + 1,
         activo = true
-    `, [candidatoId, telefono, mensaje_candidato]);
+    `, [candidatoId, telefono, ultimoMensajeTexto, ultimoMensajeRol]);
 
     return NextResponse.json({ success: true, estado: newState.value });
   } catch (err) {
