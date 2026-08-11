@@ -38,6 +38,10 @@ class CancelarCitaRequest(BaseModel):
     telefono: str
     event_id: str | None = None
     calendar_id: str | None = None
+    motivo: str | None = None
+    telefono_reclutador: str | None = None
+    nombre_reclutador: str | None = None
+    nombre_candidato: str | None = None
 
 
 class ReagendarCitaRequest(BaseModel):
@@ -46,6 +50,11 @@ class ReagendarCitaRequest(BaseModel):
     calendar_id: str
     start: str
     end: str
+    motivo: str | None = None
+    telefono_reclutador: str | None = None
+    nombre_reclutador: str | None = None
+    nombre_candidato: str | None = None
+    correo: str | None = None
 
 
 class CrearBloqueoRequest(BaseModel):
@@ -93,6 +102,23 @@ async def cancelar(payload: CancelarCitaRequest) -> dict:
         payload.telefono,
     )
 
+    # El CRM le promete al reclutador que la cancelación "le enviará un
+    # mensaje de WhatsApp al candidato con el motivo y tu número de
+    # contacto" (texto literal del modal) -- antes el endpoint no encolaba
+    # ningún mensaje, así que esa notificación nunca salía.
+    nombre_candidato = payload.nombre_candidato or "Candidato"
+    motivo = (payload.motivo or "").strip()
+    lineas = [f"Hola {nombre_candidato}, tu entrevista ha sido CANCELADA."]
+    if motivo:
+        lineas.append(f"Motivo: {motivo}")
+    if payload.telefono_reclutador:
+        lineas.append(f"Cualquier duda, contáctanos al {payload.telefono_reclutador}.")
+    await pool.execute(
+        "INSERT INTO cola_mensajes (telefono, texto) VALUES ($1, $2)",
+        f"{payload.telefono}@c.us",
+        "\n\n".join(lineas),
+    )
+
     return {"success": True, "message": "Cita cancelada correctamente", "telefono": payload.telefono}
 
 
@@ -115,11 +141,20 @@ async def reagendar(payload: ReagendarCitaRequest) -> dict:
 
     fecha = payload.start.split("T")[0]
     hora = payload.start.split("T")[1][:5] if "T" in payload.start else ""
-    texto = f"Hola! Tu entrevista ha sido REAGENDADA para el {fecha} a las {hora}."
+    nombre_candidato = payload.nombre_candidato or "Candidato"
+    motivo = (payload.motivo or "").strip()
+    # El motivo que el reclutador escribe en el modal de "Reagendar" nunca
+    # llegaba aquí (el modelo Pydantic no lo declaraba, así que FastAPI lo
+    # descartaba en silencio) y el mensaje al candidato quedaba genérico.
+    lineas = [f"Hola {nombre_candidato}, tu entrevista ha sido REAGENDADA para el {fecha} a las {hora}."]
+    if motivo:
+        lineas.append(f"Motivo: {motivo}")
+    if payload.telefono_reclutador:
+        lineas.append(f"Cualquier duda, contáctanos al {payload.telefono_reclutador}.")
     await pool.execute(
         "INSERT INTO cola_mensajes (telefono, texto) VALUES ($1, $2)",
         f"{payload.telefono}@c.us",
-        texto,
+        "\n\n".join(lineas),
     )
 
     return {"success": True}

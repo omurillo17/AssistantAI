@@ -25,8 +25,9 @@ export async function GET(request: Request) {
 
   try {
     let query = `
-      SELECT 
+      SELECT
         u.id,
+        u.reclutador_id,
         u.usuario,
         u.rol,
         u.grupo_id,
@@ -38,7 +39,7 @@ export async function GET(request: Request) {
       LEFT JOIN reclutadores r ON u.reclutador_id = r.id
       LEFT JOIN grupos_reclutamiento g ON u.grupo_id = g.id
       LEFT JOIN empresas e ON u.empresa_id = e.id
-      WHERE u.rol IN ('RECLUTADOR', 'ENCARGADO')
+      WHERE u.rol IN ('RECLUTADOR', 'ENCARGADO') AND u.reclutador_id IS NOT NULL
     `;
 
     const params: unknown[] = [];
@@ -96,7 +97,13 @@ export async function GET(request: Request) {
         }
 
         groupMap.get(groupKey)!.reclutadores.push({
-          id: row.id,
+          // `asignado_a_id` en candidatos/mensajes_bandeja referencia
+          // reclutadores.id, no usuarios.id -- se exponía el id de cuenta
+          // (u.id) aquí, así que transferir un chat le asignaba un id que
+          // ningún reclutador_id de sesión iba a igualar jamás: el chat
+          // quedaba huérfano (invisible tanto para el origen como para el
+          // destino) y la transferencia parecía "no funcionar".
+          id: row.reclutador_id,
           nombre: row.nombre_display,
           usuario: row.usuario,
           rol: row.rol,

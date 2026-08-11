@@ -20,20 +20,9 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
   const [loadingChat, setLoadingChat] = useState(true);
   const [justUpdated, setJustUpdated] = useState(false);
   const chatScrollRef = useRef<HTMLDivElement>(null);
-  // Se activa justo antes de un cambio local (estado/validación) hecho por
-  // el propio usuario desde este modal, para no mostrarle el aviso de
-  // "actualización" cuando el candidato que vuelve a bajar desde el padre
-  // es simplemente la confirmación de su propia edición.
   const [suppressNextUpdate, setSuppressNextUpdate] = useState(false);
   const [prevCandidato, setPrevCandidato] = useState(candidato);
 
-  // Detecta cuando la actualización automática de Expedientes trae nueva
-  // información para este candidato (no en la carga inicial del modal, ni
-  // en la confirmación de una edición propia) y muestra un aviso breve.
-  //
-  // Se ajusta DURANTE el render, no desde un efecto: es el patrón que React
-  // documenta para "adjusting state when a prop changes" y evita el render en
-  // cascada que provoca hacerlo con useEffect.
   if (candidato !== prevCandidato) {
     setPrevCandidato(candidato);
     setCand(candidato);
