@@ -24,6 +24,8 @@ _SPECIAL_CODES = {
     "HUMAN_ALERT": {"pattern": re.compile(r"HUMAN_ALERT\s*\|\s*([^|]+)\s*\|", re.IGNORECASE), "action": "escalate_to_human", "field": "escalation_reason"},
     "MEMORY_UPDATE": {"pattern": re.compile(r"MEMORY_UPDATE\s*\|\s*([^|]+)\s*\|", re.IGNORECASE), "action": "update_memory", "field": "resumen_ia"},
     "CITA_CANCELADA": {"pattern": re.compile(r"CITA_CANCELADA\s*\|", re.IGNORECASE), "action": "cita_cancelada", "field": "estado"},
+    "LUGAR_RESIDENCIA": {"pattern": re.compile(r"LUGAR_RESIDENCIA\s*\|\s*([^|]+)\s*\|", re.IGNORECASE), "action": "lugar_residencia", "field": "lugar_residencia"},
+    "CIUDAD_NO_APTA": {"pattern": re.compile(r"CIUDAD_NO_APTA\s*\|\s*([^|]+)\s*\|", re.IGNORECASE), "action": "ciudad_no_apta", "field": "lugar_residencia"},
 }
 
 _MENSAJE_HUMANO_DEFAULT = (
@@ -33,6 +35,8 @@ _MENSAJE_HUMANO_DEFAULT = (
 
 _CLEANUP_RE = re.compile(
     r"ACTUALIZAR_(?:NOMBRE|VACANTE|NAVE)\s*\|\s*[^|\n]+(?:\||)"
+    r"|LUGAR_RESIDENCIA\s*\|?[^|\n]*(?:\||)"
+    r"|CIUDAD_NO_APTA\s*\|?[^|\n]*(?:\||)"
     r"|PRIVACIDAD_ACEPTADA\s*\|?"
     r"|CITA_CONFIRMADA[\s:|]*.*?(?:[|\n]|$)"
     r"|CITA_CANCELADA[\s:|]*.*?(?:[|\n]|$)"
@@ -126,6 +130,15 @@ def _generate_database_updates(detected_codes: list[dict]) -> tuple[dict, list[d
         elif action == "cita_cancelada":
             updates["estado"] = "INTERESADO"
             actions.append({"type": "database_update", "table": "candidatos", "field": "estado", "value": "INTERESADO"})
+        elif action == "lugar_residencia":
+            updates["lugar_residencia"] = value
+            actions.append({"type": "database_update", "table": "candidatos", "field": "lugar_residencia", "value": value})
+        elif action == "ciudad_no_apta":
+            updates["lugar_residencia"] = value
+            updates["estado"] = "OTRA_CIUDAD"
+            updates["resumen_ia"] = f"Descalificado automáticamente: Radica en otra ciudad ({value})"
+            actions.append({"type": "database_update", "table": "candidatos", "field": "lugar_residencia", "value": value})
+            actions.append({"type": "database_update", "table": "candidatos", "field": "estado", "value": "OTRA_CIUDAD"})
     return updates, actions
 
 

@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 
 import { pool } from '@/lib/db';
-import { enviarMensajeCandidato } from '@/lib/waha';
+import { enviarMensajeCandidato, enviarImagenCandidato } from '@/lib/waha';
 import { getSession } from '@/lib/auth';
 
 // ─── GET /api/db/mensajes/[telefono] ──────────────────────
@@ -91,15 +91,19 @@ export async function POST(
 
   try {
     const body = await request.json();
-    const { texto, asignado_a_id } = body;
+    const { texto, media_url, asignado_a_id } = body;
 
-    if (!texto?.trim()) {
+    if (!texto?.trim() && !media_url?.trim()) {
       return NextResponse.json({ error: 'El mensaje no puede estar vacío' }, { status: 400 });
     }
 
     let savedMsg;
     try {
-      savedMsg = await enviarMensajeCandidato(telefono, texto, asignado_a_id);
+      if (media_url?.trim()) {
+        savedMsg = await enviarImagenCandidato(telefono, media_url, texto || '📷 Imagen adjunta', asignado_a_id);
+      } else {
+        savedMsg = await enviarMensajeCandidato(telefono, texto, asignado_a_id);
+      }
     } catch (sendErr) {
       const message = sendErr instanceof Error ? sendErr.message : String(sendErr);
       if (message === 'Candidato no encontrado en la base de datos') {

@@ -17,6 +17,7 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/_next") || // Archivos estáticos de Next.js
     pathname.startsWith("/login") || // Página de Login
     pathname.startsWith("/api/auth/login") || // Endpoint de Login
+    pathname.startsWith("/uploads") || // Archivos de expedientes (CVs, INEs, etc.)
     // Rutas internas: las llama el backend Python server-to-server, sin sesión
     // de navegador. No llevan JWT; se protegen con x-api-key = INTERNAL_API_KEY
     // (ver verifyInternalApiKey en src/lib/auth.ts).

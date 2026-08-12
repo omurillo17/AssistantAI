@@ -13,7 +13,7 @@ Este archivo sirve como referencia de contexto, arquitectura, comandos y convenc
   - **WAHA (WhatsApp HTTP API)**: API para integraciones con WhatsApp Web.
 - **Data / Virgo Assets (`/virgo_data`)**: Scripts de base de datos SQL (`database_setup.sql`), prompts y el catálogo generado para la IA.
 
-> n8n fue retirado del proyecto (agosto 2026). No agregues dependencias nuevas hacia él: todo el flujo corre en `backend/`.
+> 🚨 **REGLA DE PRODUCCIÓN**: Este repositorio está en producción real. Prohibido ejecutar comandos destructivos en la BD. Cambios deben ser probados previamente y desplegados con rebuild de docker. Ver `GEMINI.md`.
 
 ---
 

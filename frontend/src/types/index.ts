@@ -49,6 +49,7 @@ export type Conversacion = {
   escalation_reason?: string | null;
   vacante_interes?: string | null;
   nave_interes?: string | null;
+  lugar_residencia?: string | null;
   asignado_a_id?: string | null;
   asignado_a_nombre?: string | null;
   mensajes_no_leidos?: number;
@@ -71,6 +72,7 @@ export type Candidato = {
   escalation_reason?: string | null;
   vacante_interes?: string | null;
   nave_interes?: string | null;
+  lugar_residencia?: string | null;
   nave_id?: string | null;
   asignado_a_id?: string | null;
   asignado_a_nombre?: string | null;

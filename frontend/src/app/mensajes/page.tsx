@@ -1,11 +1,11 @@
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Send, Bot, User,
   Phone, AlertTriangle,
-  Search, Loader2, Check, UserPlus, X, Copy
+  Search, Loader2, Check, UserPlus, X, Copy, Image as ImageIcon
 } from "lucide-react";
 
 import { useMensajes } from "@/hooks/useMensajes";
@@ -174,23 +174,33 @@ function TarjetaConversacion({ conv, isActive, onClick }: { conv: Conversacion; 
 // ─── PÁGINA PRINCIPAL ─────────────────────────────────────
 function MensajesInner() {
   const router = useRouter();
-  // El ref se extrae aparte: si viaja dentro del objeto `m`, el compilador de
-  // React trata CUALQUIER lectura de `m.algo` durante el render como un acceso
-  // a ref (react-hooks/refs). Sacándolo, `ref={chatScrollRef}` es un paso
-  // directo de ref (permitido) y el resto de `m` queda limpio.
-  const { chatScrollRef, ...m } = useMensajes();
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  
+  const m = useMensajes();
+  const chatScrollRef = m.chatScrollRef;
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      m.enviarImagen(file);
+      e.target.value = "";
+    }
+  };
 
   return (
     <div className="flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 text-[#111b21] overflow-hidden" style={{ height: 'calc(100vh - 130px)' }}>
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
         <aside className="w-80 bg-white border-r border-slate-200 flex flex-col z-10">
-          <div className="flex text-xs font-semibold border-b border-slate-200">
-            <button onClick={() => m.setActiveTab("mis_chats")} className={`flex-1 py-3 text-center transition-colors ${m.activeTab === "mis_chats" ? "bg-primary text-white" : "bg-[#f0f2f5] text-slate-500 hover:bg-slate-200"}`}>
+          <div className="flex text-[11px] font-bold border-b border-slate-200">
+            <button onClick={() => m.setActiveTab("mis_chats")} className={`flex-1 py-2.5 text-center transition-colors ${m.activeTab === "mis_chats" ? "bg-primary text-white" : "bg-[#f0f2f5] text-slate-600 hover:bg-slate-200"}`}>
               Mis Chats
             </button>
-            <button onClick={() => m.setActiveTab("compartida")} className={`flex-1 py-3 text-center transition-colors ${m.activeTab === "compartida" ? "bg-primary text-white" : "bg-[#f0f2f5] text-slate-500 hover:bg-slate-200"}`}>
-              Bandeja General
+            <button onClick={() => m.setActiveTab("compartida")} className={`flex-1 py-2.5 text-center transition-colors ${m.activeTab === "compartida" ? "bg-primary text-white" : "bg-[#f0f2f5] text-slate-600 hover:bg-slate-200"}`}>
+              General
+            </button>
+            <button onClick={() => m.setActiveTab("descartados")} className={`flex-1 py-2.5 text-center transition-colors ${m.activeTab === "descartados" ? "bg-rose-600 text-white" : "bg-[#f0f2f5] text-rose-600 hover:bg-rose-100"}`}>
+              Descartados
             </button>
           </div>
           <div className="px-3 py-2 bg-[#f0f2f5] border-b border-slate-200 flex flex-col gap-2">
@@ -347,9 +357,24 @@ function MensajesInner() {
                     <AlertTriangle size={14} /><span>Este chat está siendo atendido por {m.convActiva?.asignado_a_nombre}.</span>
                   </div>
                 )}
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="file"
+                    ref={imageInputRef}
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleImageChange}
+                  />
+                  <button
+                    onClick={() => imageInputRef.current?.click()}
+                    disabled={!m.candidatoActivo?.escalado || m.estaAtendidoPorOtro || m.sending}
+                    title="Enviar imagen (agradecimiento, aviso, etc.)"
+                    className="w-10 h-10 bg-transparent text-[#54656f] hover:text-[#00a884] disabled:opacity-40 rounded-full flex items-center justify-center transition-colors shrink-0"
+                  >
+                    <ImageIcon size={22} />
+                  </button>
                   <textarea id="mensajes-chat-input" name="chat_message" value={m.texto} onChange={e => m.setTexto(e.target.value)} onKeyDown={m.handleKeyDown} disabled={(!m.candidatoActivo?.escalado || m.estaAtendidoPorOtro) || m.sending} className="flex-1 p-2.5 bg-white border-none rounded-lg text-sm focus:outline-none transition-colors disabled:opacity-50 resize-none max-h-32" rows={1} placeholder={!m.candidatoActivo?.escalado ? "Toma el control para escribir" : m.estaAtendidoPorOtro ? `Atendido por ${m.convActiva?.asignado_a_nombre}` : "Escribe un mensaje"} />
-                  <button onClick={m.enviarMensaje} disabled={m.sending || !m.texto.trim() || (!m.candidatoActivo?.escalado || m.estaAtendidoPorOtro)} className="w-10 h-10 bg-transparent text-[#54656f] hover:text-[#00a884] disabled:opacity-50 rounded-full flex items-center justify-center transition-colors">
+                  <button onClick={m.enviarMensaje} disabled={m.sending || !m.texto.trim() || (!m.candidatoActivo?.escalado || m.estaAtendidoPorOtro)} className="w-10 h-10 bg-transparent text-[#54656f] hover:text-[#00a884] disabled:opacity-50 rounded-full flex items-center justify-center transition-colors shrink-0">
                     {m.sending ? <Loader2 size={24} className="animate-spin" /> : <Send size={24} />}
                   </button>
                 </div>

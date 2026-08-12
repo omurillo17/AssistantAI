@@ -142,7 +142,16 @@ async def _prompt_context_api(empresa_id: str | None) -> dict | None:
             resp = await client.get(url, params=params, headers=auth_headers())
             if resp.status_code == 200:
                 ctx = resp.json()
-                return ctx if isinstance(ctx, dict) else None
+                if isinstance(ctx, dict):
+                    # Actualizar caché en disco como respaldo ante caídas de la BD
+                    try:
+                        ctx_path = os.path.join(ENV.VIRGO_FILES_DIR, "data", "prompt_context.json")
+                        os.makedirs(os.path.dirname(ctx_path), exist_ok=True)
+                        with open(ctx_path, "w", encoding="utf-8") as f:
+                            json.dump(ctx, f, ensure_ascii=False, indent=2)
+                    except Exception:
+                        logger.debug("no se pudo guardar caché local de prompt_context.json")
+                    return ctx
             logger.warning("prompt-context respondió %s", resp.status_code)
     except Exception:
         logger.exception("_prompt_context_api: fetch prompt-context falló")
@@ -166,11 +175,9 @@ def _prompt_context_archivo() -> dict | None:
 
 
 async def obtener_prompt_context(empresa_id: str | None) -> dict:
-    """Catálogo de vacantes para los prompts. El archivo local es una caché
-    que el frontend regenera al guardar una vacante; se prefiere porque evita
-    una llamada de red por cada mensaje. Si no está (despliegue nuevo, antes
-    del primer guardado) se cae a la API, que es la fuente de verdad."""
-    return _prompt_context_archivo() or await _prompt_context_api(empresa_id) or {}
+    """Catálogo de vacantes para los prompts. Se consulta la API (que lee de la BD
+    en tiempo real) y si no responde se cae al archivo de caché local."""
+    return await _prompt_context_api(empresa_id) or _prompt_context_archivo() or {}
 
 
 async def obtener_detalle_vacantes(nave_interes: str | None, empresa_id: str | None) -> str:
@@ -633,9 +640,11 @@ async def cargar_prompt(webhook_payload: dict, contacto: dict, candidato: dict) 
 
     ctx = await obtener_prompt_context(dbData.get("empresa_id"))
 
-    prompt = (ctx.get("prompt_base") or "").strip() or _leer_prompt_archivo()
-    if not prompt:
-        prompt = "Error: No se pudo cargar el prompt base del sistema."
+    prompt_cand = (ctx.get("prompt_base") or "").strip()
+    if not prompt_cand or prompt_cand.startswith("Error:"):
+        prompt = _leer_prompt_archivo()
+    else:
+        prompt = prompt_cand
 
     menu_naves_txt = ""
     menu_txt = ""
@@ -677,6 +686,7 @@ async def cargar_prompt(webhook_payload: dict, contacto: dict, candidato: dict) 
         "ANIO_ACTUAL": str(anio_actual),
         "STATUS_INE": semaforo_ine,
         "NOMBRE_REGISTRADO": nombre_real,
+        "LUGAR_RESIDENCIA": dbData.get("lugar_residencia") or "Pendiente",
         "ESTADO_ACTUAL": estado_actual,
         "VACANTE_INTERES": dbData.get("vacante_interes") or "Ninguna",
         "RESUMEN_ANTERIOR": dbData.get("resumen_ia") or "Conversacion nueva.",

@@ -17,13 +17,17 @@ export default function Home() {
     document.title = "Plataforma TCi";
     const query = empresaId ? `?empresa_id=${empresaId}` : "";
 
-    // Cargar badge de mensajes no leídos
+    // Cargar badge de chats activos con mensajes no leídos (excluyendo descartados)
     const cargarNoLeidos = async () => {
       try {
         const data = await (await fetch(`/api/db/mensajes${query}`)).json();
         if (Array.isArray(data)) {
-          const total = data.reduce((acc: number, c: { mensajes_no_leidos?: number }) => acc + (c.mensajes_no_leidos || 0), 0);
-          setNoLeidos(total);
+          const chatsSinLeerActivos = data.filter((c: { mensajes_no_leidos?: number; estado?: string }) => {
+            const hasUnread = (c.mensajes_no_leidos || 0) > 0;
+            const isDescartado = c.estado === "RECHAZADO" || c.estado === "INACTIVO" || c.estado === "OTRA_CIUDAD";
+            return hasUnread && !isDescartado;
+          }).length;
+          setNoLeidos(chatsSinLeerActivos);
         }
       } catch { }
     };
@@ -62,8 +66,8 @@ export default function Home() {
             <h3 className="text-3xl font-bold mb-1 flex items-center gap-2">
               Mensajes
               {noLeidos > 0 && (
-                <span className="bg-danger text-white text-[10px] px-2 py-0.5 rounded-full shadow-sm animate-pulse">
-                  {noLeidos} nuevos
+                <span className="bg-danger text-white text-xs px-2.5 py-0.5 rounded-full shadow-sm animate-pulse">
+                  {noLeidos} {noLeidos === 1 ? "chat" : "chats"}
                 </span>
               )}
             </h3>
