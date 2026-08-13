@@ -403,6 +403,11 @@ export default function CalendarioPage() {
     const today = new Date(new Date().setHours(0, 0, 0, 0));
     const grouped: Record<string, CalendarEvent[]> = {};
 
+    // Inicializar todos los reclutadores registrados para que aparezcan todos en el panel
+    Object.keys(recruiterNames).forEach((email) => {
+      grouped[email] = [];
+    });
+
     events.forEach((e) => {
       if (e.start < today) return;
       // Para eventos de DB sin creator_email, los ponemos en 'sin_asignar'
@@ -418,7 +423,7 @@ export default function CalendarioPage() {
     });
 
     return grouped;
-  }, [events]);
+  }, [events, recruiterNames]);
 
   const toggleRecruiter = (email: string) =>
     setExpandedRecruiters((prev) => ({ ...prev, [email]: !prev[email] }));

@@ -41,10 +41,14 @@ async def start_typing(session: str, chat_id: str) -> None:
 
 async def get_contact(session: str, contact_id: str) -> dict:
     url = f"{ENV.WAHA_BASE_URL}/api/contacts"
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.get(url, headers=_headers(), params={"contactId": contact_id, "session": session})
-        resp.raise_for_status()
-        return resp.json()
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(url, headers=_headers(), params={"contactId": contact_id, "session": session})
+            resp.raise_for_status()
+            return resp.json()
+    except Exception as e:
+        logger.warning("get_contact falló para session=%s contact_id=%s: %s (se usa fallback)", session, contact_id, e)
+        return {"id": contact_id}
 
 
 async def download_media(media_url: str) -> tuple[bytes, str]:

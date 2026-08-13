@@ -9,6 +9,8 @@ function getGlobalPromptBase(): string {
     path.join(process.cwd(), 'virgo_data', 'prompts', 'chat_prompt.md'),
     path.join(process.cwd(), '..', 'virgo_data', 'workflows', 'chat_prompt.md'),
     path.join(process.cwd(), 'virgo_data', 'workflows', 'chat_prompt.md'),
+    '/app/virgo_data/prompts/chat_prompt.md',
+    '/app/virgo_files/prompts/chat_prompt.md',
     '/home/node/virgo_files/prompts/chat_prompt.md',
     '/home/node/virgo_files/workflows/chat_prompt.md',
   ];
@@ -135,7 +137,7 @@ export async function buildPromptContext(empresaId?: string | null): Promise<Pro
   }
 
   // El prompt_ia de la empresa (si se definio uno en el panel SaaS) sobreescribe el prompt global
-  const empresaPromptIa = empresaId ? (empresas[0]?.prompt_ia || '').trim() : '';
+  const empresaPromptIa = (empresas[0]?.prompt_ia || '').trim();
   const prompt_base = empresaPromptIa || getGlobalPromptBase();
 
   const empresaIds = empresas.map((e: { id: string }) => e.id);

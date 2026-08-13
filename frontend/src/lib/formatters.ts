@@ -52,8 +52,13 @@ export function getCandidateDisplayName(c: {
 export function formatNaveName(nave?: string | number | null): string {
   if (!nave) return "";
   const clean = String(nave).trim();
-  if (clean === "1" || clean.toUpperCase() === "NAVE 1") return "Dulcería";
-  if (clean === "2" || clean.toUpperCase() === "NAVE 2") return "CEDIS";
-  if (clean === "3" || clean.toUpperCase() === "NAVE 3") return "Materias Primas";
-  return clean;
+  const normalized = clean.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+
+  if (clean === "1" || normalized === "NAVE 1" || normalized.includes("DULCERIA")) return "DULCERIA";
+  if (clean === "2" || normalized === "NAVE 2" || normalized.includes("CEDIS")) return "CEDIS";
+  if (clean === "3" || normalized === "NAVE 3" || normalized.includes("MATERIAS PRIMAS")) return "MATERIAS PRIMAS";
+  if (normalized.includes("MATRIZ")) return "MATRIZ";
+  if (normalized.includes("SUCURSAL")) return "SUCURSAL";
+  if (normalized.includes("VITALI")) return "VITALI";
+  return clean.toUpperCase();
 }

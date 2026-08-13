@@ -19,11 +19,15 @@ const securityHeaders = [
   },
   {
     key: 'Content-Security-Policy',
-    value: "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http://localhost:3000 https://static.whatsapp.net; media-src 'self' blob: http://localhost:3000; connect-src 'self' http://localhost:3000;",
+    value: "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://static.whatsapp.net; media-src 'self' blob:; connect-src 'self';",
   },
 ];
 
 const nextConfig: NextConfig = {
+  // Genera un build standalone (~150 MB) que incluye su propio servidor.
+  // Necesario para el Dockerfile multi-stage de producción.
+  output: 'standalone',
+
   async headers() {
     return [
       {

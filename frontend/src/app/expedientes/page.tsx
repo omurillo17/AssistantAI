@@ -58,7 +58,8 @@ function KanbanCard({ cand, onClick, onStatusChange }: { cand: Candidato, onClic
         )}
       </div>
 
-      <div className="flex gap-1.5 items-center mb-2">
+      <div className="flex flex-wrap gap-1.5 items-center mb-2">
+        <EstadoBadge estado={cand.estado} />
         <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 ${hasCV ? "bg-cyan-50 text-cyan-700 border border-cyan-100" : "bg-slate-50 text-slate-400 border border-slate-100"}`}>
           📄 CV
         </span>
@@ -311,15 +312,26 @@ function ExpedientesPageInner() {
   }, [dbVacantes, rawVacantesData, allowedNaveIds, myRecruiterId, userRole]);
 
   // ─── UNIQUE LISTS PARA FILTROS ─────────────────────────────────
+  const isPlaceholderVal = (val?: string | null) => {
+    if (!val) return true;
+    const norm = val.trim().toLowerCase().replace(/[{}]/g, "");
+    return !norm || norm === "ninguna" || norm === "general" || norm === "pendiente" || norm === "sin sucursal";
+  };
+
   const uniqueVacantes = useMemo(() => {
-    const fromCand = candidatos.map((c) => c.vacante_interes?.trim()).filter(Boolean) as string[];
-    const combined = Array.from(new Set([...scopedVacantes, ...fromCand]));
+    const fromCand = candidatos
+      .map((c) => c.vacante_interes?.trim())
+      .filter((v): v is string => Boolean(v) && !isPlaceholderVal(v));
+    const fromScoped = scopedVacantes.filter((v) => !isPlaceholderVal(v));
+    const combined = Array.from(new Set([...fromScoped, ...fromCand]));
     return combined.sort((a, b) => a.localeCompare(b));
   }, [candidatos, scopedVacantes]);
 
   const uniqueNaves = useMemo(() => {
-    const fromCand = candidatos.map((c) => c.nave_interes?.trim()).filter(Boolean) as string[];
-    const fromDb = scopedNaves.map((n) => n.nombre);
+    const fromCand = candidatos
+      .map((c) => c.nave_interes?.trim())
+      .filter((n): n is string => Boolean(n) && !isPlaceholderVal(n));
+    const fromDb = scopedNaves.map((n) => n.nombre).filter((n) => !isPlaceholderVal(n));
     const combined = Array.from(new Set([...fromDb, ...fromCand]));
     return combined.sort((a, b) => a.localeCompare(b));
   }, [candidatos, scopedNaves]);
@@ -341,23 +353,41 @@ function ExpedientesPageInner() {
         const matchStatus = statusFilter === "TODOS" || candStatus === normStatus;
 
         const candVacante = normalizeStr(c.vacante_interes || "");
-        const matchVacante =
-          vacanteFilter === "TODAS" ||
-          candVacante === normVacante ||
-          candVacante.includes(normVacante) ||
-          normVacante.includes(candVacante);
+        const isVacanteSinSeleccionar = !candVacante || candVacante === "general" || candVacante === "ninguna" || candVacante === "pendiente";
+
+        let matchVacante = false;
+        if (vacanteFilter === "TODAS") {
+          matchVacante = true;
+        } else if (vacanteFilter === "SIN_SELECCIONAR") {
+          matchVacante = isVacanteSinSeleccionar;
+        } else {
+          matchVacante = !isVacanteSinSeleccionar && (
+            candVacante === normVacante ||
+            candVacante.includes(normVacante) ||
+            normVacante.includes(candVacante)
+          );
+        }
 
         const candNave = normalizeStr(c.nave_interes || "");
-        const matchNave =
-          naveFilter === "TODAS" ||
-          candNave === normNave ||
-          candNave.includes(normNave) ||
-          normNave.includes(candNave);
+        const isNaveSinSeleccionar = !candNave || candNave === "pendiente" || candNave === "sin sucursal";
+
+        let matchNave = false;
+        if (naveFilter === "TODAS") {
+          matchNave = true;
+        } else if (naveFilter === "SIN_SELECCIONAR") {
+          matchNave = isNaveSinSeleccionar;
+        } else {
+          matchNave = !isNaveSinSeleccionar && (
+            candNave === normNave ||
+            candNave.includes(normNave) ||
+            normNave.includes(candNave)
+          );
+        }
 
         // Control de permisos por Grupo/Reclutador
         if (allowedNaveIds && allowedNaveIds.size > 0 && userRole !== "ADMIN" && userRole !== "ROOT") {
           const candNaveId = (c as any).nave_id || "";
-          const isUnassigned = !candNaveId && (!candNave || candNave === "pendiente") && (!candVacante || candVacante === "general");
+          const isUnassigned = !candNaveId && isNaveSinSeleccionar && isVacanteSinSeleccionar;
           const isMyNaveId = candNaveId && allowedNaveIds.has(candNaveId);
           const isMyNaveName =
             candNave &&
@@ -460,10 +490,12 @@ function ExpedientesPageInner() {
                 </div>
                 <select id="expedientes-nave-filter" name="nave_filter" className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer min-w-[140px]" value={naveFilter} onChange={e => setNaveFilter(e.target.value)}>
                   <option value="TODAS">Todas las Naves</option>
+                  <option value="SIN_SELECCIONAR">SIN NAVE</option>
                   {uniqueNaves.map(n => <option key={String(n)} value={String(n)}>{n}</option>)}
                 </select>
                 <select id="expedientes-vacante-filter" name="vacante_filter" className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer min-w-[140px]" value={vacanteFilter} onChange={e => setVacanteFilter(e.target.value)}>
                   <option value="TODAS">Todas las Vacantes</option>
+                  <option value="SIN_SELECCIONAR">SIN VACANTE</option>
                   {uniqueVacantes.map(v => <option key={String(v)} value={String(v)}>{v}</option>)}
                 </select>
                 <select id="expedientes-status-filter" name="status_filter" className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer min-w-[140px]" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>

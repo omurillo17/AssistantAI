@@ -265,6 +265,10 @@ async def analizador_y_chat(body: dict, contacto: dict, candidato: dict) -> None
     original, pero como llamadas directas en el mismo proceso."""
     payload = body["payload"]
 
+    if candidato and candidato.get("estado") in ("OTRA_CIUDAD", "RECHAZADO", "INACTIVO"):
+        logger.info("Candidato telefono=%s está en estado %s -- se omite procesamiento para ahorrar tokens", contacto.get("number"), candidato.get("estado"))
+        return
+
     resultado_media = await analizador.analizar_mensaje(payload, contacto, candidato)
     if resultado_media["detuvo_flujo"]:
         return

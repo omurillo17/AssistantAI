@@ -16,7 +16,7 @@ export function useMensajes() {
   const nombre = useLocalStorageValue("tci_username") || "Reclutador";
   const reclutadorId = useLocalStorageValue("tci_reclutador_id");
 
-  const [activeTab, setActiveTab] = useState<"mis_chats" | "compartida">("mis_chats");
+  const [activeTab, setActiveTab] = useState<"mis_chats" | "compartida" | "descartados">("mis_chats");
   const [conversaciones, setConversaciones] = useState<Conversacion[]>([]);
   const [loading, setLoading] = useState(true);
   const [activePhone, setActivePhone] = useState<string | null>(null);
@@ -34,7 +34,8 @@ export function useMensajes() {
   const [showPhoneModal, setShowPhoneModal] = useState(false);
   const [selectedReclutador, setSelectedReclutador] = useState("");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [misVacantes, setMisVacantes] = useState<string[]>([]);
+  const [todasVacantes, setTodasVacantes] = useState<string[]>([]);
+  const [todasNaves, setTodasNaves] = useState<string[]>([]);
 
   // ─── Refs ───────────────────────────────────────────────
   const chatScrollRef = useRef<HTMLDivElement>(null);
@@ -52,28 +53,37 @@ export function useMensajes() {
   };
 
   // ─── Data Loading ──────────────────────────────────────
-  const loadMisVacantes = useCallback(async (nombreUser: string) => {
+  const loadCatalogos = useCallback(async () => {
     try {
       const storedEmpresaId = localStorage.getItem("tci_empresa_id");
-      const storedNaveId = localStorage.getItem("tci_nave_id");
       let query = "";
-      if (storedEmpresaId) query += `?empresa_id=${storedEmpresaId}`;
-      if (storedNaveId) query += (query ? `&` : `?`) + `nave_id=${storedNaveId}`;
-      const res = await fetch(`/api/db/vacantes${query}`);
-      if (res.ok) {
-        const data = await res.json();
-        const searchName = nombreUser.trim().toLowerCase();
-        const reclutador = data.find((r: any) =>
-          r.nombre?.trim().toLowerCase() === searchName ||
-          r.usuario?.trim().toLowerCase() === searchName
-        );
-        if (reclutador && reclutador.vacantes) {
-          const vacantesNames = reclutador.vacantes.map((v: any) => normalize(v.nombre)).filter(Boolean);
-          setMisVacantes(Array.from(new Set(vacantesNames)) as string[]);
+      if (storedEmpresaId && storedEmpresaId !== "null" && storedEmpresaId !== "undefined") {
+        query += `?empresa_id=${storedEmpresaId}`;
+      }
+      // 1. Cargar todas las vacantes de todos los reclutadores de la empresa
+      const resVac = await fetch(`/api/db/vacantes${query}`);
+      if (resVac.ok) {
+        const data = await resVac.json();
+        if (Array.isArray(data)) {
+          const allVacs = data.flatMap((r: any) => r.vacantes || []).map((v: any) => normalize(v.nombre)).filter(Boolean);
+          setTodasVacantes(Array.from(new Set(allVacs)) as string[]);
+        }
+      }
+
+      // 2. Cargar todas las naves registradas
+      const resCtx = await fetch(`/api/prompt-context${query}`);
+      if (resCtx.ok) {
+        const ctxData = await resCtx.json();
+        if (ctxData.menu_naves && typeof ctxData.menu_naves === "string") {
+          const lines = ctxData.menu_naves.split("\n").filter((l: string) => /^\d+\./.test(l.trim()));
+          const navesList = lines.map((l: string) => normalize(l.replace(/^\d+\.\s*/, ""))).filter(Boolean);
+          if (navesList.length > 0) {
+            setTodasNaves(Array.from(new Set(navesList)) as string[]);
+          }
         }
       }
     } catch (e) {
-      console.error("Error cargando mis vacantes", e);
+      console.error("Error cargando catálogos de vacantes y naves", e);
     }
   }, []);
 
@@ -180,13 +190,13 @@ export function useMensajes() {
         setActivePhone(tel);
         await loadChat(tel, true);
       }
-      await Promise.all([loadConversaciones(), loadReclutadores(), loadMisVacantes(nombre)]);
+      await Promise.all([loadConversaciones(), loadReclutadores(), loadCatalogos()]);
     };
     arrancar();
     // Solo al montar: searchParams cambia con cada navegacion y relanzaria la
     // carga completa, y `nombre` solo se usa como semilla inicial.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadChat, loadConversaciones, loadReclutadores, loadMisVacantes]);
+  }, [loadChat, loadConversaciones, loadReclutadores, loadCatalogos]);
 
   // ─── Polling ────────────────────────────────────────────
   useEffect(() => {
@@ -203,7 +213,7 @@ export function useMensajes() {
   useTenantChange(() => {
     loadConversaciones();
     loadReclutadores();
-    loadMisVacantes(nombre);
+    loadCatalogos();
     const phone = activePhoneRef.current;
     if (phone) loadChat(phone, false);
   });
@@ -249,6 +259,49 @@ export function useMensajes() {
       await fetch(`/api/db/mensajes/${activePhone}${query}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texto: msgText, asignado_a_id: reclutadorId }) });
       await loadChat(activePhone, false);
     } catch { showToast("Error al enviar", true); } finally { setSending(false); }
+  };
+
+  const enviarImagen = async (file: File) => {
+    if (!file || !activePhone || sending) return;
+    setSending(true);
+    isNearBottom.current = true;
+    try {
+      const formData = new FormData();
+      formData.append("data", file);
+      formData.append("telefono", activePhone);
+
+      const uploadRes = await fetch(`/api/upload-cv?telefono=${activePhone}`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!uploadRes.ok) throw new Error("Error al subir imagen");
+      const { url: mediaUrl } = await uploadRes.json();
+
+      const storedEmpresaId = localStorage.getItem("tci_empresa_id");
+      const storedNaveId = localStorage.getItem("tci_nave_id");
+      let query = "";
+      if (storedEmpresaId) query += `?empresa_id=${storedEmpresaId}`;
+      if (storedNaveId) query += (query ? `&` : `?`) + `nave_id=${storedNaveId}`;
+
+      await fetch(`/api/db/mensajes/${activePhone}${query}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          texto: "",
+          media_url: mediaUrl,
+          message_type: "image",
+          asignado_a_id: reclutadorId
+        })
+      });
+
+      await loadChat(activePhone, false);
+      showToast("📷 Imagen enviada correctamente");
+    } catch {
+      showToast("Error al enviar imagen", true);
+    } finally {
+      setSending(false);
+    }
   };
 
   const tomarControl = async () => {
@@ -334,6 +387,7 @@ export function useMensajes() {
         body: JSON.stringify({
           telefono: activePhone,
           escalado: false,
+          estado: "INTERESADO",
           escalation_reason: null,
           asignado_a_id: null
         }),
@@ -431,23 +485,59 @@ export function useMensajes() {
   };
 
   // ─── Derived State ─────────────────────────────────────
-  const uniqueVacantes = misVacantes;
-  const uniqueNaves = Array.from(new Set(conversaciones.map(c => normalize(c.nave_interes)).filter(Boolean))).sort() as string[];
+  const isPlaceholderVal = (val?: string | null) => {
+    if (!val) return true;
+    const norm = val.trim().toLowerCase().replace(/[{}]/g, "");
+    return !norm || norm === "ninguna" || norm === "general" || norm === "pendiente" || norm === "sin sucursal";
+  };
+
+  const convVacantes = conversaciones
+    .map(c => normalize(c.vacante_interes))
+    .filter((v): v is string => Boolean(v) && !isPlaceholderVal(v));
+  const uniqueVacantes = Array.from(
+    new Set([...todasVacantes.filter(v => !isPlaceholderVal(v)), ...convVacantes])
+  ).sort() as string[];
+
+  const convNaves = conversaciones
+    .map(c => normalize(c.nave_interes))
+    .filter((n): n is string => Boolean(n) && !isPlaceholderVal(n));
+  const uniqueNaves = Array.from(
+    new Set([...todasNaves.filter(n => !isPlaceholderVal(n)), ...convNaves])
+  ).sort() as string[];
 
   const filtradas = conversaciones.filter(c => {
     const matchesSearch = c.nombre.toLowerCase().includes(search.toLowerCase()) || c.telefono.includes(search);
     const matchesVacante = filterVacante ? normalize(c.vacante_interes) === filterVacante : true;
-    const matchesNave = filterNave ? normalize(c.nave_interes) === filterNave : true;
 
+    const matchesNave = filterNave ? (() => {
+      const cNave = normalize(c.nave_interes);
+      if (!cNave) return false;
+      if (cNave === filterNave) return true;
+      const naveAliases: Record<string, string[]> = {
+        "DULCERIA": ["1", "DULCERIA", "DULCERÍA"],
+        "CEDIS": ["2", "CEDIS"],
+        "MATERIAS PRIMAS": ["3", "MATERIAS PRIMAS"]
+      };
+      const aliases = naveAliases[filterNave];
+      if (aliases) {
+        return aliases.includes(cNave);
+      }
+      return cNave.includes(filterNave) || filterNave.includes(cNave);
+    })() : true;
+
+    const isDescartado = c.estado === "RECHAZADO" || c.estado === "INACTIVO" || c.estado === "OTRA_CIUDAD";
     const isAsignadoAMi = !!reclutadorId && c.asignado_a_id === reclutadorId;
-    // Un chat que YA tomó otro reclutador no debe aparecer en la Bandeja
-    // General de nadie más -- solo los chats sin dueño van ahí. Antes se
-    // consideraba "compartido" cualquier chat que no fuera mío, así que el
-    // chat de un candidato que otro reclutador ya había tomado seguía
-    // visible (y tomable) para todos los demás hasta que alguien lo
-    // transfería explícitamente.
     const isCompartida = !c.asignado_a_id;
-    const matchesTab = activeTab === "mis_chats" ? isAsignadoAMi : isCompartida;
+
+    let matchesTab = false;
+    if (activeTab === "descartados") {
+      matchesTab = isDescartado;
+    } else if (activeTab === "mis_chats") {
+      matchesTab = !isDescartado && isAsignadoAMi;
+    } else {
+      // compartida
+      matchesTab = !isDescartado && isCompartida;
+    }
 
     return matchesSearch && matchesVacante && matchesNave && matchesTab;
   });
@@ -494,6 +584,7 @@ export function useMensajes() {
     // Actions
     loadChat,
     enviarMensaje,
+    enviarImagen,
     tomarControl,
     tomarChat,
     devolverAlBot,

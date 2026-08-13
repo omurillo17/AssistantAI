@@ -275,6 +275,17 @@ async def _ejecutar_tool(nombre: str, args: dict, candidato: dict, reclutador: d
         if nombre == "revisar_calendario":
             return await _tool_revisar_calendario(reclutador.get("calendar_id") or _DEFAULT_CALENDAR, args)
         if nombre == "crear_evento":
+            # REGLA OBLIGATORIA: Solo se permite crear el evento en el calendario si el candidato
+            # ya completó sus documentos y su estado es INE_VALIDADA o CITA_AGENDADA/CITA_CANCELADA.
+            estado_cand = candidato.get("estado")
+            if estado_cand not in ("INE_VALIDADA", "CITA_AGENDADA", "CITA_CANCELADA"):
+                logger.warning(
+                    "_ejecutar_tool: se bloqueó crear_evento para candidato telefono=%s (estado=%s) porque no ha completado INE/RFC",
+                    candidato.get("telefono"), estado_cand
+                )
+                return {
+                    "error": "No es posible agendar la cita todavía. El candidato debe primero completar la recepción y validación de su INE y RFC (Estado INE_VALIDADA)."
+                }
             return await _tool_crear_evento(candidato, reclutador, args)
         if nombre == "eliminar_evento":
             return await _tool_eliminar_evento(candidato, reclutador)

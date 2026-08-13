@@ -19,7 +19,8 @@ export type EstadoKey =
   | 'RECHAZADO'
   | 'CARTERA_GENERAL'
   | 'CITA_CANCELADA'
-  | 'INACTIVO';
+  | 'INACTIVO'
+  | 'OTRA_CIUDAD';
 
 export type EstadoDef = {
   label: string;
@@ -229,6 +230,18 @@ export const ESTADOS: Record<EstadoKey, EstadoDef> = {
     activo: true,
     descripcion: 'Candidato abandonó el proceso sin completarlo',
   },
+  OTRA_CIUDAD: {
+    label: 'Otra Ciudad',
+    labelCorto: 'Otra Ciudad',
+    color: 'text-purple-700',
+    bg: 'bg-purple-100',
+    border: 'border-purple-200',
+    emoji: '🌆',
+    grupo: 'descartado',
+    asignadoPor: 'bot',
+    activo: true,
+    descripcion: 'Candidato descalificado por radicar fuera de Jalisco / ZMG',
+  },
 };
 
 // ============================================================
@@ -240,12 +253,12 @@ export const ESTADOS_ORDENADOS: EstadoKey[] = [
   'NUEVO', 'INTERESADO', 'CV_RECIBIDO', 'CV_MANUAL', 'FILTROS_COMPLETADOS', 'INE_VALIDADA',
   'CITA_AGENDADA', 'CITA_CANCELADA', 'RECORDATORIO_ENVIADO', 'ESCALADO',
   'DOCUMENTOS_NO_COINCIDEN', 'ENTREVISTADO', 'CONTRATADO',
-  'RECHAZADO', 'CARTERA_GENERAL', 'INACTIVO',
+  'RECHAZADO', 'OTRA_CIUDAD', 'CARTERA_GENERAL', 'INACTIVO',
 ];
 
 /** Estados que el CRM puede asignar manualmente */
 export const ESTADOS_CRM: EstadoKey[] = [
-  'CITA_AGENDADA', 'ENTREVISTADO', 'CONTRATADO', 'RECHAZADO', 'CARTERA_GENERAL', 'CITA_CANCELADA', 'INACTIVO',
+  'CITA_AGENDADA', 'ENTREVISTADO', 'CONTRATADO', 'RECHAZADO', 'OTRA_CIUDAD', 'CARTERA_GENERAL', 'CITA_CANCELADA', 'INACTIVO',
   'INTERESADO', 'ESCALADO', // Para de-escalar manualmente
 ];
 
@@ -269,7 +282,7 @@ export const GRUPOS: Record<GrupoEstado, { label: string; color: string; estados
   descartado: {
     label: 'Descartados',
     color: 'text-gray-500',
-    estados: ['RECHAZADO', 'INACTIVO'],
+    estados: ['RECHAZADO', 'OTRA_CIUDAD', 'INACTIVO'],
   },
   pool: {
     label: 'Cartera General',
@@ -284,8 +297,10 @@ export const KANBAN_COLUMNAS = [
   { key: 'pipeline', estados: ['NUEVO', 'INTERESADO'] as EstadoKey[], label: 'Nuevos / Interesados', color: 'border-blue-300' },
   { key: 'cv', estados: ['CV_RECIBIDO', 'CV_MANUAL', 'FILTROS_COMPLETADOS'] as EstadoKey[], label: 'CV / Filtros', color: 'border-cyan-300' },
   { key: 'docs', estados: ['INE_VALIDADA'] as EstadoKey[], label: 'Docs Validados', color: 'border-violet-300' },
-  { key: 'cita', estados: ['CITA_AGENDADA', 'RECORDATORIO_ENVIADO'] as EstadoKey[], label: '📅 Cita Agendada', color: 'border-amber-300' },
+  { key: 'cita', estados: ['CITA_AGENDADA'] as EstadoKey[], label: '📅 Cita Agendada', color: 'border-amber-300' },
+  { key: 'recordatorio', estados: ['RECORDATORIO_ENVIADO'] as EstadoKey[], label: '🔔 Recordatorio Enviado', color: 'border-yellow-300' },
   { key: 'final', estados: ['ENTREVISTADO', 'CONTRATADO'] as EstadoKey[], label: 'Finalizados / Entrevistados', color: 'border-emerald-300' },
+  { key: 'otra_ciudad', estados: ['OTRA_CIUDAD'] as EstadoKey[], label: '🌆 Otra Ciudad', color: 'border-purple-500' },
   { key: 'pool', estados: ['CARTERA_GENERAL', 'RECHAZADO', 'INACTIVO'] as EstadoKey[], label: 'Pool / Cerrados', color: 'border-gray-300' },
 ];
 

@@ -62,12 +62,17 @@ export async function POST(request: Request) {
     };
 
     // Verificación de Rechazo Global (Cross-Company/Nave)
-    const resRechazados = await pool.query(`SELECT nave_interes FROM candidatos WHERE telefono = $1 AND estado = 'RECHAZADO' LIMIT 1`, [telefono]);
+    const resRechazados = await pool.query(`SELECT nave_interes FROM candidatos WHERE telefono = $1 AND estado IN ('RECHAZADO', 'OTRA_CIUDAD') LIMIT 1`, [telefono]);
     const fueRechazadoGlobalmente = resRechazados.rowCount ? (resRechazados.rowCount > 0) : false;
     const naveRechazo = fueRechazadoGlobalmente ? resRechazados.rows[0].nave_interes : null;
 
     if (res.rowCount && res.rowCount > 0) {
       currentState = res.rows[0].estado;
+
+      if (currentState === "RECHAZADO" || currentState === "OTRA_CIUDAD" || fueRechazadoGlobalmente) {
+        console.log(`[n8n-incoming] Candidato ${telefono} está ${currentState}. Se omite procesamiento para ahorrar tokens.`);
+        return NextResponse.json({ success: true, ignored: true, reason: `Candidato en ${currentState}` });
+      }
       // `resolveState` lanza si el valor guardado no es un estado de la
       // máquina, y como eso ocurre ANTES de responder, el candidato quedaba
       // con todos sus mensajes devolviendo HTTP 500 (pasó con 'CITA_CANCELADA',

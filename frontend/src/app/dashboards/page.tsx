@@ -13,6 +13,7 @@ import {
 import { ESTADOS, type EstadoKey } from "@/lib/estados";
 import type { Candidato } from "@/types";
 import { useTenantChange } from "@/hooks/useTenant";
+import { formatNaveName } from "@/lib/formatters";
 
 const CHART_COLORS = ["#6366f1", "#8b5cf6", "#ec4899", "#f43f5e", "#f59e0b", "#10b981", "#0ea5e9"];
 
@@ -170,8 +171,12 @@ export default function DashboardsPage() {
   const naveDist = useMemo(() => {
     const counts: Record<string, number> = {};
     candidatos.forEach(c => {
-      const numero = (c.nave_interes || "").trim();
-      const nombre = naveNombrePorNumero[numero] || (numero && numero !== "Pendiente" ? `${numero}` : "Sin sucursal");
+      const raw = (c.nave_interes || "").trim();
+      let nombre = "Sin sucursal";
+      if (raw && raw !== "Pendiente") {
+        const resolved = naveNombrePorNumero[raw] || raw;
+        nombre = formatNaveName(resolved);
+      }
       counts[nombre] = (counts[nombre] || 0) + 1;
     });
     return Object.entries(counts)

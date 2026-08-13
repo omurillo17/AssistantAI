@@ -152,11 +152,14 @@ export async function PATCH(request: Request) {
     if (escalado !== undefined) {
       campos.push(`escalado = $${idx++}`);
       valores.push(escalado);
-      // Si se activa el escalado, registrar timestamp; si se desactiva, limpiarlo
+      // Si se activa el escalado, registrar timestamp; si se desactiva, limpiarlo y resetear estado si estaba en ESCALADO
       if (escalado === true) {
         campos.push(`escalated_at = NOW()`);
       } else {
         campos.push(`escalated_at = NULL`);
+        if (!estado || estado === "ESCALADO") {
+          campos.push(`estado = 'INTERESADO'`);
+        }
       }
     }
 
