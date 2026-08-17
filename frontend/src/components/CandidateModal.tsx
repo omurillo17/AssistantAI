@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Candidato, ChatMessage } from "@/types";
 import { getEstado, ESTADOS_CRM, ESTADOS, EstadoKey } from "@/lib/estados";
 import { getCandidateDisplayName, formatNaveName, proxyMediaUrl } from "@/lib/formatters";
+import { useBackdropClose } from "@/hooks/useBackdropClose";
 import { X, ExternalLink, Calendar, Briefcase, FileText, CheckCircle, AlertCircle, Bot, User, MessageSquare, Sparkles } from "lucide-react";
 
 interface CandidateModalProps {
@@ -183,20 +184,12 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
   const charDiff = (ineName && rfcName) ? getLevenshtein(ineName, rfcName) : 0;
   const allAvailableUrls = Array.from(new Set([cvLink, ineUrl, csfUrl, ...cvUrls, ...ineUrls, ...csfUrls, ...chatMediaUrls].filter((u): u is string => !!u)));
   const hasCV = cand.tiene_cv || !!cvLink || cvUrls.length > 0;
-  const isBackdropMouseDown = useRef(false);
+  const backdropHandlers = useBackdropClose(onClose);
 
   return (
     <div
       className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4 lg:p-6"
-      onMouseDown={(e) => {
-        isBackdropMouseDown.current = (e.target === e.currentTarget);
-      }}
-      onMouseUp={(e) => {
-        if (isBackdropMouseDown.current && e.target === e.currentTarget) {
-          onClose();
-        }
-        isBackdropMouseDown.current = false;
-      }}
+      {...backdropHandlers}
     >
       <div
         className="bg-white rounded-2xl w-full max-w-6xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden animate-fade-in"

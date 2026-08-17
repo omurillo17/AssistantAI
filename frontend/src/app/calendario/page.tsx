@@ -8,6 +8,7 @@ import { es } from "date-fns/locale";
 import { MessageSquare, ChevronDown, ChevronRight, XCircle, ChevronLeft, RefreshCw, Calendar as CalendarIcon, LayoutList } from "lucide-react";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import { useTenantChange } from "@/hooks/useTenant";
+import { useBackdropClose } from "@/hooks/useBackdropClose";
 
 const locales = { es };
 const localizer = dateFnsLocalizer({
@@ -123,7 +124,6 @@ export default function CalendarioPage() {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{ msg: string; isError: boolean } | null>(null);
   const [myCalId, setMyCalId] = useState("");
-  const isBackdropMouseDown = useRef(false);
 
   // Panel lateral
   const [expandedRecruiters, setExpandedRecruiters] = useState<Record<string, boolean>>({});
@@ -152,6 +152,11 @@ export default function CalendarioPage() {
   const [blockEndStr, setBlockEndStr] = useState("");
   const [blockTitle, setBlockTitle] = useState("Vacaciones / Bloqueo");
   const [blocking, setBlocking] = useState(false);
+
+  const cancelBackdrop = useBackdropClose(() => setCancelTarget(null));
+  const eventBackdrop = useBackdropClose(() => setSelectedEvent(null));
+  const rescheduleBackdrop = useBackdropClose(() => setRescheduleTarget(null));
+  const blockBackdrop = useBackdropClose(() => setBlockTarget(null));
 
   // Vista del calendario
   const [view, setView] = useState<View>(Views.MONTH);
@@ -859,13 +864,7 @@ export default function CalendarioPage() {
       {cancelTarget && (
         <div
           className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center z-[2000]"
-          onMouseDown={(e) => { isBackdropMouseDown.current = (e.target === e.currentTarget); }}
-          onMouseUp={(e) => {
-            if (isBackdropMouseDown.current && e.target === e.currentTarget) {
-              setCancelTarget(null);
-            }
-            isBackdropMouseDown.current = false;
-          }}
+          {...cancelBackdrop}
         >
           <div
             className="bg-white w-[90%] max-w-md rounded-2xl p-6 shadow-2xl"
@@ -965,13 +964,7 @@ export default function CalendarioPage() {
       {selectedEvent && (
         <div
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000]"
-          onMouseDown={(e) => { isBackdropMouseDown.current = (e.target === e.currentTarget); }}
-          onMouseUp={(e) => {
-            if (isBackdropMouseDown.current && e.target === e.currentTarget) {
-              setSelectedEvent(null);
-            }
-            isBackdropMouseDown.current = false;
-          }}
+          {...eventBackdrop}
         >
           <div
             className="bg-white w-[90%] max-w-md rounded-2xl p-7 shadow-2xl relative"
@@ -1055,13 +1048,7 @@ export default function CalendarioPage() {
       {rescheduleTarget && (
         <div
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[2000]"
-          onMouseDown={(e) => { isBackdropMouseDown.current = (e.target === e.currentTarget); }}
-          onMouseUp={(e) => {
-            if (isBackdropMouseDown.current && e.target === e.currentTarget) {
-              setRescheduleTarget(null);
-            }
-            isBackdropMouseDown.current = false;
-          }}
+          {...rescheduleBackdrop}
         >
           <div
             className="bg-white w-[90%] max-w-md rounded-2xl p-6 shadow-2xl relative"
@@ -1153,13 +1140,7 @@ export default function CalendarioPage() {
       {blockTarget && (
         <div
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[2000]"
-          onMouseDown={(e) => { isBackdropMouseDown.current = (e.target === e.currentTarget); }}
-          onMouseUp={(e) => {
-            if (isBackdropMouseDown.current && e.target === e.currentTarget) {
-              setBlockTarget(null);
-            }
-            isBackdropMouseDown.current = false;
-          }}
+          {...blockBackdrop}
         >
           <div
             className="bg-white w-[90%] max-w-md rounded-2xl p-6 shadow-2xl relative"

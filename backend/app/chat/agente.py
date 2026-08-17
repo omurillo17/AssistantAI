@@ -44,6 +44,7 @@ from app.routers.eventos_calendario import (
     crear_evento as _crear_evento_endpoint,
     eliminar_evento as _eliminar_evento_endpoint,
 )
+from app.utils.fechas_es import MESES_ES
 
 logger = logging.getLogger("agente")
 
@@ -481,8 +482,7 @@ def _formatear_fecha_alerta(fecha_cita: str) -> str:
         fecha_parte, hora_parte = fecha_cita.split("T")
         anio, mes, dia = fecha_parte.split("-")
         hora, minuto = hora_parte.split(":")[:2]
-        meses = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
-        nombre_mes = meses[int(mes) - 1]
+        nombre_mes = MESES_ES[int(mes) - 1]
         hora_int = int(hora)
         ampm = "AM"
         if hora_int >= 12:

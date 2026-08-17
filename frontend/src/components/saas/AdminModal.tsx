@@ -1,6 +1,7 @@
-import React, { useState, useRef } from "react";
+import React, { useState } from "react";
 import { X } from "lucide-react";
 import type { Empresa } from "@/types";
+import { useBackdropClose } from "@/hooks/useBackdropClose";
 
 interface AdminModalProps {
   isOpen: boolean;
@@ -25,7 +26,7 @@ function AdminModalContent({
   empresa,
   showToast,
 }: AdminModalProps & { empresa: Empresa }) {
-  const isBackdropMouseDown = useRef(false);
+  const backdropHandlers = useBackdropClose(onClose);
   const [usuario, setUsuario] = useState("");
   const [password, setPassword] = useState("");
   const [saving, setSaving] = useState(false);
@@ -68,13 +69,7 @@ function AdminModalContent({
   return (
     <div
       className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4 opacity-100 animate-in fade-in"
-      onMouseDown={(e) => { isBackdropMouseDown.current = (e.target === e.currentTarget); }}
-      onMouseUp={(e) => {
-        if (isBackdropMouseDown.current && e.target === e.currentTarget) {
-          onClose();
-        }
-        isBackdropMouseDown.current = false;
-      }}
+      {...backdropHandlers}
     >
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { X, Plus } from "lucide-react";
+import { useBackdropClose } from "@/hooks/useBackdropClose";
 
 type Props = {
   isEditing: boolean;
@@ -39,7 +40,7 @@ export default function VacancyModal({
   onSave,
   onCancel,
 }: Props) {
-  const isBackdropMouseDown = useRef(false);
+  const backdropHandlers = useBackdropClose(onCancel);
   // Estado local para el borrador del chip que se está escribiendo.
   const [chipBorrador, setChipBorrador] = useState("");
 
@@ -76,13 +77,7 @@ export default function VacancyModal({
   return (
     <div
       className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4"
-      onMouseDown={(e) => { isBackdropMouseDown.current = (e.target === e.currentTarget); }}
-      onMouseUp={(e) => {
-        if (isBackdropMouseDown.current && e.target === e.currentTarget) {
-          onCancel();
-        }
-        isBackdropMouseDown.current = false;
-      }}
+      {...backdropHandlers}
     >
       {/* Formato apaisado: dos columnas desde pantallas medianas. Los textos
           largos (detalles y actividades) quedan lado a lado en vez de obligar

@@ -15,6 +15,8 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
+from app.chat.mensajes_comunes import DESCALIFICACION_CIUDAD_MSG
+
 _SPECIAL_CODES = {
     "NAME_UPDATE": {"pattern": re.compile(r"NAME_UPDATE\s*\|\s*([^|]+)\s*\|", re.IGNORECASE), "action": "update_name", "field": "nombre"},
     "VACANTE_UPDATE": {"pattern": re.compile(r"VACANTE_UPDATE\s*\|\s*([^|]+)\s*\|", re.IGNORECASE), "action": "update_vacante", "field": "vacante_interes"},
@@ -31,13 +33,6 @@ _SPECIAL_CODES = {
 _MENSAJE_HUMANO_DEFAULT = (
     "Gracias por explicarme 😊 Voy a compartir tu caso con el equipo de reclutamiento "
     "para que puedan revisarlo y darte seguimiento por este medio."
-)
-
-_DESCALIFICACION_CIUDAD_MSG = (
-    "Agradecemos mucho tu interés en nuestra vacante. 😊 Por el momento todos "
-    "nuestros puestos y entrevistas son 100% presenciales en la Zona Metropolitana "
-    "de Guadalajara, Jalisco. Al radicar fuera de la zona no nos es posible continuar "
-    "con tu proceso. ¡Te deseamos mucho éxito en tu búsqueda laboral! ✨"
 )
 
 _MUNICIPIOS_ZMG_JALISCO = {
@@ -347,7 +342,6 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
         if resumen and str(resumen).strip():
             resumen_str = str(resumen).strip()
             result["resumen_generado"] = resumen_str
-            result["database_updates"] = result.get("database_updates") or {}
             result["database_updates"]["resumen_ia"] = resumen_str
 
         # C) Etiquetas internas / actualizaciones
@@ -361,7 +355,6 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
             if nom and _es_nombre_valido(str(nom)):
                 clean_nom = re.sub(r"[{}\[\]\"'|]", "", str(nom)).strip()
                 result["nombre_detectado"] = clean_nom
-                result["database_updates"] = result.get("database_updates") or {}
                 result["database_updates"]["nombre"] = clean_nom
                 result["database_updates"]["nombre_confirmado"] = True
 
@@ -371,7 +364,6 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
                 vac_clean = str(vac).strip().upper()
                 if vac_clean not in ("GENERAL", "NINGUNA", "PENDIENTE"):
                     result["vacante_detectada"] = vac_clean
-                    result["database_updates"] = result.get("database_updates") or {}
                     result["database_updates"]["vacante_interes"] = vac_clean
                     result["database_updates"]["estado"] = "INTERESADO"
 
@@ -388,14 +380,12 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
             if ciudad_no_apta:
                 c_str = str(ciudad_no_apta).strip()
                 result["lugar_residencia"] = c_str
-                result["database_updates"] = result.get("database_updates") or {}
                 result["database_updates"]["lugar_residencia"] = c_str
                 result["database_updates"]["estado"] = "OTRA_CIUDAD"
                 result["database_updates"]["resumen_ia"] = f"Descalificado automáticamente: Radica en otra ciudad ({c_str})"
             elif lugar_res:
                 l_str = str(lugar_res).strip()
                 result["lugar_residencia"] = l_str
-                result["database_updates"] = result.get("database_updates") or {}
                 result["database_updates"]["lugar_residencia"] = l_str
                 if _es_ciudad_no_apta(l_str):
                     result["database_updates"]["estado"] = "OTRA_CIUDAD"
@@ -416,7 +406,6 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
             # Cita cancelada
             if et.get("cita_cancelada") is True:
                 result["cita_cancelada"] = True
-                result["database_updates"] = result.get("database_updates") or {}
                 result["database_updates"]["estado"] = "INTERESADO"
 
             # Experiencia en actividades
@@ -434,7 +423,6 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
             if cv_man and isinstance(cv_man, dict):
                 result["datos_cv_manual"] = cv_man
                 result["es_cv_manual"] = True
-                result["database_updates"] = result.get("database_updates") or {}
                 result["database_updates"]["tiene_cv"] = True
                 result["database_updates"]["estado"] = "CV_MANUAL"
                 result["database_updates"]["cv_manual"] = json.dumps(cv_man)
@@ -449,7 +437,6 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
             if ha:
                 motivo = (ha.get("resumen_interno") if isinstance(ha, dict) else str(ha)) or "Solicitó atención humana"
                 result["motivo_final"] = motivo
-                result["database_updates"] = result.get("database_updates") or {}
                 result["database_updates"]["estado"] = "ESCALADO"
                 result["database_updates"]["escalation_reason"] = motivo
                 result["database_updates"]["escalated_at"] = datetime.now(timezone.utc).isoformat()
@@ -468,7 +455,6 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
             val = _strip_quotes_pipes(vac_match.group(1).strip())
             if val and val.upper() not in ("GENERAL", "NINGUNA", "PENDIENTE"):
                 result["vacante_detectada"] = val.upper()
-                result["database_updates"] = result.get("database_updates") or {}
                 result["database_updates"]["vacante_interes"] = val.upper()
                 result["database_updates"]["estado"] = "INTERESADO"
 
@@ -486,7 +472,6 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
             val_clean = re.sub(r"[{}\[\]\"'|]", "", val).strip()
             if _es_nombre_valido(val_clean):
                 result["nombre_detectado"] = val_clean
-                result["database_updates"] = result.get("database_updates") or {}
                 result["database_updates"]["nombre"] = val_clean
                 result["database_updates"]["nombre_confirmado"] = True
 
@@ -499,14 +484,12 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
                 resumen_rescatado = mem_match.group(1)
             if resumen_rescatado.strip():
                 result["resumen_generado"] = resumen_rescatado
-                result["database_updates"] = result.get("database_updates") or {}
                 result["database_updates"]["resumen_ia"] = resumen_rescatado
 
     if "PRIVACIDAD_ACEPTADA" in ai_response_str:
         result["acepto_privacidad"] = True
     if "CITA_CANCELADA" in ai_response_str:
         result["cita_cancelada"] = True
-        result["database_updates"] = result.get("database_updates") or {}
         result["database_updates"]["estado"] = "INTERESADO"
 
     if not result.get("fecha_entrevista_detectada"):
@@ -552,7 +535,7 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
             mensajes_limpios.append(m)
 
     if result.get("database_updates", {}).get("estado") == "OTRA_CIUDAD":
-        mensajes_limpios = [_DESCALIFICACION_CIUDAD_MSG]
+        mensajes_limpios = [DESCALIFICACION_CIUDAD_MSG]
 
     if not mensajes_limpios:
         mensajes_limpios = ["¡Hola! 😊 ¿En qué puedo ayudarte hoy o qué duda tienes sobre nuestras vacantes?"]

@@ -19,8 +19,7 @@ import google.generativeai as genai
 from google.generativeai.types import FunctionDeclaration, Tool
 
 from app.config import ENV
-
-_DIAS_ES = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+from app.utils.fechas_es import DIAS_ES
 
 logger = logging.getLogger("gemini_client")
 
@@ -97,7 +96,7 @@ def build_tool_declarations(now: datetime) -> Tool:
                 "DENTRO DE LA JORNADA OFICIAL.\n\n"
                 "CONTEXTO TEMPORAL CRÍTICO:\n"
                 f"- La fecha y hora actual EXACTA es: {now.isoformat()}\n"
-                f"- El día de la semana es: {_DIAS_ES[now.weekday()]}\n"
+                f"- El día de la semana es: {DIAS_ES[now.weekday()]}\n"
                 f"- El año actual es: {now.year}\n\n"
                 "INSTRUCCIONES:\n"
                 "1. Calcula todas las fechas relativas (\"mañana\", \"el viernes\", \"próxima "

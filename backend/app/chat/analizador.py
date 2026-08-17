@@ -19,7 +19,9 @@ import httpx
 from app import gemini_client, waha_client
 from app.config import ENV
 from app.db import get_pool
+from app.chat.mensajes_comunes import DESCALIFICACION_CIUDAD_MSG
 from app.internal_api import auth_headers
+from app.utils.fechas_es import DIAS_ES, MESES_ES
 
 logger = logging.getLogger("analizador")
 
@@ -530,23 +532,20 @@ async def definir_agenda(
 
 # --- CargarPrompt ------------------------------------------------------------
 
-_DIAS_ES = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
-_MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
-
 _ESTADOS_SIN_CATALOGO = {"CITA_AGENDADA", "DOCUMENTOS_NO_COINCIDEN", "INE_VALIDADA"}
 
 
 def _formatear_fecha_hora_larga(dt: datetime) -> str:
-    dia = _DIAS_ES[dt.weekday()]
-    mes = _MESES_ES[dt.month - 1]
+    dia = DIAS_ES[dt.weekday()]
+    mes = MESES_ES[dt.month - 1]
     hora12 = dt.hour % 12 or 12
     ampm = "a. m." if dt.hour < 12 else "p. m."
     return f"{dia}, {dt.day} de {mes} de {dt.year}, {hora12}:{dt.minute:02d} {ampm}"
 
 
 def _formatear_fecha_corta(dt: datetime) -> str:
-    dia = _DIAS_ES[dt.weekday()]
-    mes = _MESES_ES[dt.month - 1]
+    dia = DIAS_ES[dt.weekday()]
+    mes = MESES_ES[dt.month - 1]
     return f"{dia}, {dt.day} de {mes}"
 
 
@@ -647,13 +646,6 @@ async def cargar_prompt(webhook_payload: dict, contacto: dict, candidato: dict) 
     return prompt
 
 
-_DESCALIFICACION_CIUDAD_MSG = (
-    "Agradecemos mucho tu interés en nuestra vacante. 😊 Por el momento todos "
-    "nuestros puestos y entrevistas son 100% presenciales en la Zona Metropolitana "
-    "de Guadalajara, Jalisco. Al radicar fuera de la zona no nos es posible continuar "
-    "con tu proceso. ¡Te deseamos mucho éxito en tu búsqueda laboral! ✨"
-)
-
 _OUT_OF_STATE_CITIES_RE = re.compile(
     r'\b(?:CIUDAD JUÁREZ|CIUDAD JUAREZ|JUÁREZ|JUAREZ|CDMX|CIUDAD DE MÉXICO|CIUDAD DE MEXICO|'
     r'MONTERREY|TIJUANA|CHIHUAHUA|MICHOACÁN|MICHOACAN|SINALOA|SONORA|VERACRUZ|'
@@ -723,7 +715,7 @@ async def analizar_mensaje(webhook_payload: dict, contacto: dict, candidato: dic
             f"Descalificado automáticamente: Radica en otra ciudad ({ciudad_detectada})",
             telefono,
         )
-        await waha_client.send_text(session, chat_id, _DESCALIFICACION_CIUDAD_MSG)
+        await waha_client.send_text(session, chat_id, DESCALIFICACION_CIUDAD_MSG)
         return {"mensaje_para_agente": None, "detuvo_flujo": True}
 
     # 2. DETECCIÓN Y PROCESAMIENTO DE ANUNCIOS DE FACEBOOK ADS
