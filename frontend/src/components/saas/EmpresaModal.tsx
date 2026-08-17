@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Building2, X, Save } from "lucide-react";
 import type { Empresa } from "@/types";
+import { useBackdropClose } from "@/hooks/useBackdropClose";
 
 interface EmpresaModalProps {
   isOpen: boolean;
@@ -26,6 +27,7 @@ function EmpresaModalContent({
   empresa,
   showToast,
 }: EmpresaModalProps) {
+  const backdropHandlers = useBackdropClose(onClose);
   const [nombre, setNombre] = useState(empresa?.nombre || "");
   const [promptIa, setPromptIa] = useState(empresa?.prompt_ia || "");
   const [retencionDias, setRetencionDias] = useState(
@@ -72,7 +74,10 @@ function EmpresaModalContent({
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4 opacity-100 animate-in fade-in" onClick={onClose}>
+    <div
+      className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4 opacity-100 animate-in fade-in"
+      {...backdropHandlers}
+    >
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
           <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">

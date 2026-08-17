@@ -85,12 +85,13 @@ export async function POST(request: Request) {
     const esCV = tipo_origen === 'CV' || tipo_origen === 'SOLICITUD';
     const esINE = tipo_origen === 'INE';
     const esConstancia = ['CONSTANCIA', 'CSF', 'RFC', 'SAT'].includes((tipo_origen || '').toUpperCase());
+    const esAmbos = (tipo_origen || '').toUpperCase() === 'AMBOS_DOCS';
 
     if (esBloqueado) {
       event = { type: 'BLOQUEO_IDENTIDAD' };
     } else if (esCV) {
       event = { type: 'RECIBE_CV' };
-    } else if (esINE || esConstancia) {
+    } else if (esINE || esConstancia || esAmbos) {
       event = { type: 'ENTREGA_DOCS' };
     }
 
@@ -132,11 +133,11 @@ export async function POST(request: Request) {
     } else if (esCV) {
       estado_final = 'CV_RECIBIDO';
       resumen_ia_final = 'CV Recibido y Analizado por Gemini';
-    } else if (esINE || esConstancia) {
-      const curpMalFormada = (esINE && curpIneFormatoInvalido) || (esConstancia && curpRfcFormatoInvalido);
+    } else if (esINE || esConstancia || esAmbos) {
+      const curpMalFormada = (esINE && curpIneFormatoInvalido) || (esConstancia && curpRfcFormatoInvalido) || (esAmbos && (curpIneFormatoInvalido || curpRfcFormatoInvalido));
 
-      const tieneIne = esINE || !!dbCandidato.datos_ine || !!dbCandidato.curp_ine || !!dbCandidato.nombre_ine;
-      const tieneRfc = esConstancia || !!dbCandidato.datos_rfc || !!dbCandidato.curp_rfc || !!dbCandidato.nombre_constancia;
+      const tieneIne = esINE || esAmbos || !!dbCandidato.datos_ine || !!dbCandidato.curp_ine || !!dbCandidato.nombre_ine;
+      const tieneRfc = esConstancia || esAmbos || !!dbCandidato.datos_rfc || !!dbCandidato.curp_rfc || !!dbCandidato.nombre_constancia;
 
       if (curpMalFormada) {
         // La CURP extraída no mide 18 caracteres: no se descarta, se guarda igual
@@ -256,10 +257,10 @@ export async function POST(request: Request) {
         CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN TRUE ELSE FALSE END,
         $7, -- estado final
         NOW(),
-        CASE WHEN $4 = 'INE' THEN CAST($8 AS jsonb) ELSE NULL END,
-        CASE WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN CAST($18 AS text) ELSE NULL END,
+        CASE WHEN $4 IN ('INE', 'AMBOS_DOCS') THEN CAST($8 AS jsonb) ELSE NULL END,
+        CASE WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT', 'AMBOS_DOCS') THEN CAST($18 AS text) ELSE NULL END,
         CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN CAST($8 AS jsonb) ELSE NULL END,
-        CASE WHEN $15 = 'true' THEN FALSE WHEN $4 IN ('INE', 'CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN TRUE ELSE FALSE END,
+        CASE WHEN $15 = 'true' THEN FALSE WHEN $4 IN ('INE', 'CONSTANCIA', 'CSF', 'RFC', 'SAT', 'AMBOS_DOCS') THEN TRUE ELSE FALSE END,
         CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN COALESCE($9, 'VIABLE') ELSE NULL END,
         CASE
             WHEN $15 = 'true' THEN COALESCE(NULLIF($16, ''), $10)
@@ -271,13 +272,13 @@ export async function POST(request: Request) {
         NULLIF($13, ''),
         NULLIF($14, ''),
         CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $17 ELSE NULL END,
-        CASE WHEN $4 = 'INE' THEN CAST($2 AS text) ELSE NULL END,
-        CASE WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN CAST($2 AS text) ELSE NULL END,
+        CASE WHEN $4 IN ('INE', 'AMBOS_DOCS') THEN CAST($2 AS text) ELSE NULL END,
+        CASE WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT', 'AMBOS_DOCS') THEN CAST($2 AS text) ELSE NULL END,
         CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN CAST($2 AS text) ELSE NULL END,
         $19,
         NULLIF($3, ''),
-        CASE WHEN $4 = 'INE' THEN NULLIF($20, '') ELSE NULL END,
-        CASE WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN NULLIF($21, '') ELSE NULL END,
+        CASE WHEN $4 IN ('INE', 'AMBOS_DOCS') THEN NULLIF($20, '') ELSE NULL END,
+        CASE WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT', 'AMBOS_DOCS') THEN NULLIF($21, '') ELSE NULL END,
         $22,
         $23,
         CASE WHEN $15 = 'true' THEN $24 ELSE NULL END
@@ -285,7 +286,7 @@ export async function POST(request: Request) {
       ON CONFLICT (telefono, empresa_id) DO UPDATE SET
         ultima_interaccion = NOW(),
         nombre = CASE
-          WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT') AND $2 IS NOT NULL AND $2 NOT IN ('', 'Candidato') THEN CAST($2 AS text)
+          WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT', 'AMBOS_DOCS') AND $2 IS NOT NULL AND $2 NOT IN ('', 'Candidato') THEN CAST($2 AS text)
           WHEN $4 = 'INE' AND (candidatos.nombre_constancia IS NULL OR candidatos.nombre_constancia = '') AND $2 IS NOT NULL AND $2 NOT IN ('', 'Candidato') THEN CAST($2 AS text)
           WHEN candidatos.nombre IS NULL OR candidatos.nombre = '' OR candidatos.nombre = 'Candidato' THEN CAST($2 AS text)
           ELSE candidatos.nombre
@@ -310,17 +311,17 @@ export async function POST(request: Request) {
         END,
         link_cv = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN COALESCE($11, candidatos.link_cv) ELSE candidatos.link_cv END,
         filtros_tecnicos = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN COALESCE($17, candidatos.filtros_tecnicos) ELSE candidatos.filtros_tecnicos END,
-        nombre_confirmado = CASE WHEN $15 = 'true' THEN FALSE WHEN $4 IN ('INE', 'CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN TRUE ELSE candidatos.nombre_confirmado END,
-        datos_ine = CASE WHEN $4 = 'INE' THEN CAST($8 AS jsonb) ELSE candidatos.datos_ine END,
-        datos_rfc = CASE WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN CAST($18 AS text) ELSE candidatos.datos_rfc END,
-        nombre_ine = CASE WHEN $4 = 'INE' THEN CAST($2 AS text) ELSE candidatos.nombre_ine END,
-        nombre_constancia = CASE WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN CAST($2 AS text) ELSE candidatos.nombre_constancia END,
+        nombre_confirmado = CASE WHEN $15 = 'true' THEN FALSE WHEN $4 IN ('INE', 'CONSTANCIA', 'CSF', 'RFC', 'SAT', 'AMBOS_DOCS') THEN TRUE ELSE candidatos.nombre_confirmado END,
+        datos_ine = CASE WHEN $4 IN ('INE', 'AMBOS_DOCS') THEN CAST($8 AS jsonb) ELSE candidatos.datos_ine END,
+        datos_rfc = CASE WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT', 'AMBOS_DOCS') THEN CAST($18 AS text) ELSE candidatos.datos_rfc END,
+        nombre_ine = CASE WHEN $4 IN ('INE', 'AMBOS_DOCS') THEN CAST($2 AS text) ELSE candidatos.nombre_ine END,
+        nombre_constancia = CASE WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT', 'AMBOS_DOCS') THEN CAST($2 AS text) ELSE candidatos.nombre_constancia END,
         nombre_solicitud = CASE WHEN $4 IN ('CV', 'SOLICITUD') AND candidatos.nombre_solicitud IS NULL THEN CAST($2 AS text) ELSE candidatos.nombre_solicitud END,
         nombre_chat = COALESCE(NULLIF($12, ''), candidatos.nombre_chat),
         edad = COALESCE(NULLIF($13, ''), candidatos.edad),
         correo = COALESCE(NULLIF($14, ''), candidatos.correo),
-        curp_ine = CASE WHEN $4 = 'INE' THEN COALESCE(NULLIF($20, ''), candidatos.curp_ine) ELSE candidatos.curp_ine END,
-        curp_rfc = CASE WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT') THEN COALESCE(NULLIF($21, ''), candidatos.curp_rfc) ELSE candidatos.curp_rfc END,
+        curp_ine = CASE WHEN $4 IN ('INE', 'AMBOS_DOCS') THEN COALESCE(NULLIF($20, ''), candidatos.curp_ine) ELSE candidatos.curp_ine END,
+        curp_rfc = CASE WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT', 'AMBOS_DOCS') THEN COALESCE(NULLIF($21, ''), candidatos.curp_rfc) ELSE candidatos.curp_rfc END,
         alerta_identidad_estado = $22,
         alerta_identidad_motivo = $23,
         asignado_a_id = CASE WHEN $15 = 'true' THEN COALESCE(candidatos.asignado_a_id, $24) ELSE candidatos.asignado_a_id END,

@@ -1,6 +1,7 @@
 "use client";
 
 import { COUNTRY_CODES } from "@/types";
+import { useBackdropClose } from "@/hooks/useBackdropClose";
 
 type Props = {
   rNombre: string;
@@ -31,10 +32,12 @@ export default function RecruiterModal({
   onSave,
   onCancel,
 }: Props) {
+  const backdropHandlers = useBackdropClose(onCancel);
+
   return (
     <div
       className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4"
-      onClick={onCancel}
+      {...backdropHandlers}
     >
       <div
         className="bg-white w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl p-6 md:p-8 shadow-2xl relative"

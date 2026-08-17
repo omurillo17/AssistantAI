@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { X } from "lucide-react";
+import { useBackdropClose } from "@/hooks/useBackdropClose";
 
 interface SaasGrupoModalProps {
   isOpen: boolean;
@@ -27,6 +28,7 @@ function SaasGrupoModalContent({
   grupo,
   showToast,
 }: SaasGrupoModalProps) {
+  const backdropHandlers = useBackdropClose(onClose);
   const [grupoNombre, setGrupoNombre] = useState(grupo?.nombre || "");
   const [grupoNaves, setGrupoNaves] = useState<string[]>(grupo?.naves_asignadas || []);
   const [grupoTelefono, setGrupoTelefono] = useState(grupo?.telefono_whatsapp || "");
@@ -68,7 +70,10 @@ function SaasGrupoModalContent({
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
+      {...backdropHandlers}
+    >
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
           <h2 className="text-xl font-bold text-slate-800">{isEditing ? "Editar Grupo de Naves" : "Nuevo Grupo de Naves"}</h2>

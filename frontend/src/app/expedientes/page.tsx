@@ -315,7 +315,15 @@ function ExpedientesPageInner() {
   const isPlaceholderVal = (val?: string | null) => {
     if (!val) return true;
     const norm = val.trim().toLowerCase().replace(/[{}]/g, "");
-    return !norm || norm === "ninguna" || norm === "general" || norm === "pendiente" || norm === "sin sucursal";
+    return !norm || norm === "1" || norm === "2" || norm === "ninguna" || norm === "general" || norm === "pendiente" || norm === "sin sucursal";
+  };
+
+  const normalizarNave = (nave?: string | null): string | null => {
+    if (!nave) return null;
+    const upper = nave.trim().toUpperCase();
+    if (upper === '1' || upper.includes('DULCERIA') || upper.includes('DULCERÍA')) return 'DULCERIA';
+    if (upper === '2' || upper.includes('CEDIS')) return 'CEDIS';
+    return nave.trim();
   };
 
   const uniqueVacantes = useMemo(() => {
@@ -329,9 +337,9 @@ function ExpedientesPageInner() {
 
   const uniqueNaves = useMemo(() => {
     const fromCand = candidatos
-      .map((c) => c.nave_interes?.trim())
+      .map((c) => normalizarNave(c.nave_interes))
       .filter((n): n is string => Boolean(n) && !isPlaceholderVal(n));
-    const fromDb = scopedNaves.map((n) => n.nombre).filter((n) => !isPlaceholderVal(n));
+    const fromDb = scopedNaves.map((n) => normalizarNave(n.nombre)).filter((n): n is string => Boolean(n) && !isPlaceholderVal(n));
     const combined = Array.from(new Set([...fromDb, ...fromCand]));
     return combined.sort((a, b) => a.localeCompare(b));
   }, [candidatos, scopedNaves]);

@@ -19,7 +19,9 @@ import httpx
 from app import gemini_client, waha_client
 from app.config import ENV
 from app.db import get_pool
+from app.chat.mensajes_comunes import DESCALIFICACION_CIUDAD_MSG
 from app.internal_api import auth_headers
+from app.utils.fechas_es import DIAS_ES, MESES_ES
 
 logger = logging.getLogger("analizador")
 
@@ -29,14 +31,20 @@ _ANALYZE_DOCUMENT_PROMPT_TEMPLATE = """Eres el Reclutador Experto de Grupo Virgo
 Tu prioridad es doble y en este orden:
 1. Rechazar con firmeza cualquier meme, personaje de ficción, animal, objeto o imagen que claramente NO sea un intento de documento oficial.
 2. Ser MUY TOLERANTE con fotos reales de documentos reales que tengan problemas de calidad. Una foto imperfecta de un documento real NO es lo mismo que un documento falso — NO las trates igual.
+
+ℹ️ NOTA MULTI-FOTO / MULTI-PÁGINA:
+El candidato puede enviarte 1, 2 o más fotos o páginas en este turno (por ejemplo: Frente y Reverso de su INE, dos caras de su Solicitud de empleo, o su INE y su Constancia de Situación Fiscal RFC juntos).
+Analiza e integra TODAS las imágenes adjuntas en conjunto para extraer y validar la información completa.
+
 REGLA DE ORO: Si puedes leer el nombre de la persona Y al menos un dato más (número de credencial, CURP, RFC, texto institucional, foto de rostro humano), clasifica como VALIDO aunque la foto no sea perfecta. La calidad imperfecta de la foto NO es motivo suficiente para REVISAR_MANUAL si los datos clave son legibles.
 Catálogo completo de vacantes disponibles:
 {detalle_vacantes}
 💼 LA VACANTE QUE EL CANDIDATO SOLICITÓ ES: {vacante_interes}
 --- NORMAS DE VALIDACIÓN ---
 1. INE (Credencial de Elector Mexicana):
-   - Marcadores: (a) texto "Instituto Nacional Electoral"/"INE"/"Elector" aunque sea parcial, (b) fotografía de un rostro humano real, (c) estructura típica de credencial.
-   - VALIDO: cumple 2 de 3 marcadores Y se puede leer el nombre. Foto imperfecta con nombre legible = VALIDO.
+   - Puede enviarse solo el Frente, o Frente + Reverso en fotos separadas.
+   - Marcadores: (a) texto "Instituto Nacional Electoral"/"INE"/"Elector" aunque sea parcial, (b) fotografía de un rostro humano real, (c) estructura típica de credencial, (d) reverso con código de barras/firma/OCR/CIC.
+   - VALIDO: si se lee el nombre y la CURP o clave de elector. Si vienen frente y reverso, úsalos para validar la credencial de forma completa.
    - REVISAR_MANUAL: se intuye claramente que es una INE (hay foto de rostro + algo de estructura) pero el nombre es completamente ilegible por calidad de foto muy baja.
    - INVALIDO: es evidentemente un personaje de ficción, animal, objeto, meme, sticker, o no hay NINGÚN marcador de credencial oficial.
 2. CONSTANCIA (Constancia de Situación Fiscal / Cédula de Identificación Fiscal del SAT):
@@ -44,18 +52,21 @@ Catálogo completo de vacantes disponibles:
    - VALIDO: cumple 2 de 3 marcadores. RFC parcialmente legible + membrete del SAT = VALIDO.
    - REVISAR_MANUAL: claramente es un documento del SAT pero el RFC es completamente ilegible.
    - INVALIDO: hoja en blanco, objeto random, personaje de ficción, o ningún marcador presente.
-3. SOLICITUD (Formato preimpreso de papelería):
+3. AMBOS_DOCS (Si en las imágenes adjuntas vienen TANTO la INE COMO la Constancia/RFC del SAT):
+   - Extrae el nombre, la CURP de la INE, y el RFC y la CURP de la Constancia.
+   - Clasifica tipo_documento como "AMBOS_DOCS".
+4. SOLICITUD (Formato preimpreso de papelería, frente o 2 caras):
    - Marcadores: (a) estructura de formulario preimpreso con cuadrículas, (b) texto manuscrito rellenando el formato, (c) se lee o se intuye "Solicitud de Empleo" o similar.
    - VALIDO/REVISAR_MANUAL/INVALIDO con la misma lógica: si los datos básicos son legibles = VALIDO.
-4. CV (Currículum Vitae digital o impreso):
+5. CV (Currículum Vitae digital o impreso, 1 o varias páginas):
    - Marcadores: (a) estructura de CV (secciones tipo Experiencia/Educación/Habilidades), (b) texto técnico legible, (c) datos de contacto visibles.
    - VALIDO si se pueden leer al menos nombre + una sección de contenido.
-5. ANUNCIO: cartel o captura de pantalla ofreciendo una vacante con sueldo/requisitos — clasificación directa, sin candado de calidad.
+6. ANUNCIO: cartel o captura de pantalla ofreciendo una vacante con sueldo/requisitos — clasificación directa, sin candado de calidad.
 ⛔ REGLA DE ORO DE RECHAZO: memes, capturas de series/películas, personajes de caricatura, animales, objetos, paisajes, comida, o imágenes totalmente ilegibles donde NO hay ningún intento reconocible de documento oficial → INVALIDO siempre, sin excepción.
 ✅ REGLA ANTI-BUCLE: Si ya clasificaste este tipo de documento como REVISAR_MANUAL anteriormente para este candidato, en esta segunda oportunidad clasifica como VALIDO si hay cualquier dato legible. No pidas la foto más de una vez por tipo de documento.
 --- FORMATO DE SALIDA (JSON ESTRICTO, sin bloques de código) ---
 {{
-  "tipo_documento": "INE, CV, SOLICITUD, ANUNCIO, CONSTANCIA o INVALIDO",
+  "tipo_documento": "INE, CV, SOLICITUD, ANUNCIO, CONSTANCIA, AMBOS_DOCS o INVALIDO",
   "estado_validacion": "VALIDO, REVISAR_MANUAL o INVALIDO",
   "calidad_imagen": "buena, borrosa, oscura, reflejo, recortada, ilegible o null",
   "nombre_completo": "Si es visible aunque sea parcialmente. Si es INVALIDO, null.",
@@ -64,6 +75,7 @@ Catálogo completo de vacantes disponibles:
   "clave_elector": "Visible en INE. Si no, null.",
   "curp": "Visible en INE/Constancia. OBLIGATORIO: La CURP mexicana DEBE contener EXACTAMENTE 18 caracteres alfanuméricos. Si lees más de 18 caracteres, revisa con cuidado y ajusta solo a los 18 caracteres oficiales.",
   "rfc": "Visible en Constancia/RFC. Si no, null.",
+  "curp_rfc": "Si envió Constancia/RFC y la CURP es visible en ella, colócala aquí. Si no, null.",
   "veredicto": "VIABLE, CARTERA_GENERAL, RECHAZADO o null (sobre el perfil del candidato en CV/Solicitud, NO sobre autenticidad del documento)",
   "experiencia": "Visible en CV/Solicitud. Si no, null.",
   "motivo": "Explica brevemente el estado_validacion, sobre todo si es REVISAR_MANUAL o INVALIDO.",
@@ -73,7 +85,7 @@ Catálogo completo de vacantes disponibles:
 1. Si estado_validacion es INVALIDO (documento evidentemente falso/broma): "¡Hola! Oye, estuve revisando la foto que me enviaste pero fíjate que no pude identificarla como un documento oficial válido (INE, RFC o Solicitud). 🧐 ¿Podrías apoyarme mandando de nuevo una foto clara de tu documento real por favor? ¡Así podré agilizar tu trámite! 😊"
 2. Si estado_validacion es REVISAR_MANUAL (foto muy baja calidad, datos clave ilegibles): "¡Gracias por la foto! 📸 Solo que no logro leer bien los datos porque se ve muy [usa calidad_imagen: borrosa/oscura/con reflejo/recortada]. ¿Me la puedes mandar de nuevo con buena luz y que se vea el documento completo? Es la última vez que te la pido, prometo que con eso es suficiente. 🙏"
 3. Si estado_validacion es VALIDO y el veredicto es VIABLE/CARTERA_GENERAL/RECHAZADO: mantén tus reglas de mensajes estándar para CV y Solicitudes.
-4. Si el documento es CONSTANCIA (SAT) o INE con estado_validacion VALIDO: pon null en el mensaje, el sistema se encargará."""
+4. Si el documento es CONSTANCIA (SAT), INE o AMBOS_DOCS con estado_validacion VALIDO: pon null en el mensaje, el sistema se encargará."""
 
 _PLACEHOLDER_RE_TEMPLATE = "{{{name}}}"
 
@@ -226,22 +238,23 @@ def separar_json(gemini_text: str, telefono: str, nombre_whatsapp: str, caption_
     if not msg_usuario or msg_usuario == "null":
         if tipo == "SOLICITUD" and dbData.get("estado") != "CV_RECIBIDO":
             msg_usuario = (
-                "El candidato acaba de enviar la PRIMERA foto de su solicitud (frente). Agradécele e indícale "
-                "que por favor envíe también la foto de la PARTE TRASERA para tener su expediente completo. "
-                "Dile que si su solicitud solo tiene un lado o ya mandó ambas, responda 'Listo'."
+                "El candidato acaba de enviar su solicitud de empleo. Agradécele e indícale "
+                "que si tiene parte trasera la envíe, o si ya mandó ambas caras responda 'Listo'."
             )
         elif tipo == "ANUNCIO":
             msg_usuario = f'[SISTEMA: El candidato te envió una captura de pantalla del anuncio de la vacante: *{vacante_anuncio}*.'
             if caption_usuario:
                 msg_usuario += f' Además, escribió este mensaje: "{caption_usuario}".'
             msg_usuario += " OBLIGATORIO: Atiéndelo de forma natural, asume que le interesa esa vacante y muéstrale los detalles o pregúntale si quiere aplicar.]"
+        elif tipo == "AMBOS_DOCS":
+            msg_usuario = "[SISTEMA: AMBOS DOCUMENTOS COMPLETOS. El candidato entregó INE y RFC simultáneamente. Revisa INMEDIATAMENTE tu calendario y ofrécele fechas de entrevista.]"
         elif tipo == "INE":
-            if dbData.get("datos_rfc"):
+            if dbData.get("datos_rfc") or dbData.get("curp_rfc"):
                 msg_usuario = "[SISTEMA: AMBOS DOCUMENTOS COMPLETOS. El candidato entregó INE y RFC. Revisa INMEDIATAMENTE tu calendario y ofrécele fechas de entrevista.]"
             else:
                 msg_usuario = "[SISTEMA: El candidato entregó su INE, pero FALTA SU CONSTANCIA. Agradécele por el INE y pídele obligatoriamente su Constancia de Situación Fiscal (RFC). TIENES ESTRICTAMENTE PROHIBIDO AGENDAR CITA AÚN.]"
-        elif tipo == "CONSTANCIA":
-            if dbData.get("datos_ine"):
+        elif tipo in ("CONSTANCIA", "CSF", "RFC"):
+            if dbData.get("datos_ine") or dbData.get("curp_ine"):
                 msg_usuario = "[SISTEMA: AMBOS DOCUMENTOS COMPLETOS. El candidato entregó INE y RFC. Revisa INMEDIATAMENTE tu calendario y ofrécele fechas de entrevista.]"
             else:
                 msg_usuario = "[SISTEMA: El candidato entregó su Constancia (RFC), pero FALTA SU INE. Agradécele por la Constancia y pídele obligatoriamente la foto frontal de su INE. TIENES ESTRICTAMENTE PROHIBIDO AGENDAR CITA AÚN.]"
@@ -255,25 +268,22 @@ def separar_json(gemini_text: str, telefono: str, nombre_whatsapp: str, caption_
     elif tipo == "ANUNCIO":
         msg_usuario = f'[SISTEMA: El candidato te envió una foto del anuncio de la vacante: *{vacante_anuncio}*. Mensaje: "{caption_usuario}". Atiéndelo.]'
 
-    # `identidad_bloqueada` (bloquea agendar) solo para discrepancias GRAVES
-    # (3+ caracteres). `identidad_alerta` (queda pendiente de revisión en el
-    # modal del reclutador, pero NO bloquea) para discrepancias menores
-    # (1-2 caracteres, típico de error de OCR). Esta distinción ya la hace
-    # chat_prompt.md ("Diferencia de 1 a 2 caracteres → PERMITIDO AGENDAR" /
-    # "3 o más → PROHIBIDO AGENDAR"), pero antes ambos casos forzaban
-    # identidad_bloqueada=true por igual -- el candidato se quedaba
-    # bloqueado incluso en el caso que el propio prompt dice permitir.
     identidad_bloqueada = False
     identidad_alerta = False
     identidad_motivo = ""
     curp_eval = {"tipo": "OK"}
-    if tipo == "INE" and dbData.get("curp_rfc") and datos.get("curp"):
+    curp_ine_salida = datos.get("curp") if tipo in ("INE", "AMBOS_DOCS") else None
+    curp_rfc_salida = datos.get("curp_rfc") or (datos.get("curp") if tipo in ("CONSTANCIA", "CSF", "RFC") else None)
+
+    if tipo == "AMBOS_DOCS":
+        curp_ine_comp = curp_ine_salida
+        curp_rfc_comp = curp_rfc_salida or dbData.get("curp_rfc")
+        if curp_ine_comp and curp_rfc_comp:
+            curp_eval = _evaluar_curps(curp_ine_comp, curp_rfc_comp)
+    elif tipo == "INE" and dbData.get("curp_rfc") and datos.get("curp"):
         curp_eval = _evaluar_curps(datos.get("curp"), dbData.get("curp_rfc"))
     elif tipo in ("CONSTANCIA", "CSF", "RFC") and dbData.get("curp_ine") and datos.get("curp"):
         curp_eval = _evaluar_curps(datos.get("curp"), dbData.get("curp_ine"))
-
-    curp_ine_salida = datos.get("curp") if tipo == "INE" else None
-    curp_rfc_salida = datos.get("curp") if tipo in ("CONSTANCIA", "CSF", "RFC") else None
 
     if curp_eval["tipo"] == "REVISION_HUMANA":
         identidad_alerta = True
@@ -282,9 +292,6 @@ def separar_json(gemini_text: str, telefono: str, nombre_whatsapp: str, caption_
             f"distancia de {curp_eval['distancia']} caracter(es). Posible error de OCR por calidad de foto — "
             "queda pendiente de revisión, pero el candidato puede seguir agendando su entrevista."
         )
-        # Sin override de msg_usuario: se deja el mensaje normal de arriba
-        # (p.ej. "AMBOS DOCUMENTOS COMPLETOS... ofrécele fechas de entrevista")
-        # para que el candidato pueda avanzar mientras el reclutador revisa.
     elif curp_eval["tipo"] == "GRAVE":
         identidad_bloqueada = True
         identidad_motivo = (
@@ -350,12 +357,6 @@ def _clean_str(s) -> str:
 
 
 async def _calendarios_con_credenciales() -> set[str]:
-    """calendar_id que sí tienen refresh_token guardado -- ver
-    oauth_store.py. Se usa para que el fallback de `definir_agenda` nunca
-    elija a un reclutador cuyo calendario todavía no está autorizado
-    (visto en producción: el fallback caía en el reclutador creado más
-    recientemente sin importar si ya tenía OAuth hecho, y `revisar_calendario`
-    tronaba con CredencialesNoEncontradas)."""
     pool = get_pool()
     try:
         rows = await pool.fetch("SELECT calendar_id FROM google_calendar_credentials")
@@ -368,10 +369,6 @@ async def _calendarios_con_credenciales() -> set[str]:
 def _reclutador_asignado(
     equipo: list[dict], asignado_a_id: str | None, calendarios_ok: set[str]
 ) -> dict | None:
-    """El reclutador que la plataforma ya tiene asignado al candidato
-    (`candidatos.asignado_a_id`), siempre que siga activo y con calendario
-    autorizado. Devuelve None si no aplica, para que el llamador siga con su
-    lógica normal."""
     if not asignado_a_id:
         return None
     return next(
@@ -385,19 +382,6 @@ def _reclutador_asignado(
 
 
 def _elegir_gerente(equipo: list[dict], calendarios_ok: set[str]) -> dict:
-    """Elige un reclutador de respaldo determinista para cuando no hay
-    match de vacante, en vez del `equipo[-1]` original (el reclutador
-    creado más recientemente, arbitrario -- podía no tener ni siquiera
-    OAuth configurado). Orden de preferencia:
-    1. Reclutador explícitamente marcado como 'Gerente de Reclutamiento'.
-    2. Entre los que SÍ tienen credenciales de calendario: el ENCARGADO
-       del equipo (jefe de grupo real, ver usuarios.rol) si existe, si no
-       el primero por antigüedad (equipo ya viene ordenado por
-       created_at ASC desde /api/db/reclutador_vacantes).
-    3. Si NINGUNO tiene credenciales todavía, el primero por antigüedad
-       de todos modos (mismo comportamiento de antes, para no romper si
-       el equipo entero está sin autorizar) -- pero esto queda registrado
-       como warning para que se note en logs."""
     explicito = next((r for r in equipo if r.get("nombre") == "Gerente de Reclutamiento"), None)
     if explicito:
         return explicito
@@ -420,16 +404,6 @@ async def definir_agenda(
     empresa_id: str | None,
     asignado_a_id: str | None = None,
 ) -> dict:
-    """Puerto de 'DefinirAgenda': resuelve el/los reclutadores candidatos
-    para esta vacante/nave vía GET /api/db/reclutador_vacantes (ya
-    existe, no se reimplementa la lógica de asignación en Python).
-
-    `asignado_a_id` es el reclutador que la plataforma ya tiene asignado al
-    candidato (`candidatos.asignado_a_id`). Se respeta cuando la vacante no
-    se puede resolver, en vez de irse al reclutador de respaldo: en
-    producción un candidato con MICHELLE asignada terminó agendado con el
-    "Equipo de Reclutamiento" porque su `vacante_interes` quedó en
-    'General' -- el CRM decía una cosa y el calendario otra."""
     nave_actual = (nave_interes or "").strip() or "1"
     vacante = (vacante_interes or "General").strip()
 
@@ -471,9 +445,6 @@ async def definir_agenda(
         }
 
     if vacante_desconocida:
-        # Antes de caer al respaldo: si la plataforma ya le asignó un
-        # reclutador a este candidato y ese reclutador tiene calendario
-        # autorizado, la cita le corresponde a él.
         asignado = _reclutador_asignado(equipo, asignado_a_id, calendarios_ok)
         if asignado:
             return _agenda_de(asignado)
@@ -481,20 +452,9 @@ async def definir_agenda(
             "definir_agenda: vacante desconocida (%r) y sin reclutador asignado usable -- usando respaldo %r",
             vacante, gerente.get("nombre"),
         )
-        # Se devuelve el nombre REAL del reclutador de respaldo, no un
-        # "Equipo de Reclutamiento" genérico: la cita se crea en SU calendario,
-        # así que es a esa persona a quien tiene que preguntar el candidato al
-        # llegar. Decirle un nombre abstracto dejaba a recepción sin saber a
-        # quién llamar.
         return _agenda_de(gerente)
 
     def _matches(r: dict) -> bool:
-        # Solo se excluye al "Gerente de Reclutamiento" explícito, que es una
-        # figura de escalamiento y no atiende vacantes. Antes se excluía a
-        # QUIEN hiciera de respaldo, y como el respaldo se elige entre los
-        # reclutadores reales, esa persona nunca recibía candidatos por su
-        # propia vacante: con dos reclutadores compartiendo una vacante, el
-        # turno rotativo no repartía nada y todo caía en el otro.
         if r.get("nombre") == "Gerente de Reclutamiento":
             return False
         vacantes = r.get("vacantes") or []
@@ -525,12 +485,6 @@ async def definir_agenda(
     matches = [r for r in equipo if _matches(r)]
 
     if not matches:
-        # La vacante no corresponde a nadie (nombre que no está en el catálogo,
-        # o no existe en la nave del candidato). Antes se caía directo al
-        # respaldo, ignorando que la plataforma ya le había asignado un
-        # reclutador a este candidato: el CRM decía una cosa y la cita se
-        # agendaba con otra persona. Se respeta al asignado siempre que tenga
-        # calendario autorizado.
         asignado = _reclutador_asignado(equipo, asignado_a_id, calendarios_ok)
         if asignado:
             logger.info(
@@ -578,23 +532,20 @@ async def definir_agenda(
 
 # --- CargarPrompt ------------------------------------------------------------
 
-_DIAS_ES = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
-_MESES_ES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
-
 _ESTADOS_SIN_CATALOGO = {"CITA_AGENDADA", "DOCUMENTOS_NO_COINCIDEN", "INE_VALIDADA"}
 
 
 def _formatear_fecha_hora_larga(dt: datetime) -> str:
-    dia = _DIAS_ES[dt.weekday()]
-    mes = _MESES_ES[dt.month - 1]
+    dia = DIAS_ES[dt.weekday()]
+    mes = MESES_ES[dt.month - 1]
     hora12 = dt.hour % 12 or 12
     ampm = "a. m." if dt.hour < 12 else "p. m."
     return f"{dia}, {dt.day} de {mes} de {dt.year}, {hora12}:{dt.minute:02d} {ampm}"
 
 
 def _formatear_fecha_corta(dt: datetime) -> str:
-    dia = _DIAS_ES[dt.weekday()]
-    mes = _MESES_ES[dt.month - 1]
+    dia = DIAS_ES[dt.weekday()]
+    mes = MESES_ES[dt.month - 1]
     return f"{dia}, {dt.day} de {mes}"
 
 
@@ -607,8 +558,6 @@ def _extraer_seccion_nave(texto: str, nave: str) -> str:
 
 
 def _leer_prompt_archivo() -> str:
-    """Plantilla global en disco (virgo_data/prompts/chat_prompt.md). Es el
-    respaldo cuando la empresa no tiene un prompt propio configurado."""
     prompt_path = os.path.join(ENV.VIRGO_FILES_DIR, "prompts", "chat_prompt.md")
     try:
         with open(prompt_path, "r", encoding="utf-8") as f:
@@ -619,14 +568,6 @@ def _leer_prompt_archivo() -> str:
 
 
 async def cargar_prompt(webhook_payload: dict, contacto: dict, candidato: dict) -> str:
-    """Puerto de 'CargarPrompt'. La base sale de `prompt_base` del contexto
-    -- que es `empresas.prompt_ia` cuando la empresa tiene uno configurado
-    en el panel, y si no la plantilla global del archivo -- y el catálogo de
-    obtener_prompt_context().
-
-    Antes se leía el archivo directo y `prompt_base` se ignoraba, así que
-    editar el prompt desde el CRM no tenía ningún efecto sobre el bot: la
-    pantalla guardaba en la BD y el agente seguía con el archivo."""
     dbData = candidato or {}
 
     nave_actual = dbData.get("nave_interes") or "Pendiente"
@@ -666,9 +607,17 @@ async def cargar_prompt(webhook_payload: dict, contacto: dict, candidato: dict) 
     if not detalle_txt:
         detalle_txt = "Informacion no disponible."
 
-    nombre_real = dbData.get("nombre_chat") or dbData.get("nombre_ine") or dbData.get("nombre_solicitud") or "Desconocido"
-    if nombre_real in ("Candidato", "No registrado"):
-        nombre_real = "Desconocido"
+    nombre_candidato = dbData.get("nombre_chat") or dbData.get("nombre_ine") or dbData.get("nombre_solicitud") or dbData.get("nombre") or ""
+    nombre_candidato = re.sub(r"[{}\[\]\"'|]", "", str(nombre_candidato)).strip()
+    if not nombre_candidato or nombre_candidato.upper() in ("CANDIDATO", "DESCONOCIDO", "NO REGISTRADO", "PENDIENTE", "USUARIO", "SIN REGISTRAR", "NONE", "NULL"):
+        notify_name = ((webhook_payload.get("_data") or {}).get("notifyName")) or ""
+        notify_clean = re.sub(r"[{}\[\]\"'|]", "", str(notify_name)).strip()
+        if notify_clean and not notify_clean.isdigit() and len(notify_clean) >= 2 and notify_clean.upper() not in ("USUARIO", "USER", "WHATSAPP"):
+            nombre_real = notify_clean
+        else:
+            nombre_real = "Candidato"
+    else:
+        nombre_real = nombre_candidato
 
     semaforo_ine = "PENDIENTE"
     if dbData.get("nombre_confirmado") is True or dbData.get("estado") == "INE_VALIDADA" or dbData.get("cv_manual"):
@@ -697,30 +646,137 @@ async def cargar_prompt(webhook_payload: dict, contacto: dict, candidato: dict) 
     return prompt
 
 
+_OUT_OF_STATE_CITIES_RE = re.compile(
+    r'\b(?:CIUDAD JUÁREZ|CIUDAD JUAREZ|JUÁREZ|JUAREZ|CDMX|CIUDAD DE MÉXICO|CIUDAD DE MEXICO|'
+    r'MONTERREY|TIJUANA|CHIHUAHUA|MICHOACÁN|MICHOACAN|SINALOA|SONORA|VERACRUZ|'
+    r'PUEBLA|QUERÉTARO|QUERETARO|GUANAJUATO|LEÓN|LEON|SAN LUIS POTOSÍ|SAN LUIS POTOSI|'
+    r'TABASCO|CHIAPAS|YUCATÁN|YUCATAN|QUINTANA ROO|CANCÚN|CANCUN|MÉRIDA|MERIDA|'
+    r'TOLUCA|ESTADO DE MÉXICO|ESTADO DE MEXICO|EDOMEX|MORELIA|OAXACA|DURANGO|'
+    r'COAHUILA|SALTILLO|TORREÓN|TORREON|TAMAULIPAS|REYNOSA|MATAMOROS|COLIMA)\b',
+    re.IGNORECASE
+)
+
+def _detectar_ciudad_no_apta_en_texto(texto: str) -> str | None:
+    if not texto or not isinstance(texto, str):
+        return None
+    match = _OUT_OF_STATE_CITIES_RE.search(texto)
+    if match:
+        return match.group(0).strip().title()
+    return None
+
+def extraer_anuncio_referral(webhook_payload: dict) -> dict | None:
+    if not isinstance(webhook_payload, dict):
+        return None
+    _data = webhook_payload.get("_data") or {}
+    context = webhook_payload.get("context") or _data.get("context") or {}
+    referral = (
+        webhook_payload.get("referral")
+        or _data.get("referral")
+        or context.get("ad")
+        or context.get("referral")
+    )
+    if isinstance(referral, dict):
+        headline = (
+            referral.get("headline")
+            or referral.get("title")
+            or referral.get("body")
+            or referral.get("source_url")
+            or ""
+        )
+        return {
+            "headline": str(headline).strip(),
+            "source_type": str(referral.get("source_type") or "ad"),
+            "raw": referral,
+        }
+    return None
+
 # --- Orquestador de esta oleada ---------------------------------------------
 
 async def analizar_mensaje(webhook_payload: dict, contacto: dict, candidato: dict, empresa_id: str | None = None) -> dict:
-    """Punto de entrada de este módulo: clasifica el mensaje, llama a
-    Gemini si hace falta, sube/actualiza expediente si aplica. Devuelve
-    un dict con `mensaje_para_agente` (lo que verá el agente de chat en
-    lugar del texto crudo del usuario cuando hay media) y `detuvo_flujo`
-    (True si ya se mandó una respuesta final -- p.ej. rechazo de Word --
-    y no debe continuar hacia el agente)."""
+    """Punto de entrada de este módulo: clasifica el mensaje, recolecta
+    todos los archivos multimedia acumulados en la ventana de debounce,
+    llama a Gemini multimodal si hace falta (analizando todas las imágenes
+    juntas), y sube/actualiza expediente."""
     tipo = clasificar_media(webhook_payload)
     session = webhook_payload.get("session") or "default"
-    chat_id = f"{contacto.get('number')}@c.us"
     telefono = contacto.get("number")
+    chat_id = contacto.get("chat_id") or (f"{telefono}@c.us" if str(telefono).isdigit() else f"{telefono}@lid")
+    body_text = (webhook_payload.get("body") or "").strip()
 
-    if tipo == "texto":
-        # Puerto de 'Escribiendo...': en n8n mandaba el indicador con
-        # session="default" fijo (no la session dinámica del webhook) en
-        # la rama de solo texto.
+    # 1. VERIFICACIÓN DE CIUDAD NO APTA (ZMG / JALISCO) EN TEXTO
+    ciudad_detectada = _detectar_ciudad_no_apta_en_texto(body_text)
+    if ciudad_detectada:
+        logger.info("Detectada ciudad no apta en texto para telefono=%s: %s", telefono, ciudad_detectada)
+        pool = get_pool()
+        await pool.execute(
+            "UPDATE candidatos SET estado = 'OTRA_CIUDAD', lugar_residencia = $1, "
+            "resumen_ia = $2 WHERE telefono = $3",
+            ciudad_detectada,
+            f"Descalificado automáticamente: Radica en otra ciudad ({ciudad_detectada})",
+            telefono,
+        )
+        await waha_client.send_text(session, chat_id, DESCALIFICACION_CIUDAD_MSG)
+        return {"mensaje_para_agente": None, "detuvo_flujo": True}
+
+    # 2. DETECCIÓN Y PROCESAMIENTO DE ANUNCIOS DE FACEBOOK ADS
+    referral_info = extraer_anuncio_referral(webhook_payload)
+    mensaje_para_agente = None
+
+    if referral_info and referral_info.get("headline"):
+        headline = referral_info["headline"]
+        logger.info("Anuncio de Facebook Ads detectado para telefono=%s: %s", telefono, headline)
+        pool = get_pool()
+        await pool.execute(
+            "UPDATE candidatos SET vacante_interes = $1 WHERE telefono = $2 AND (vacante_interes IS NULL OR vacante_interes = '' OR vacante_interes = 'General')",
+            headline,
+            telefono,
+        )
+        mensaje_para_agente = (
+            f"[SISTEMA: El candidato ingresó a través de un anuncio de Facebook Ads para la vacante: *{headline}*. "
+            f"Salúdalo amablemente, dale la bienvenida a Talentos Creativos e Innovación, confírmale brevemente que el anuncio es para la vacante *{headline}* "
+            f"y pregúntale en qué municipio o ciudad radica actualmente para verificar su residencia presencial.]"
+        )
+    elif body_text.lower().startswith("¡hola! quiero más información") or body_text.lower().startswith("hola, quiero más información"):
+        logger.info("Detectado mensaje genérico por defecto de anuncio para telefono=%s", telefono)
+        mensaje_para_agente = (
+            "[SISTEMA: El candidato ingresó desde un anuncio de Facebook ('¡Hola! Quiero más información'). "
+            "Salúdalo con entusiasmo, bienvenido a Talentos Creativos e Innovación, y pregúntale de inmediato "
+            "en qué municipio o ciudad radica actualmente para verificar su residencia presencial antes de mostrarle vacantes.]"
+        )
+
+    # 3. RECOLECCIÓN DE TODOS LOS MENSAJES TEMPORALES DEL TURNO (DEBOUNCE)
+    pool = get_pool()
+    temp_rows = await pool.fetch(
+        "SELECT content, message_type, media_url FROM conversation_history WHERE telefono = $1 AND role = 'user_temp' ORDER BY id ASC",
+        telefono,
+    )
+
+    media_urls: list[str] = []
+    for r in temp_rows:
+        u = r.get("media_url")
+        if u and u not in media_urls:
+            media_urls.append(u)
+
+    # Fallback si viene en webhook_payload pero no estaba en user_temp
+    payload_media_url = (webhook_payload.get("media") or {}).get("url")
+    if payload_media_url and payload_media_url not in media_urls:
+        media_urls.append(payload_media_url)
+
+    if not media_urls:
+        # Turno de solo texto
         await waha_client.start_typing("default", chat_id)
-        return {"mensaje_para_agente": None, "detuvo_flujo": False}
+        return {"mensaje_para_agente": mensaje_para_agente, "detuvo_flujo": False}
 
-    # Puerto de 'Escribiendo...1': aquí sí usa la session real del webhook.
     await waha_client.start_typing(session, chat_id)
 
+    # 4. PROCESAR AUDIO
+    if any("audio" in ((r.get("message_type") or "")).lower() for r in temp_rows) or tipo == "audio":
+        audio_url = media_urls[0]
+        data, mime_type = await waha_client.download_media(audio_url)
+        texto_transcrito = await gemini_client.transcribir_audio(data, "audio/ogg")
+        return {"mensaje_para_agente": texto_transcrito, "detuvo_flujo": False}
+
+    # 5. PROCESAR WORD
     if tipo == "word":
         await waha_client.send_text(
             session, chat_id,
@@ -731,34 +787,48 @@ async def analizar_mensaje(webhook_payload: dict, contacto: dict, candidato: dic
         )
         return {"mensaje_para_agente": None, "detuvo_flujo": True}
 
-    media_url = (webhook_payload.get("media") or {}).get("url")
-    if not media_url:
+    # 6. DESCARGAR Y SUBIR TODOS LOS DOCUMENTOS/FOTOS A STORAGE
+    archivos_descargados: list[dict] = []
+    urls_subidas: list[str] = []
+
+    for m_url in media_urls:
+        try:
+            data, mime_type = await waha_client.download_media(m_url)
+            if data:
+                archivos_descargados.append({"mime_type": mime_type, "data": data})
+                try:
+                    up_url = await subir_cv(telefono, data, mime_type)
+                    if up_url:
+                        urls_subidas.append(up_url)
+                except Exception:
+                    logger.exception("analizar_mensaje: subir_cv falló para %s", m_url)
+        except Exception:
+            logger.exception("analizar_mensaje: download_media falló para %s", m_url)
+
+    if not archivos_descargados:
         return {"mensaje_para_agente": None, "detuvo_flujo": False}
 
-    data, mime_type = await waha_client.download_media(media_url)
-
-    if tipo == "audio":
-        texto_transcrito = await gemini_client.transcribir_audio(data, "audio/ogg")
-        return {"mensaje_para_agente": texto_transcrito, "detuvo_flujo": False}
-
-    # tipo == "documento"
+    # 7. ANÁLISIS MULTIMODAL CONSOLIDADO EN GEMINI (TODOS LOS ARCHIVOS A LA VEZ)
     vacante_interes = (candidato or {}).get("vacante_interes") or "General"
     detalle_vacantes = await obtener_detalle_vacantes((candidato or {}).get("nave_interes"), empresa_id)
     prompt = _ANALYZE_DOCUMENT_PROMPT_TEMPLATE.format(detalle_vacantes=detalle_vacantes, vacante_interes=vacante_interes)
-    gemini_text = await gemini_client.analizar_documento(data, mime_type, prompt)
 
-    caption_usuario = webhook_payload.get("body") or ""
+    gemini_text = await gemini_client.analizar_documentos(archivos_descargados, prompt)
+
+    captions = [r["content"] for r in temp_rows if r.get("content") and r["content"] != "[Mensaje multimedia]"]
+    caption_usuario = " ".join(captions).strip() or (webhook_payload.get("body") or "")
     nombre_whatsapp = (webhook_payload.get("_data") or {}).get("notifyName") or "Candidato"
     resultado = separar_json(gemini_text, telefono, nombre_whatsapp, caption_usuario, candidato)
 
     mensaje_para_agente = resultado["mensaje_usuario"]
 
     if resultado["tipo_origen"] != "INVALIDO":
-        link_cv = None
-        try:
-            link_cv = await subir_cv(telefono, data, mime_type)
-        except Exception:
-            logger.exception("analizar_mensaje: subir_cv falló para telefono=%s", telefono)
+        link_cv = urls_subidas[0] if urls_subidas else None
+        resultado["cv_manual"] = resultado.get("cv_manual") or {}
+        resultado["cv_manual"]["urls"] = urls_subidas
+        resultado["cv_manual"]["url"] = link_cv
+        if len(urls_subidas) > 1:
+            resultado["cv_manual"]["url_reverso"] = urls_subidas[1]
 
         try:
             await actualizar_expediente({

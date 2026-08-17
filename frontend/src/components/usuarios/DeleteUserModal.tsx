@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import type { Usuario } from "@/types";
+import { useBackdropClose } from "@/hooks/useBackdropClose";
 
 interface DeleteUserModalProps {
   isOpen: boolean;
@@ -27,6 +28,7 @@ function DeleteUserModalContent({
   usuarios,
   showToast,
 }: DeleteUserModalProps) {
+  const backdropHandlers = useBackdropClose(onClose);
   const [deleteTransferTo, setDeleteTransferTo] = useState("");
   const [deleting, setDeleting] = useState(false);
 
@@ -55,7 +57,10 @@ function DeleteUserModalContent({
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1500]" onClick={onClose}>
+    <div
+      className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1500]"
+      {...backdropHandlers}
+    >
       <div className="bg-white w-[90%] max-w-md rounded-2xl p-7 shadow-2xl relative" onClick={e => e.stopPropagation()}>
         <h2 className="text-xl font-bold text-slate-800 mb-2">Eliminar Usuario</h2>
         <p className="text-slate-600 text-sm mb-5">

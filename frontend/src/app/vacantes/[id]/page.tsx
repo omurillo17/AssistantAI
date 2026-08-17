@@ -7,6 +7,7 @@ import { Plus, Trash2, Save, ChevronLeft, CheckCircle2, Users, Filter, ToggleLef
 // ─── Types ──────────────────────────────────────────────────────────────────
 import type { TipoFiltro, Filtro, Vacante, Recruiter } from "@/types";
 import { useTenantChange } from "@/hooks/useTenant";
+import { useBackdropClose } from "@/hooks/useBackdropClose";
 
 // ─── Template Filters ────────────────────────────────────────────────────────
 const FILTROS_TEMPLATE: Omit<Filtro, "id" | "activo">[] = [
@@ -105,6 +106,7 @@ export default function VacanteFiltrosPage() {
   const [toast, setToast] = useState<{ msg: string; isError: boolean } | null>(null);
   const [showTemplatePanel, setShowTemplatePanel] = useState(false);
   const [showPreguntasBaseModal, setShowPreguntasBaseModal] = useState(false);
+  const preguntasBaseBackdrop = useBackdropClose(() => setShowPreguntasBaseModal(false));
 
   // New filter form state
   const [newFiltro, setNewFiltro] = useState<Omit<Filtro, "id" | "activo">>({
@@ -671,7 +673,10 @@ export default function VacanteFiltrosPage() {
       </div>
       {/* Modal Preguntas Base */}
       {showPreguntasBaseModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4" onClick={() => setShowPreguntasBaseModal(false)}>
+        <div
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4"
+          {...preguntasBaseBackdrop}
+        >
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl relative flex flex-col max-h-[85vh]" onClick={(e) => e.stopPropagation()}>
             <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50 rounded-t-2xl">
               <div>

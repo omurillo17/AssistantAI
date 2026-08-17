@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useBackdropClose } from "@/hooks/useBackdropClose";
 
 interface EditUserModalProps {
   isOpen: boolean;
@@ -100,8 +101,13 @@ function EditUserModalContent({
     }
   };
 
+  const backdropHandlers = useBackdropClose(onClose);
+
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4"
+      {...backdropHandlers}
+    >
       {/* Formato apaisado, igual que el alta: rejilla de 2 columnas desde
           pantallas medianas, una sola columna en móvil. */}
       <div className="bg-white w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl p-6 md:p-8 shadow-2xl relative" onClick={e => e.stopPropagation()}>

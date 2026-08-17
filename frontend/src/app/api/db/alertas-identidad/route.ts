@@ -15,17 +15,23 @@ export async function GET(request: Request) {
     }
     const reclutador_id = (payload.reclutador_id as string | null) ?? null;
     const rol = (payload.rol as string) || 'USER';
+    const empresa_id = (payload.empresa_id as string | null) ?? null;
 
-    if (!reclutador_id && rol !== 'ADMIN' && rol !== 'ROOT') {
-      return NextResponse.json({ items: [] });
+    const conditions: string[] = ["c.alerta_identidad_estado = 'PENDIENTE'"];
+    const params: unknown[] = [];
+    let idx = 1;
+
+    if (rol !== 'ROOT' && empresa_id) {
+      conditions.push(`c.empresa_id = $${idx++}`);
+      params.push(empresa_id);
     }
 
-    let filter = "WHERE c.alerta_identidad_estado = 'PENDIENTE'";
-    const params: string[] = [];
-    if (rol !== 'ADMIN' && rol !== 'ROOT') {
-      filter += ' AND c.asignado_a_id = $1';
-      params.push(reclutador_id as string);
+    if (rol === 'RECLUTADOR' && reclutador_id) {
+      conditions.push(`c.asignado_a_id = $${idx++}`);
+      params.push(reclutador_id);
     }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const res = await pool.query(
       `SELECT
@@ -36,9 +42,12 @@ export async function GET(request: Request) {
          c.curp_rfc,
          c.vacante_interes,
          c.alerta_identidad_motivo,
+         c.datos_ine,
+         c.datos_rfc,
+         c.link_cv,
          c.updated_at
        FROM candidatos c
-       ${filter}
+       ${where}
        ORDER BY c.updated_at DESC
        LIMIT 20`,
       params

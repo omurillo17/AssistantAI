@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { X, Plus } from "lucide-react";
+import { useBackdropClose } from "@/hooks/useBackdropClose";
 
 type Props = {
   isEditing: boolean;
@@ -21,21 +22,7 @@ type Props = {
 };
 
 const ETIQUETA = "block text-sm text-slate-500 font-medium mb-1";
-const CAMPO =
-  "w-full p-3 rounded-lg border border-black/10 bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none transition-all shadow-sm";
-
-/**
- * Las palabras clave se guardan como una cadena separada por comas (así viaja
- * a `vacantes_def.palabras_clave` y de ahí al catálogo de la IA), pero se
- * editan como etiquetas sueltas: escribir comas a mano se prestaba a dejar
- * espacios de más, comas dobles o una entrada vacía al final.
- */
-function parseChips(valor: string): string[] {
-  return valor
-    .split(",")
-    .map((p) => p.trim())
-    .filter(Boolean);
-}
+const CAMPO = "w-full p-3 rounded-lg border border-black/10 bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none uppercase transition-all shadow-sm";
 
 export default function VacancyModal({
   isEditing,
@@ -53,30 +40,35 @@ export default function VacancyModal({
   onSave,
   onCancel,
 }: Props) {
+  const backdropHandlers = useBackdropClose(onCancel);
+  // Estado local para el borrador del chip que se está escribiendo.
   const [chipBorrador, setChipBorrador] = useState("");
-  const chips = parseChips(vPalabrasClave);
 
-  const agregarChip = () => {
-    const nuevo = chipBorrador.trim().replace(/,/g, "");
-    if (!nuevo) return;
-    // Sin duplicados: comparar sin mayúsculas evita "Chofer" y "chofer".
-    if (chips.some((c) => c.toLowerCase() === nuevo.toLowerCase())) {
-      setChipBorrador("");
-      return;
+  // Convertimos el string separado por comas a un array limpio.
+  const chips = vPalabrasClave
+    ? vPalabrasClave.split(",").map((c) => c.trim()).filter(Boolean)
+    : [];
+
+  const agregarChip = (valor: string) => {
+    const limpio = valor.trim().replace(/,/g, "");
+    if (!limpio) return;
+    const yaExiste = chips.some((c) => c.toUpperCase() === limpio.toUpperCase());
+    if (!yaExiste) {
+      const nuevo = [...chips, limpio].join(", ");
+      setVPalabrasClave(nuevo);
     }
-    setVPalabrasClave([...chips, nuevo].join(", "));
     setChipBorrador("");
   };
 
-  const quitarChip = (chip: string) => {
-    setVPalabrasClave(chips.filter((c) => c !== chip).join(", "));
+  const quitarChip = (chipAQuitar: string) => {
+    const nuevo = chips.filter((c) => c !== chipAQuitar).join(", ");
+    setVPalabrasClave(nuevo);
   };
 
-  const onChipKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    // Enter o coma confirman la etiqueta; Backspace en vacío borra la última.
+  const manejarKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter" || e.key === ",") {
       e.preventDefault();
-      agregarChip();
+      agregarChip(chipBorrador);
     } else if (e.key === "Backspace" && !chipBorrador && chips.length > 0) {
       quitarChip(chips[chips.length - 1]);
     }
@@ -85,7 +77,7 @@ export default function VacancyModal({
   return (
     <div
       className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4"
-      onClick={onCancel}
+      {...backdropHandlers}
     >
       {/* Formato apaisado: dos columnas desde pantallas medianas. Los textos
           largos (detalles y actividades) quedan lado a lado en vez de obligar
@@ -175,12 +167,12 @@ export default function VacancyModal({
                 placeholder={chips.length ? "Agregar otra…" : "Ej: Chofer"}
                 value={chipBorrador}
                 onChange={(e) => setChipBorrador(e.target.value)}
-                onKeyDown={onChipKeyDown}
-                onBlur={agregarChip}
+                onKeyDown={manejarKeyDown}
+                onBlur={() => agregarChip(chipBorrador)}
               />
               <button
                 type="button"
-                onClick={agregarChip}
+                onClick={() => agregarChip(chipBorrador)}
                 disabled={!chipBorrador.trim()}
                 className="flex items-center gap-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white text-sm font-semibold rounded-lg transition-colors"
               >

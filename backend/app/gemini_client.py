@@ -19,8 +19,7 @@ import google.generativeai as genai
 from google.generativeai.types import FunctionDeclaration, Tool
 
 from app.config import ENV
-
-_DIAS_ES = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+from app.utils.fechas_es import DIAS_ES
 
 logger = logging.getLogger("gemini_client")
 
@@ -37,18 +36,25 @@ def _ensure_configured() -> None:
         _configured = True
 
 
-async def analizar_documento(data: bytes, mime_type: str, prompt: str) -> str:
-    """Puerto de 'Analyze document': envía un documento (imagen/PDF) +
-    prompt largo de validación, espera JSON embebido en la respuesta de
-    texto (el parseo del JSON lo hace analizador.py, no este módulo)."""
+async def analizar_documentos(archivos: list[dict], prompt: str) -> str:
+    """Envía uno o varios documentos (imágenes/PDFs) + prompt de validación a Gemini.
+    Cada elemento en `archivos` debe ser: {"mime_type": str, "data": bytes}.
+    Gemini analiza todos los archivos juntos en un único turno multimodal."""
     _ensure_configured()
 
     def _call() -> str:
         model = genai.GenerativeModel(MODEL_NAME)
-        response = model.generate_content([{"mime_type": mime_type, "data": data}, prompt])
+        contents = [{"mime_type": a["mime_type"], "data": a["data"]} for a in archivos]
+        contents.append(prompt)
+        response = model.generate_content(contents)
         return response.text
 
     return await asyncio.to_thread(_call)
+
+
+async def analizar_documento(data: bytes, mime_type: str, prompt: str) -> str:
+    """Wrapper retrocompatible para un único archivo."""
+    return await analizar_documentos([{"mime_type": mime_type, "data": data}], prompt)
 
 
 async def transcribir_audio(data: bytes, mime_type: str) -> str:
@@ -78,17 +84,19 @@ def build_tool_declarations(now: datetime) -> Tool:
         FunctionDeclaration(
             name="revisar_calendario",
             description=(
-                "Usa esta herramienta para dos cosas: 1) Verificar disponibilidad de "
-                "horarios. 2) BUSCAR una cita existente si el usuario quiere cancelar o "
-                "cambiar fecha (busca en un rango amplio de fechas). Devuelve la lista de "
+                "Usa esta herramienta ÚNICAMENTE para verificar disponibilidad de horarios "
+                "antes de ofrecer una cita nueva con crear_evento. Devuelve la lista de "
                 "eventos OCUPADOS con sus detalles e IDs.\n\n"
+                "NO la uses para cancelaciones: eliminar_evento no necesita ningún ID ni "
+                "búsqueda previa, el sistema ya sabe internamente cuál es la cita del "
+                "candidato -- si quiere cancelar, llama a eliminar_evento directamente.\n\n"
                 "¡ALERTA CRÍTICA!: SI LA HERRAMIENTA DEVUELVE UNA LISTA VACÍA (0 EVENTOS), "
                 "SIGNIFICA QUE TODO EL CALENDARIO ESTÁ TOTALMENTE LIBRE Y DISPONIBLE. NO "
                 "SIGNIFICA QUE NO HAYA HORARIOS. EN ESE CASO, OFRECE CUALQUIER HORARIO "
                 "DENTRO DE LA JORNADA OFICIAL.\n\n"
                 "CONTEXTO TEMPORAL CRÍTICO:\n"
                 f"- La fecha y hora actual EXACTA es: {now.isoformat()}\n"
-                f"- El día de la semana es: {_DIAS_ES[now.weekday()]}\n"
+                f"- El día de la semana es: {DIAS_ES[now.weekday()]}\n"
                 f"- El año actual es: {now.year}\n\n"
                 "INSTRUCCIONES:\n"
                 "1. Calcula todas las fechas relativas (\"mañana\", \"el viernes\", \"próxima "
@@ -121,7 +129,12 @@ def build_tool_declarations(now: datetime) -> Tool:
         ),
         FunctionDeclaration(
             name="eliminar_evento",
-            description="Cancela/borra la cita de entrevista actualmente agendada del candidato.",
+            description=(
+                "Cancela/borra la cita de entrevista actualmente agendada del candidato. "
+                "No recibe parámetros -- el sistema ya identifica internamente cuál es su "
+                "cita. Llámala DIRECTAMENTE en cuanto el candidato confirme que quiere "
+                "cancelar; NO llames antes a revisar_calendario, es un paso innecesario."
+            ),
             parameters={"type": "object", "properties": {}},
         ),
     ])

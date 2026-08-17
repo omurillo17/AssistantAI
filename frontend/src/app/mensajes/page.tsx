@@ -37,21 +37,14 @@ function formatTime(ts: string) {
   });
 }
 
-function detectMediaUrl(content: string): string | null {
-  if (!content) return null;
-  const match = content.match(/https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp|mp4|ogg|opus|mp3|m4a|pdf|doc|docx)/i);
-  return match ? match[0] : null;
-}
-
-function proxyMediaUrl(url: string | null): string | null {
-  if (!url) return null;
-  return url.replace(/^https?:\/\/(localhost|waha)(:\d+)?\//, '/api/waha-media/');
-}
-
-function isAudioType(mt: string | null | undefined): boolean { return !!mt && ["audio", "ptt", "voice"].includes(mt.toLowerCase()); }
-function isImageType(mt: string | null | undefined): boolean { return !!mt && ["image", "sticker"].includes(mt.toLowerCase()); }
-function isVideoType(mt: string | null | undefined): boolean { return mt === "video"; }
-function isDocumentType(mt: string | null | undefined): boolean { return !!mt && ["document", "file"].includes(mt.toLowerCase()); }
+import {
+  proxyMediaUrl,
+  detectMediaUrl,
+  isAudioType,
+  isImageType,
+  isVideoType,
+  isDocumentType,
+} from "@/lib/formatters";
 
 import type { Mensaje, Conversacion } from "@/types";
 

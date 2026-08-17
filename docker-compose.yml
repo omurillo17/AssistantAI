@@ -74,7 +74,9 @@ services:
       # usa un túnel SSH en vez de publicar el puerto.
       - "127.0.0.1:3000:3000"
     environment:
-      - WHATSAPP_DEFAULT_ENGINE=WEBJS
+      - WHATSAPP_DEFAULT_ENGINE=NOWEB
+      - WAHA_NOWEB_STORE_ENABLED=True
+      - WAHA_NOWEB_STORE_FULL_SYNC=True
       # Entrega los mensajes de WhatsApp al backend Python (routers/whatsapp.py).
       # Ojo: WAHA guarda el webhook en la config de cada sesión; esta variable
       # solo aplica a sesiones nuevas. Si se cambia, hay que actualizar también
@@ -92,6 +94,12 @@ services:
       - WHATSAPP_DOWNLOAD_MEDIA_INSTANT=true
       - WHATSAPP_WEBHOOK_MEDIA=true
       - WHATSAPP_FILES_LIFETIME=0
+    healthcheck:
+      test: ["CMD-SHELL", "node -e 'fetch(\"http://localhost:3000/api/sessions/default\", {headers: {\"X-Api-Key\": process.env.WAHA_API_KEY}}).then(r => r.json()).then(d => process.exit(d.status === \"WORKING\" || d.status === \"SCAN_QR_CODE\" ? 0 : 1)).catch(() => process.exit(1))'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     volumes:
       - waha_data_final:/app/.waha
       - waha_files_final:/app/.waha/files

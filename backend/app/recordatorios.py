@@ -26,6 +26,7 @@ from zoneinfo import ZoneInfo
 
 from app.db import get_pool
 from app.google_calendar import list_events
+from app.utils.fechas_es import DIAS_ES, MESES_ES
 
 logger = logging.getLogger("recordatorios")
 
@@ -38,17 +39,6 @@ _NOMBRE_RE = re.compile(r"Nombre[:\s]*([^\n]+)", re.IGNORECASE)
 
 _DEFAULT_NOMBRE_RECLUTADOR = "Tu equipo"
 _DEFAULT_EMOJI_RECLUTADOR = "📅"
-_DEFAULT_TEL_RECLUTADOR = "5213323379399"
-
-_DIAS_ES = {
-    0: "lunes", 1: "martes", 2: "miércoles", 3: "jueves",
-    4: "viernes", 5: "sábado", 6: "domingo",
-}
-_MESES_ES = {
-    1: "enero", 2: "febrero", 3: "marzo", 4: "abril", 5: "mayo", 6: "junio",
-    7: "julio", 8: "agosto", 9: "septiembre", 10: "octubre",
-    11: "noviembre", 12: "diciembre",
-}
 
 _SELECT_RECLUTADORES_SQL = (
     "SELECT nombre AS nombre_reclutador, calendar_id, telefono AS telefono_reclutador "
@@ -65,8 +55,8 @@ def _formatear_fecha_es(dt: datetime) -> str:
     Python no trae locale es-MX de fábrica; en vez de sumar una dependencia
     (babel/pytz) solo para esto, se resuelve a mano con dos diccionarios.
     dt debe llegar ya convertido a America/Mexico_City."""
-    dia_semana = _DIAS_ES[dt.weekday()]
-    mes = _MESES_ES[dt.month]
+    dia_semana = DIAS_ES[dt.weekday()]
+    mes = MESES_ES[dt.month - 1]
     hora_12 = dt.hour % 12 or 12
     ampm = "a. m." if dt.hour < 12 else "p. m."
     return f"{dia_semana}, {dt.day} de {mes}, {hora_12:02d}:{dt.minute:02d} {ampm}"
@@ -126,10 +116,9 @@ def _preparar_aviso(evento: dict, reclutadores: list[dict]) -> dict | None:
     reclutador = _match_reclutador(evento, reclutadores)
     nombre_reclutador = _DEFAULT_NOMBRE_RECLUTADOR
     emoji_reclutador = _DEFAULT_EMOJI_RECLUTADOR
-    telefono_reclutador = _DEFAULT_TEL_RECLUTADOR
-    if reclutador:
-        nombre_reclutador = reclutador.get("nombre_reclutador") or nombre_reclutador
-        telefono_reclutador = reclutador.get("telefono_reclutador") or telefono_reclutador
+    telefono_reclutador = reclutador.get("telefono_reclutador") if reclutador else None
+    if reclutador and reclutador.get("nombre_reclutador"):
+        nombre_reclutador = reclutador["nombre_reclutador"]
         # emoji_reclutador queda siempre en el default: la tabla
         # reclutadores nunca tuvo columna "emoji", así que el nodo
         # original también leía esto como undefined.
@@ -206,12 +195,12 @@ async def job_recordatorio_entrevista() -> None:
             if aviso is None:
                 continue  # sin teléfono en la descripción: no es una cita lista
 
-            # El mensaje al reclutador SIEMPRE se encola, sin condición
-            # (igual que el nodo NotificarReclutador, que no tenía IF).
-            await _enqueue_mensaje(
-                pool, f"{aviso['telefono_reclutador']}@c.us", aviso["mensaje_reclutador"]
-            )
-            if aviso["telefono_candidato"]:
+            # Si el reclutador tiene teléfono configurado, se le envía el aviso
+            if aviso.get("telefono_reclutador"):
+                await _enqueue_mensaje(
+                    pool, f"{aviso['telefono_reclutador']}@c.us", aviso["mensaje_reclutador"]
+                )
+            if aviso.get("telefono_candidato"):
                 await _enqueue_mensaje(
                     pool, f"{aviso['telefono_candidato']}@c.us", aviso["mensaje_candidato"]
                 )

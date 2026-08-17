@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef } from "react";
 import { Candidato, ChatMessage } from "@/types";
 import { getEstado, ESTADOS_CRM, ESTADOS, EstadoKey } from "@/lib/estados";
-import { getCandidateDisplayName, formatNaveName } from "@/lib/formatters";
+import { getCandidateDisplayName, formatNaveName, proxyMediaUrl } from "@/lib/formatters";
+import { useBackdropClose } from "@/hooks/useBackdropClose";
 import { X, ExternalLink, Calendar, Briefcase, FileText, CheckCircle, AlertCircle, Bot, User, MessageSquare, Sparkles } from "lucide-react";
 
 interface CandidateModalProps {
@@ -103,11 +104,93 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
     }
   }, [mensajes]);
 
-  const hasCV = cand.tiene_cv || !!cand.cv_manual || !!cand.link_cv;
-  const cvLink = cand.link_cv || (cand.cv_manual as any)?.url;
+  const ineData = typeof cand.datos_ine === 'string' ? (() => { try { return JSON.parse(cand.datos_ine); } catch { return null; } })() : cand.datos_ine;
+  const csfData = typeof cand.datos_rfc === 'string' ? (() => { try { return JSON.parse(cand.datos_rfc); } catch { return null; } })() : cand.datos_rfc;
+  const cvData = typeof cand.cv_manual === 'string' ? (() => { try { return JSON.parse(cand.cv_manual); } catch { return null; } })() : cand.cv_manual;
+
+  const chatMediaUrls = (mensajes || [])
+    .map(m => proxyMediaUrl((m as any).media_url || (m as any).url || (m as any).mediaUrl))
+    .filter((url): url is string => !!url);
+
+  const ineUrls: string[] = [];
+  if (Array.isArray(ineData?.urls)) {
+    ineData.urls.forEach((u: string) => {
+      const p = proxyMediaUrl(u);
+      if (p && !ineUrls.includes(p)) ineUrls.push(p);
+    });
+  }
+  const defaultIne = proxyMediaUrl(ineData?.url || ineData?.link || (cand as any).link_ine);
+  if (defaultIne && !ineUrls.includes(defaultIne)) ineUrls.unshift(defaultIne);
+  if (ineData?.url_reverso) {
+    const rev = proxyMediaUrl(ineData.url_reverso);
+    if (rev && !ineUrls.includes(rev)) ineUrls.push(rev);
+  }
+
+  const csfUrls: string[] = [];
+  if (Array.isArray(csfData?.urls)) {
+    csfData.urls.forEach((u: string) => {
+      const p = proxyMediaUrl(u);
+      if (p && !csfUrls.includes(p)) csfUrls.push(p);
+    });
+  }
+  const defaultCsf = proxyMediaUrl(csfData?.url || csfData?.link || (cand as any).link_csf || (cand as any).link_rfc);
+  if (defaultCsf && !csfUrls.includes(defaultCsf)) csfUrls.unshift(defaultCsf);
+
+  const cvUrls: string[] = [];
+  if (Array.isArray(cvData?.urls)) {
+    cvData.urls.forEach((u: string) => {
+      const p = proxyMediaUrl(u);
+      if (p && !cvUrls.includes(p)) cvUrls.push(p);
+    });
+  }
+  const defaultCv = proxyMediaUrl(cand.link_cv || cvData?.url || cvData?.link);
+  if (defaultCv && !cvUrls.includes(defaultCv)) cvUrls.unshift(defaultCv);
+
+  let cvLink = cvUrls[0] || null;
+  let ineUrl = ineUrls[0] || null;
+  let csfUrl = csfUrls[0] || null;
+
+  if (!cvLink && chatMediaUrls.length > 0) cvLink = chatMediaUrls[0];
+  if (!ineUrl && chatMediaUrls.length > 1) ineUrl = chatMediaUrls[1];
+  if (!csfUrl && chatMediaUrls.length > 2) csfUrl = chatMediaUrls[2];
+
+  const ineName = String(ineData?.nombre_completo || ineData?.nombre || cand.nombre_ine || "").trim();
+  const rfcName = String(csfData?.nombre_completo || csfData?.nombre || csfData?.razon_social || cand.nombre_constancia || "").trim();
+
+  const ineCurp = String(ineData?.curp || cand.curp_ine || "").trim();
+  const rfcCurp = String(csfData?.curp || cand.curp_rfc || "").trim();
+
+  const getLevenshtein = (s1: any, s2: any) => {
+    if (!s1 || !s2 || typeof s1 !== "string" || typeof s2 !== "string") return 0;
+    const a = s1.toUpperCase();
+    const b = s2.toUpperCase();
+    if (a === b) return 0;
+    const track = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
+    for (let i = 0; i <= a.length; i++) track[0][i] = i;
+    for (let j = 0; j <= b.length; j++) track[j][0] = j;
+    for (let j = 1; j <= b.length; j++) {
+      for (let i = 1; i <= a.length; i++) {
+        const indicator = a[i - 1] === b[j - 1] ? 0 : 1;
+        track[j][i] = Math.min(
+          track[j][i - 1] + 1,
+          track[j - 1][i] + 1,
+          track[j - 1][i - 1] + indicator
+        );
+      }
+    }
+    return track[b.length][a.length];
+  };
+
+  const charDiff = (ineName && rfcName) ? getLevenshtein(ineName, rfcName) : 0;
+  const allAvailableUrls = Array.from(new Set([cvLink, ineUrl, csfUrl, ...cvUrls, ...ineUrls, ...csfUrls, ...chatMediaUrls].filter((u): u is string => !!u)));
+  const hasCV = cand.tiene_cv || !!cvLink || cvUrls.length > 0;
+  const backdropHandlers = useBackdropClose(onClose);
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4 lg:p-6" onClick={onClose}>
+    <div
+      className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4 lg:p-6"
+      {...backdropHandlers}
+    >
       <div
         className="bg-white rounded-2xl w-full max-w-6xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden animate-fade-in"
         onClick={e => e.stopPropagation()}
@@ -260,6 +343,12 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                             return v;
                           };
 
+                          const labelLower = it.label.toLowerCase();
+                          let badgeLink: string | null = null;
+                          if (labelLower.includes('cv') || labelLower.includes('solicitud')) badgeLink = cvLink;
+                          else if (labelLower.includes('ine')) badgeLink = ineUrl;
+                          else if (labelLower.includes('rfc') || labelLower.includes('csf')) badgeLink = csfUrl;
+
                           return (
                             <div key={idx} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${isOk
                               ? 'bg-emerald-50 text-emerald-800 border-emerald-200/80'
@@ -277,10 +366,7 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
               );
             })()}
 
-            {/* EXPERIENCIA EN LAS ACTIVIDADES DEL PUESTO
-                Lo que el candidato contestó cuando Sofía le leyó las actividades
-                de la vacante. Va antes de los documentos porque es lo que el
-                reclutador quiere leer para decidir si vale la pena la cita. */}
+            {/* EXPERIENCIA EN LAS ACTIVIDADES DEL PUESTO */}
             {(cand as any).experiencia_actividades && (
               <div className="bg-emerald-50/60 border border-emerald-200/70 rounded-2xl p-4">
                 <h3 className="text-sm font-bold text-emerald-900 flex items-center gap-2 mb-2">
@@ -298,70 +384,32 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
 
             {/* DOCUMENTOS Y COMPARACIÓN INE vs RFC */}
             {(() => {
-              const ineData = typeof cand.datos_ine === 'string' ? (() => { try { return JSON.parse(cand.datos_ine); } catch { return null; } })() : cand.datos_ine;
-              const csfData = typeof cand.datos_rfc === 'string' ? (() => { try { return JSON.parse(cand.datos_rfc); } catch { return null; } })() : cand.datos_rfc;
-
-              const ineName = String(ineData?.nombre_completo || ineData?.nombre || cand.nombre_ine || "").trim();
-              const rfcName = String(csfData?.nombre_completo || csfData?.nombre || csfData?.razon_social || cand.nombre_constancia || "").trim();
-
-              const ineCurp = String(ineData?.curp || cand.curp_ine || "").trim();
-              const rfcCurp = String(csfData?.curp || cand.curp_rfc || "").trim();
-
-              const ineUrl = ineData?.url || ineData?.link || (cand as any).link_ine;
-              const csfUrl = csfData?.url || csfData?.link || (cand as any).link_csf || (cand as any).link_rfc;
-
-              // Calcular distancia Levenshtein entre nombres
-              const getLevenshtein = (s1: any, s2: any) => {
-                if (!s1 || !s2 || typeof s1 !== "string" || typeof s2 !== "string") return 0;
-                const a = s1.toUpperCase();
-                const b = s2.toUpperCase();
-                if (a === b) return 0;
-                const track = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(null));
-                for (let i = 0; i <= a.length; i++) track[0][i] = i;
-                for (let j = 0; j <= b.length; j++) track[j][0] = j;
-                for (let j = 1; j <= b.length; j++) {
-                  for (let i = 1; i <= a.length; i++) {
-                    const indicator = a[i - 1] === b[j - 1] ? 0 : 1;
-                    track[j][i] = Math.min(
-                      track[j][i - 1] + 1,
-                      track[j - 1][i] + 1,
-                      track[j - 1][i - 1] + indicator
-                    );
-                  }
-                }
-                return track[b.length][a.length];
-              };
-
-              const charDiff = (ineName && rfcName) ? getLevenshtein(ineName, rfcName) : 0;
-              const hasBothDocs = (ineData || ineName) && (csfData || rfcName);
-
               return (
                 <div className="space-y-4">
                   <h3 className="text-sm font-bold text-slate-700 flex items-center justify-between">
                     <span className="flex items-center gap-2">
-                      <FileText size={16} /> Documentos                    </span>
-                    {hasBothDocs && (
-                      <span className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full border ${charDiff === 0 ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
-                        charDiff <= 2 ? "bg-amber-50 text-amber-800 border-amber-300" :
-                          "bg-rose-50 text-rose-700 border-rose-300"
-                        }`}>
-                        {charDiff === 0 ? "✅ Nombres coinciden 100%" :
-                          charDiff <= 2 ? `⚠️ Variación leve (${charDiff} letra${charDiff > 1 ? 's' : ''}) - Agendamiento permitido` :
-                            `🚨 Discrepancia mayor (${charDiff} letras)`}
-                      </span>
-                    )}
+                      <FileText size={16} /> Documentos
+                    </span>
                   </h3>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {/* CV Card */}
                     <div className={`p-4 rounded-xl border ${hasCV ? 'bg-cyan-50/80 border-cyan-100' : 'bg-slate-50 border-slate-100'} flex flex-col items-start gap-2 col-span-1 sm:col-span-2`}>
                       <div className="flex justify-between items-center w-full">
-                        <div className={`text-xs font-bold ${hasCV ? 'text-cyan-800' : 'text-slate-500'}`}>Currículum Vitae / Solicitud</div>
-                        {cvLink && (
+                        <div className={`text-xs font-bold ${hasCV ? 'text-cyan-800' : 'text-slate-500'}`}>Currículum Vitae / Solicitud {cvUrls.length > 1 && `(${cvUrls.length} docs/págs)`}</div>
+                        {cvUrls.length > 0 ? (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {cvUrls.map((u, idx) => (
+                              <a key={idx} href={u} target="_blank" rel="noreferrer" className="text-xs font-bold text-cyan-700 hover:underline flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-cyan-200 shadow-2xs">
+                                {cvUrls.length > 1 ? `Ver Pág ${idx + 1}` : 'Abrir CV'} <ExternalLink size={12} />
+                              </a>
+                            ))}
+                          </div>
+                        ) : cvLink ? (
                           <a href={cvLink} target="_blank" rel="noreferrer" className="text-xs font-bold text-cyan-700 hover:underline flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-cyan-200 shadow-2xs">
                             Abrir CV <ExternalLink size={12} />
                           </a>
-                        )}
+                        ) : null}
                       </div>
                       {hasCV ? (
                         <span className="text-xs text-cyan-700">Documento recibido y analizado por Sofia.</span>
@@ -373,12 +421,20 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                     {/* INE Card */}
                     <div className={`p-4 rounded-xl border ${ineData || ineName ? 'bg-violet-50/80 border-violet-100' : 'bg-slate-50 border-slate-100'} flex flex-col items-start gap-2`}>
                       <div className="flex justify-between items-center w-full">
-                        <div className={`text-xs font-bold ${ineData || ineName ? 'text-violet-800' : 'text-slate-500'}`}>🪪 Documento INE</div>
-                        {ineUrl && (
+                        <div className={`text-xs font-bold ${ineData || ineName ? 'text-violet-800' : 'text-slate-500'}`}>🪪 Documento INE {ineUrls.length > 1 && `(${ineUrls.length} fotos)`}</div>
+                        {ineUrls.length > 0 ? (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {ineUrls.map((u, idx) => (
+                              <a key={idx} href={u} target="_blank" rel="noreferrer" className="text-[11px] font-bold text-violet-700 hover:underline flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-violet-200 shadow-2xs">
+                                {ineUrls.length > 1 ? (idx === 0 ? 'Frente' : `Reverso ${idx > 1 ? idx : ''}`) : 'Ver INE'} <ExternalLink size={11} />
+                              </a>
+                            ))}
+                          </div>
+                        ) : ineUrl ? (
                           <a href={ineUrl} target="_blank" rel="noreferrer" className="text-[11px] font-bold text-violet-700 hover:underline flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-violet-200 shadow-2xs">
                             Ver INE <ExternalLink size={11} />
                           </a>
-                        )}
+                        ) : null}
                       </div>
                       {ineData || ineName ? (
                         <div className="text-xs text-violet-900 space-y-1.5 w-full bg-white/70 p-2.5 rounded-lg border border-violet-100">
@@ -394,25 +450,34 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                     {/* CSF / RFC Card */}
                     <div className={`p-4 rounded-xl border ${csfData || rfcName ? 'bg-emerald-50/80 border-emerald-100' : 'bg-slate-50 border-slate-100'} flex flex-col items-start gap-2`}>
                       <div className="flex justify-between items-center w-full">
-                        <div className={`text-xs font-bold ${csfData || rfcName ? 'text-emerald-800' : 'text-slate-500'}`}>📋 Constancia Fiscal (CSF)</div>
-                        {csfUrl && (
+                        <div className={`text-xs font-bold ${csfData || rfcName ? 'text-emerald-800' : 'text-slate-500'}`}>📋 Constancia Fiscal (CSF) {csfUrls.length > 1 && `(${csfUrls.length} docs)`}</div>
+                        {csfUrls.length > 0 ? (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {csfUrls.map((u, idx) => (
+                              <a key={idx} href={u} target="_blank" rel="noreferrer" className="text-[11px] font-bold text-emerald-700 hover:underline flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-emerald-200 shadow-2xs">
+                                {csfUrls.length > 1 ? `Pág ${idx + 1}` : 'Ver CSF'} <ExternalLink size={11} />
+                              </a>
+                            ))}
+                          </div>
+                        ) : csfUrl ? (
                           <a href={csfUrl} target="_blank" rel="noreferrer" className="text-[11px] font-bold text-emerald-700 hover:underline flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-emerald-200 shadow-2xs">
                             Ver CSF <ExternalLink size={11} />
                           </a>
-                        )}
+                        ) : null}
                       </div>
                       {csfData || rfcName ? (
                         <div className="text-xs text-emerald-900 space-y-1.5 w-full bg-white/70 p-2.5 rounded-lg border border-emerald-100">
                           <div><span className="font-bold text-slate-500 block text-[10px] uppercase">Nombre / Razón Social:</span> <span className="font-extrabold">{rfcName || '—'}</span></div>
                           <div className="grid grid-cols-2 gap-1">
                             <div><span className="font-bold text-slate-500 block text-[10px] uppercase">RFC:</span> <span className="font-mono">{csfData?.rfc || '—'}</span></div>
-                            <br></br><div><span className="font-bold text-slate-500 block text-[10px] uppercase">CURP:</span> <span className="font-mono">{rfcCurp || '—'}</span></div>
+                            <div><span className="font-bold text-slate-500 block text-[10px] uppercase">CURP:</span> <span className="font-mono">{rfcCurp || '—'}</span></div>
                           </div>
                         </div>
                       ) : (
                         <span className="text-xs text-slate-400">No entregado aún</span>
                       )}
                     </div>
+
                   </div>
 
                   {/* PANEL DE VALIDACIÓN / DECISIÓN MANUAL */}

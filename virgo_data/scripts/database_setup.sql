@@ -261,6 +261,7 @@ CREATE TABLE IF NOT EXISTS candidatos (
 
     ultima_cita TIMESTAMP,
     total_citas INTEGER DEFAULT 0,
+    cancelaciones INTEGER DEFAULT 0,
     fecha_entrevista VARCHAR(255),
     event_id VARCHAR(255),
 

@@ -49,24 +49,25 @@ def _build_summary(payload: CrearEventoRequest) -> str:
 
 
 def _build_description(payload: CrearEventoRequest) -> str:
-    nombre = payload.nombre or "Desconocido"
+    nombre = payload.nombre or "Candidato"
     telefono = payload.telefono or "Desconocido"
     vacante = payload.vacante_interes or "General"
     nave = payload.nave_interes or "Pendiente"
-    ine_nombre = payload.ine_nombre or "No validado"
-    ine_curp = payload.ine_curp or "No validado"
-    notas = payload.notas_ia or payload.resumen_ia or ""
-    return (
-        f"Candidato: {nombre}\n"
-        f"Tel: {telefono}\n"
-        f"Vacante: {vacante}\n"
-        f"Nave/Sucursal: {nave}\n\n"
-        f"--- DATOS VERIFICADOS (INE) ---\n"
-        f"Nombre: {ine_nombre}\n"
-        f"CURP: {ine_curp}\n\n"
-        f"--- NOTAS DE IA ---\n"
-        f"{notas}"
-    )
+    
+    tel_limpio = "".join(filter(str.isdigit, telefono))
+    wa_info = f"https://wa.me/{tel_limpio}" if tel_limpio else telefono
+
+    lineas = [
+        f"Candidato: {nombre}",
+        f"Teléfono: {telefono}" + (f" ({wa_info})" if tel_limpio else ""),
+        f"Vacante: {vacante}",
+        f"Nave / Sucursal: {nave}",
+    ]
+    if payload.ine_curp and payload.ine_curp not in ("No validado", "null", "None", ""):
+        lineas.append(f"CURP: {payload.ine_curp}")
+
+    return "\n".join(lineas)
+
 
 
 @router.post("/crear")
@@ -80,33 +81,104 @@ async def crear_evento(payload: CrearEventoRequest) -> dict:
     )
 
     pool = get_pool()
-    await pool.execute(
-        "UPDATE candidatos SET event_id = $1 "
-        "WHERE telefono = $2 AND (NULLIF($3, '') IS NULL OR empresa_id = NULLIF($3, '')::uuid)",
+    row = await pool.fetchrow(
+        """
+        UPDATE candidatos SET 
+            event_id = $1,
+            fecha_entrevista = $4,
+            estado = 'CITA_AGENDADA',
+            ultima_cita = NOW(),
+            total_citas = COALESCE(total_citas, 0) + 1,
+            ultima_interaccion = NOW()
+        WHERE telefono = $2 AND (NULLIF($3, '') IS NULL OR empresa_id = NULLIF($3, '')::uuid)
+        RETURNING id, nombre, vacante_interes, asignado_a_id
+        """,
         event_id,
         payload.telefono,
         payload.empresa_id or "",
+        payload.start,
     )
+
+    # Notificar en la campana del CRM al reclutador asignado
+    if row and row["asignado_a_id"]:
+        nombre_c = row["nombre"] or payload.nombre or "Candidato"
+        vac_c = row["vacante_interes"] or payload.vacante_interes or "General"
+        msg_cita = f"📅 Cita agendada: {nombre_c} para {vac_c}"
+        try:
+            await pool.execute(
+                "INSERT INTO notificaciones (reclutador_id, mensaje) VALUES ($1, $2)",
+                row["asignado_a_id"], msg_cita,
+            )
+        except Exception:
+            logger.exception("crear_evento: error insertando notificacion en CRM")
 
     return {"success": True, "event_id": event_id}
 
 
 @router.post("/eliminar")
 async def eliminar_evento(payload: EliminarEventoRequest) -> dict:
-    await delete_event(calendar_id=payload.calendar_id, event_id=payload.event_id)
+    if payload.event_id:
+        try:
+            await delete_event(calendar_id=payload.calendar_id, event_id=payload.event_id)
+        except Exception as e:
+            logger.warning("eliminar_evento: error al borrar de Google Calendar (%s), continuando", e)
 
     pool = get_pool()
-    # fecha_entrevista también se limpia: el evento ya no existe en Google
-    # Calendar, y si se deja, el expediente sigue mostrando la entrevista al
-    # reclutador. El UPSERT de /api/webhook/n8n-incoming conserva el valor
-    # anterior cuando el entrante viene vacío (COALESCE), así que dejarlo en
-    # NULL aquí es lo que hace que se quede limpio.
-    result = await pool.execute(
-        "UPDATE candidatos SET estado = 'CITA_CANCELADA', event_id = NULL, fecha_entrevista = NULL "
-        "WHERE telefono = $1",
+    row = await pool.fetchrow(
+        """
+        UPDATE candidatos 
+        SET estado = CASE 
+                WHEN COALESCE(cancelaciones, 0) + 1 >= 4 THEN 'RECHAZADO' 
+                ELSE 'CITA_CANCELADA' 
+            END,
+            cancelaciones = COALESCE(cancelaciones, 0) + 1,
+            event_id = NULL, 
+            fecha_entrevista = NULL,
+            resumen_ia = CASE 
+                WHEN COALESCE(cancelaciones, 0) + 1 >= 4 THEN 'Bloqueado automáticamente por acumular 4 cancelaciones/reagendamientos.'
+                ELSE resumen_ia 
+            END,
+            ultima_interaccion = NOW()
+        WHERE telefono = $1
+        RETURNING id, cancelaciones, asignado_a_id, nombre, vacante_interes, telefono
+        """,
         payload.telefono,
     )
-    if result == "UPDATE 0":
-        logger.warning("eliminar_evento: ningún candidato con telefono=%s", payload.telefono)
 
-    return {"success": True}
+    if not row:
+        logger.warning("eliminar_evento: ningún candidato con telefono=%s", payload.telefono)
+        return {"success": True, "cancelaciones": 1, "bloqueado": False}
+
+    cancel_count = row["cancelaciones"] or 1
+    candidato_nombre = row["nombre"] or "Candidato"
+    vacante = row["vacante_interes"] or "General"
+    reclutador_id = row["asignado_a_id"]
+
+    # Notificaciones en la campana del CRM
+    if cancel_count == 3:
+        msg_notif = f"⚠️ 3 cancelaciones/reagendamientos: {candidato_nombre} ({vacante})"
+        if reclutador_id:
+            try:
+                await pool.execute(
+                    "INSERT INTO notificaciones (reclutador_id, mensaje) VALUES ($1, $2)",
+                    reclutador_id, msg_notif,
+                )
+            except Exception:
+                logger.exception("eliminar_evento: error insertando notificacion de 3 cancelaciones")
+    elif cancel_count >= 4:
+        msg_notif = f"🚫 Candidato bloqueado (4 cancelaciones): {candidato_nombre} ({vacante})"
+        if reclutador_id:
+            try:
+                await pool.execute(
+                    "INSERT INTO notificaciones (reclutador_id, mensaje) VALUES ($1, $2)",
+                    reclutador_id, msg_notif,
+                )
+            except Exception:
+                logger.exception("eliminar_evento: error insertando notificacion de bloqueo")
+
+    return {
+        "success": True, 
+        "cancelaciones": cancel_count, 
+        "bloqueado": cancel_count >= 4
+    }
+

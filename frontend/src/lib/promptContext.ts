@@ -22,8 +22,8 @@ function getGlobalPromptBase(): string {
       }
     } catch {}
   }
-  console.error('Error leyendo el prompt global de respaldo en todas las rutas candidatas.');
-  return 'Error: No se pudo cargar el prompt base del sistema.';
+  console.error('Advertencia: No se encontró chat_prompt.md en las rutas estándar, usando base.');
+  return 'Eres Sofía, asistente virtual de reclutamiento. Tu misión es orientar a los candidatos, resolver dudas y recabar información de contacto amablemente.';
 }
 
 type Filtro = {

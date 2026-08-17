@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Trash2 } from "lucide-react";
+import { useBackdropClose } from "@/hooks/useBackdropClose";
 
 interface GroupsModalProps {
   isOpen: boolean;
@@ -81,8 +82,13 @@ function GroupsModalContent({
     }
   };
 
+  const backdropHandlers = useBackdropClose(onClose);
+
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1500] p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1500] p-4"
+      {...backdropHandlers}
+    >
       <div className="bg-white w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl p-6 md:p-8 shadow-2xl relative" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-bold text-slate-800">Grupos de Reclutamiento</h2>

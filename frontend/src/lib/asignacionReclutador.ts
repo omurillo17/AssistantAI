@@ -51,16 +51,10 @@ export async function asignarReclutadorPorVacante(
     // individual aquí — el sistema de turnos que ya existe en el agendado de entrevista se encarga.
 
     if (reclutadorAsignado) {
-      const upd = await pool.query(
+      await pool.query(
         `UPDATE candidatos SET asignado_a_id = $1 WHERE id = $2 AND asignado_a_id IS NULL`,
         [reclutadorAsignado.reclutador_id, candidatoId]
       );
-      if (upd.rowCount && upd.rowCount > 0) {
-        await pool.query(
-          `INSERT INTO notificaciones (reclutador_id, mensaje) VALUES ($1, $2)`,
-          [reclutadorAsignado.reclutador_id, `🆕 Nuevo candidato en proceso: ${vacanteEntrante}`]
-        );
-      }
     }
   } catch (err) {
     console.error('Error asignando candidato al reclutador de la vacante:', err);
