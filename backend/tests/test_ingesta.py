@@ -23,6 +23,25 @@ def _mensaje(**payload_extra) -> dict:
     return {"event": "message", "payload": payload}
 
 
+def test_fix_lid_webjs_y_noweb():
+    from app.chat.ingesta import _fix_lid
+    # WEBJS
+    webjs_resp = {"id": "5213323379399@c.us", "number": "5213323379399"}
+    res1 = _fix_lid(webjs_resp)
+    assert res1["number"] == "5213323379399"
+
+    # NOWEB con LID
+    noweb_lid_resp = {
+        "id": "28153510625455@lid",
+        "lid": "28153510625455@lid",
+        "phoneNumber": "5213323379399@s.whatsapp.net",
+        "pushname": "Sofia"
+    }
+    res2 = _fix_lid(noweb_lid_resp)
+    assert res2["number"] == "5213323379399"
+    assert res2["lid"] == "28153510625455"
+
+
 # --- Remitentes que no son un candidato -------------------------------------
 
 def test_ignora_los_estados_de_whatsapp():

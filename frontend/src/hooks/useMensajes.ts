@@ -488,7 +488,15 @@ export function useMensajes() {
   const isPlaceholderVal = (val?: string | null) => {
     if (!val) return true;
     const norm = val.trim().toLowerCase().replace(/[{}]/g, "");
-    return !norm || norm === "ninguna" || norm === "general" || norm === "pendiente" || norm === "sin sucursal";
+    return !norm || norm === "1" || norm === "2" || norm === "ninguna" || norm === "general" || norm === "pendiente" || norm === "sin sucursal";
+  };
+
+  const normalizarNave = (nave?: string | null): string | null => {
+    if (!nave) return null;
+    const upper = nave.trim().toUpperCase();
+    if (upper === '1' || upper.includes('DULCERIA') || upper.includes('DULCERÍA')) return 'DULCERIA';
+    if (upper === '2' || upper.includes('CEDIS')) return 'CEDIS';
+    return nave.trim();
   };
 
   const convVacantes = conversaciones
@@ -499,10 +507,10 @@ export function useMensajes() {
   ).sort() as string[];
 
   const convNaves = conversaciones
-    .map(c => normalize(c.nave_interes))
+    .map(c => normalizarNave(c.nave_interes))
     .filter((n): n is string => Boolean(n) && !isPlaceholderVal(n));
   const uniqueNaves = Array.from(
-    new Set([...todasNaves.filter(n => !isPlaceholderVal(n)), ...convNaves])
+    new Set([...todasNaves.map(n => normalizarNave(n)).filter((n): n is string => Boolean(n) && !isPlaceholderVal(n)), ...convNaves])
   ).sort() as string[];
 
   const filtradas = conversaciones.filter(c => {

@@ -62,7 +62,7 @@ export async function POST(request: Request) {
       })
         .setProtectedHeader({ alg: "HS256" })
         .setIssuedAt()
-        .setExpirationTime("24h")
+        .setExpirationTime("4h")
         .sign(secretKey);
 
       // Create response and set HttpOnly Cookie
@@ -85,7 +85,7 @@ export async function POST(request: Request) {
         sameSite: "lax",
         path: "/",
         priority: "high",
-        maxAge: 60 * 60 * 24, // 24 hours
+        maxAge: 60 * 60 * 4, // 4 hours
       });
 
       return response;

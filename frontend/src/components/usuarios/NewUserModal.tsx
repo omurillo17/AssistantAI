@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 
 interface NewUserModalProps {
   isOpen: boolean;
@@ -136,8 +136,19 @@ function NewUserModalContent({
     </>
   );
 
+  const isBackdropMouseDown = useRef(false);
+
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4"
+      onMouseDown={(e) => { isBackdropMouseDown.current = (e.target === e.currentTarget); }}
+      onMouseUp={(e) => {
+        if (isBackdropMouseDown.current && e.target === e.currentTarget) {
+          onClose();
+        }
+        isBackdropMouseDown.current = false;
+      }}
+    >
       {/* Formato apaisado: max-w-3xl y rejilla de 2 columnas en pantallas
           medianas hacia arriba. Los seis campos caben sin scroll, en vez de
           una tira vertical larga. En móvil colapsa a una sola columna. */}

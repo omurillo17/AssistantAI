@@ -42,7 +42,9 @@ export async function POST(request: Request) {
       mensaje_ia,
       mensaje_candidato,
       message_type,
-      media_url
+      media_url,
+      lugar_residencia,
+      nombre_confirmado,
     } = data;
 
     if (!telefono) {
@@ -157,6 +159,20 @@ export async function POST(request: Request) {
       finalNombre = 'Candidato';
     }
 
+    // Extraer y procesar lugar de residencia
+    let finalLugarResidencia = (lugar_residencia && typeof lugar_residencia === 'string') ? lugar_residencia.trim() : '';
+    if (!finalLugarResidencia && resumen && typeof resumen === 'string') {
+      const resMatch = resumen.match(/Lugar de residencia:\s*([^.\n|]+)/i);
+      if (resMatch && resMatch[1]) {
+        const extRes = resMatch[1].trim();
+        if (extRes && !['Pendiente', 'Desconocido', 'None', 'Null'].includes(extRes)) {
+          finalLugarResidencia = extRes;
+        }
+      }
+    }
+
+    const esNombreConfirmado = esVerdadero(nombre_confirmado) || (finalNombre !== '' && finalNombre !== 'Candidato');
+
     // Extraer Vacante desde Resumen si viene como 'General'/'GENERAL' (placeholder
     // del backend mientras el candidato no ha elegido vacante) o vacía. Comparación
     // insensible a mayúsculas: el backend de Python (parser.py) siempre manda este
@@ -211,13 +227,15 @@ export async function POST(request: Request) {
         resumen_ia, filtros_tecnicos, cv_manual, fecha_entrevista, privacidad_aceptada,
         nombre_chat, nombre_solicitud, edad, correo, experiencia, nave_interes, mensajes_bot_enviados,
         veredicto, motivo_analisis, empresa_id, escalado, escalation_reason,
-        experiencia_actividades
+        experiencia_actividades, lugar_residencia, nombre_confirmado
       )
       VALUES (
         $1, $9, $2, NOW(), $3, $4, $5, $6, $7, $8,
         $9, $10, $11, $12, $13, $14, 1,
         $15, $16, $17, $18, $19,
-        NULLIF($20, '')
+        NULLIF($20, ''),
+        NULLIF($21, ''),
+        $22
       )
       ON CONFLICT (telefono, empresa_id) DO UPDATE SET
         nombre = CASE
@@ -230,6 +248,8 @@ export async function POST(request: Request) {
           WHEN candidatos.nombre_chat IS NULL OR candidatos.nombre_chat = '' OR candidatos.nombre_chat = 'Candidato' OR candidatos.nombre_chat ~ '^[^\\w\\s]+$' THEN EXCLUDED.nombre_chat
           ELSE candidatos.nombre_chat
         END,
+        nombre_confirmado = EXCLUDED.nombre_confirmado OR candidatos.nombre_confirmado,
+        lugar_residencia = COALESCE(NULLIF(TRIM(EXCLUDED.lugar_residencia), ''), NULLIF(TRIM(candidatos.lugar_residencia), '')),
         estado = EXCLUDED.estado,
         ultima_interaccion = NOW(),
         mensajes_bot_enviados = candidatos.mensajes_bot_enviados + 1,
@@ -274,7 +294,9 @@ export async function POST(request: Request) {
       empresaId,
       esEscalado,
       motivoEscalamiento,
-      experiencia_actividades || ''   // $20
+      experiencia_actividades || '',   // $20
+      finalLugarResidencia || '',      // $21
+      esNombreConfirmado               // $22
     ]);
 
     const candidatoId = upsertRes.rows[0].id;

@@ -131,13 +131,39 @@ async def _juntar_mensajes(telefono: str) -> dict:
 
 async def _guardar_mensaje_usuario_escalado(telefono: str, juntado: dict) -> None:
     pool = get_pool()
+    msg_content = juntado.get("mensaje_completo") or "[Mensaje multimedia]"
+    msg_type = juntado.get("message_type") or "text"
+    media_url = juntado.get("media_url")
+
     await pool.execute(
         "INSERT INTO conversation_history (telefono, role, content, message_type, media_url) VALUES ($1, 'user', $2, $3, $4)",
         telefono,
-        juntado.get("mensaje_completo") or "[Mensaje multimedia]",
-        juntado.get("message_type") or "text",
-        juntado.get("media_url"),
+        msg_content,
+        msg_type,
+        media_url,
     )
+    await pool.execute(
+        "UPDATE candidatos SET ultima_interaccion = NOW() WHERE telefono = $1",
+        telefono,
+    )
+    cand_id = await pool.fetchval("SELECT id FROM candidatos WHERE telefono = $1", telefono)
+    if cand_id:
+        await pool.execute(
+            """
+            INSERT INTO mensajes_bandeja (candidato_id, telefono, ultimo_mensaje, ultimo_mensaje_rol, mensajes_no_leidos, activo, ultimo_mensaje_at)
+            VALUES ($1, $2, $3, 'user', 1, TRUE, NOW())
+            ON CONFLICT (candidato_id) DO UPDATE SET
+                ultimo_mensaje = EXCLUDED.ultimo_mensaje,
+                ultimo_mensaje_rol = 'user',
+                mensajes_no_leidos = mensajes_bandeja.mensajes_no_leidos + 1,
+                activo = TRUE,
+                ultimo_mensaje_at = NOW(),
+                updated_at = NOW()
+            """,
+            cand_id,
+            telefono,
+            msg_content,
+        )
 
 
 # --- Tools del agente --------------------------------------------------------
@@ -168,6 +194,21 @@ async def _tool_crear_evento(candidato: dict, reclutador: dict, args: dict) -> d
             datos_ine = json.loads(datos_ine)
         except json.JSONDecodeError:
             datos_ine = {}
+    datos_rfc = candidato.get("datos_rfc") or {}
+    if isinstance(datos_rfc, str):
+        try:
+            datos_rfc = json.loads(datos_rfc)
+        except json.JSONDecodeError:
+            datos_rfc = {}
+
+    curp = (
+        datos_ine.get("curp")
+        or candidato.get("curp_ine")
+        or datos_rfc.get("curp")
+        or candidato.get("curp_rfc")
+        or ""
+    )
+
     payload = CrearEventoRequest(
         start=args.get("start", ""),
         end=args.get("end", ""),
@@ -177,8 +218,8 @@ async def _tool_crear_evento(candidato: dict, reclutador: dict, args: dict) -> d
         nombre=candidato.get("nombre") or "",
         nave_interes=candidato.get("nave_interes") or "",
         vacante_interes=candidato.get("vacante_interes") or "",
-        ine_nombre=datos_ine.get("nombre_completo") or "",
-        ine_curp=datos_ine.get("curp") or "",
+        ine_nombre=datos_ine.get("nombre_completo") or candidato.get("nombre") or "",
+        ine_curp=curp,
         # asyncpg devuelve las columnas `uuid` de Postgres como uuid.UUID, no str
         # (a diferencia del driver `pg` de Node que usa el frontend) -- sin el
         # str(), Pydantic rechaza el objeto UUID con un ValidationError porque
@@ -194,7 +235,35 @@ async def _tool_eliminar_evento(candidato: dict, reclutador: dict) -> dict:
         telefono=candidato.get("telefono") or "",
         event_id=candidato.get("event_id") or "",
     )
-    return await _eliminar_evento_endpoint(payload)
+    res = await _eliminar_evento_endpoint(payload)
+    cancel_count = res.get("cancelaciones", 1)
+
+    # Alerta WhatsApp al reclutador
+    tel_rec = (reclutador.get("telefono_reclutador") or "").replace("@c.us", "").strip()
+    if tel_rec:
+        nombre_c = candidato.get("nombre") or "Candidato"
+        tel_c = candidato.get("telefono") or ""
+        vac_c = candidato.get("vacante_interes") or "General"
+        try:
+            if cancel_count == 3:
+                msg_wpp = (
+                    f"⚠️ *ALERTA: 3 CANCELACIONES/REAGENDAMIENTOS*\n\n"
+                    f"El candidato *{nombre_c}* (📱 wa.me/{tel_c}) "
+                    f"ha cancelado/reagendado su cita por 3ª vez para la vacante *{vac_c}*.\n\n"
+                    f"Se le permitirá reagendar una última vez antes de ser bloqueado automáticamente al 4º intento."
+                )
+                await waha_client.send_text("default", f"{tel_rec}@c.us", msg_wpp)
+            elif cancel_count >= 4:
+                msg_wpp = (
+                    f"🚫 *CANDIDATO BLOQUEADO POR CANCELACIONES*\n\n"
+                    f"El candidato *{nombre_c}* (📱 wa.me/{tel_c}) "
+                    f"ha acumulado 4 cancelaciones/reagendamientos y ha sido bloqueado automáticamente."
+                )
+                await waha_client.send_text("default", f"{tel_rec}@c.us", msg_wpp)
+        except Exception:
+            logger.exception("_tool_eliminar_evento: error enviando alerta WhatsApp al reclutador")
+
+    return res
 
 
 _ALERTA_FALLO_VENTANA_SEGUNDOS = 1800  # 30 min
@@ -377,16 +446,32 @@ def _preparar_alerta_humano(candidato: dict, contacto: dict, webhook_payload: di
     return {"telefono_destino": telefono_destino, "nombre_candidato": nombre, "telefono_candidato": telefono, "vacante": vacante, "mensaje_alerta": mensaje_alerta}
 
 
-async def _marcar_escalado(telefono: str, nombre: str, vacante: str) -> None:
+async def _marcar_escalado(telefono: str, nombre: str, vacante: str, motivo: str | None = None) -> None:
     pool = get_pool()
-    await pool.execute(
-        "INSERT INTO candidatos (telefono, nombre, estado, ultima_interaccion, vacante_interes, resumen_ia, escalado, escalated_at) "
-        "VALUES ($1, $2, 'ESCALADO', NOW(), $3, 'El usuario solicitó hablar con un humano (Opción Menú).', TRUE, NOW()) "
-        "ON CONFLICT (telefono) DO UPDATE SET "
-        "ultima_interaccion = NOW(), estado = 'ESCALADO', "
-        "resumen_ia = 'El usuario solicitó hablar con un humano (Opción Menú).', escalado = TRUE, escalated_at = NOW()",
-        telefono, nombre, vacante,
+    row = await pool.fetchrow(
+        """
+        INSERT INTO candidatos (telefono, nombre, estado, ultima_interaccion, vacante_interes, resumen_ia, escalado, escalated_at, escalation_reason)
+        VALUES ($1, $2, 'ESCALADO', NOW(), $3, 'El usuario solicitó hablar con un humano.', TRUE, NOW(), $4)
+        ON CONFLICT (telefono) DO UPDATE SET
+            ultima_interaccion = NOW(),
+            estado = 'ESCALADO',
+            resumen_ia = 'El usuario solicitó hablar con un humano.',
+            escalado = TRUE,
+            escalated_at = NOW(),
+            escalation_reason = $4
+        RETURNING id, asignado_a_id
+        """,
+        telefono, nombre, vacante, motivo or "Solicitud de atención humana",
     )
+    if row and row["asignado_a_id"]:
+        try:
+            msg_notif = f"🚨 Atención humana requerida: {nombre} ({vacante})"
+            await pool.execute(
+                "INSERT INTO notificaciones (reclutador_id, mensaje) VALUES ($1, $2)",
+                row["asignado_a_id"], msg_notif,
+            )
+        except Exception:
+            logger.exception("_marcar_escalado: error insertando notificacion en CRM")
 
 
 def _formatear_fecha_alerta(fecha_cita: str) -> str:
@@ -448,7 +533,9 @@ def _extraer_resumen_n8n_incoming(resumen_generado: str | None) -> str:
 async def _almacenar_mensajes(contacto: dict, candidato: dict, item: dict, juntado: dict, webhook_payload: dict) -> None:
     body = {
         "telefono": contacto.get("number"),
-        "nombre": item.get("nombre_detectado") or "Candidato",
+        "nombre": item.get("nombre_detectado") or candidato.get("nombre") or "Candidato",
+        "nombre_confirmado": bool(item.get("nombre_detectado") or candidato.get("nombre_confirmado")),
+        "lugar_residencia": item.get("database_updates", {}).get("lugar_residencia") or item.get("lugar_residencia") or candidato.get("lugar_residencia") or "",
         "cita_creada": bool(item.get("cita_creada") or item.get("fecha_entrevista_detectada")),
         "vacante": (item.get("vacante_detectada") or item.get("vacante_manual") or candidato.get("vacante_interes") or "").strip(),
         "resumen": _extraer_resumen_n8n_incoming(item.get("resumen_generado")),
@@ -481,7 +568,7 @@ async def procesar_turno(webhook_body: dict, contacto: dict, candidato: dict, sy
     payload = webhook_body["payload"]
     session = webhook_body.get("session") or "default"
     numero = contacto.get("number")
-    chat_id = f"{numero}@c.us"
+    chat_id = contacto.get("chat_id") or (f"{numero}@c.us" if str(numero).isdigit() else f"{numero}@lid")
 
     reclutador = await resolver_reclutador(agenda)
     system_prompt = system_prompt_base.replace("{{RECLUTADOR_ASIGNADO}}", reclutador.get("nombre_reclutador") or "Tu equipo")
@@ -555,11 +642,7 @@ async def procesar_turno(webhook_body: dict, contacto: dict, candidato: dict, sy
             enviados.append(primero["message_to_user"])
         alerta = _preparar_alerta_humano(candidato, contacto, payload, reclutador, primero.get("human_alert_nombre"), primero.get("human_alert_resumen"))
         await waha_client.send_text(session, f"{alerta['telefono_destino']}@c.us", alerta["mensaje_alerta"])
-        await _marcar_escalado(alerta["telefono_candidato"], alerta["nombre_candidato"], alerta["vacante"])
-    elif primero.get("es_cv_manual"):
-        if primero.get("message_to_user"):
-            await waha_client.send_text(session, chat_id, primero["message_to_user"])
-            enviados.append(primero["message_to_user"])
+        await _marcar_escalado(alerta["telefono_candidato"], alerta["nombre_candidato"], alerta["vacante"], primero.get("human_alert_resumen"))
     elif primero.get("message_to_user"):
         for i, item in enumerate(items):
             if item.get("message_to_user"):

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 
 interface EditUserModalProps {
   isOpen: boolean;
@@ -100,8 +100,19 @@ function EditUserModalContent({
     }
   };
 
+  const isBackdropMouseDown = useRef(false);
+
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4"
+      onMouseDown={(e) => { isBackdropMouseDown.current = (e.target === e.currentTarget); }}
+      onMouseUp={(e) => {
+        if (isBackdropMouseDown.current && e.target === e.currentTarget) {
+          onClose();
+        }
+        isBackdropMouseDown.current = false;
+      }}
+    >
       {/* Formato apaisado, igual que el alta: rejilla de 2 columnas desde
           pantallas medianas, una sola columna en móvil. */}
       <div className="bg-white w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl p-6 md:p-8 shadow-2xl relative" onClick={e => e.stopPropagation()}>

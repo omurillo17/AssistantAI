@@ -65,6 +65,13 @@ _MENSAJE_3_FALTAS = (
     "en este momento. Agradecemos tu interés y te deseamos mucho éxito en tu búsqueda."
 )
 
+_MENSAJE_4_CANCELACIONES = (
+    "Hola. 🚨 Hemos registrado en nuestro sistema que has alcanzado el límite máximo de cancelaciones "
+    "y reagendamientos permitidos (4 cancelaciones). Por políticas de la empresa, no es posible agendar "
+    "una nueva entrevista en este momento. Agradecemos tu tiempo y te deseamos mucho éxito."
+)
+
+
 
 # Remitentes que no son un candidato escribiéndole al bot. WhatsApp entrega
 # todo por el mismo webhook, así que sin este filtro los estados/historias que
@@ -145,15 +152,89 @@ async def _es_reclutador(remitente_id: str) -> bool:
     return False
 
 
-def _fix_lid(get_info_result: dict) -> dict:
-    """Puerto del 'FIX WAHA' de IgnorarEquipo: si `id` viene en formato
-    xxxx@algo (LID corrupto), rescata el number real desde `id`."""
-    remitente = get_info_result.get("id") or ""
-    result = dict(get_info_result)
-    if remitente and "@" in remitente:
-        result["lid"] = result.get("number")
-        result["number"] = remitente.split("@")[0]
+def _fix_lid(get_info_result: dict, payload: dict | None = None) -> dict:
+    """Extrae el número telefónico real (dígitos) o el LID si no hay teléfono disponible,
+    soportando tanto WEBJS como NOWEB de WAHA."""
+    result = dict(get_info_result or {})
+    payload = payload or {}
+    _data = payload.get("_data") or {}
+    key = _data.get("key") or {}
+
+    remitente = result.get("id") or payload.get("from") or ""
+
+    lid_val = None
+    if remitente and "@" in remitente and remitente.endswith("@lid"):
+        lid_val = remitente.split("@")[0]
+        result["lid"] = lid_val
+    elif result.get("lid") and "@lid" in str(result.get("lid")):
+        lid_val = str(result["lid"]).split("@")[0]
+        result["lid"] = lid_val
+
+    # 1. Intentar obtener la parte numérica del teléfono desde varias fuentes prioritarias de WAHA
+    phone_raw = (
+        key.get("remoteJidAlt")
+        or _data.get("remoteJidAlt")
+        or payload.get("remoteJidAlt")
+        or key.get("pnJid")
+        or _data.get("pnJid")
+        or payload.get("pnJid")
+        or result.get("phoneNumber")
+        or result.get("number")
+        or payload.get("author")
+        or _data.get("author")
+        or (_data.get("contact") or {}).get("number")
+        or (_data.get("contact") or {}).get("phoneNumber")
+        or ""
+    )
+
+    clean_digits = ""
+    if phone_raw:
+        if "@" in phone_raw:
+            phone_num = phone_raw.split("@")[0]
+        else:
+            phone_num = phone_raw
+        clean_digits = "".join(filter(str.isdigit, phone_num))
+
+    if not clean_digits and remitente and "@" in remitente and not remitente.endswith("@lid"):
+        from_digits = "".join(filter(str.isdigit, remitente.split("@")[0]))
+        if from_digits:
+            clean_digits = from_digits
+
+    # Si no pudimos resolver el teléfono de dígitos pero tenemos LID, usar LID como identificador provisional
+    if not clean_digits and lid_val:
+        clean_digits = lid_val
+
+    result["number"] = clean_digits
+    result["chat_id"] = remitente if "@" in remitente else (f"{clean_digits}@c.us" if clean_digits.isdigit() else f"{clean_digits}@lid")
     return result
+
+
+async def _resolver_contacto(session: str, remitente_raw: str, payload: dict) -> dict:
+    get_info = await waha_client.get_contact(session, remitente_raw)
+    contacto = _fix_lid(get_info, payload)
+
+    lid_val = contacto.get("lid")
+    number = contacto.get("number") or ""
+
+    # Si 'number' sigue siendo un LID largo y no un teléfono normal, consultar chats de WAHA
+    if lid_val and (number == lid_val or len(number) > 13 or not number.startswith("52")):
+        try:
+            chats = await waha_client.get_chats(session)
+            target_lid = f"{lid_val}@lid"
+            for c in chats:
+                if c.get("accountLid") == target_lid:
+                    cid = c.get("id") or ""
+                    pn = c.get("pnJid") or ""
+                    phone_src = cid if ("@s.whatsapp.net" in cid or "@c.us" in cid) else pn
+                    if phone_src:
+                        digits = "".join(filter(str.isdigit, phone_src.split("@")[0]))
+                        if digits and len(digits) >= 10:
+                            contacto["number"] = digits
+                            break
+        except Exception:
+            logger.debug("_resolver_contacto: no se pudo resolver LID %s vía chats", lid_val)
+
+    return contacto
 
 
 async def _migrar_lid(number: str, lid: str | None) -> None:
@@ -162,18 +243,57 @@ async def _migrar_lid(number: str, lid: str | None) -> None:
     pool = get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
+            # 1. conversation_history
             await conn.execute(
                 "UPDATE conversation_history SET telefono = $1 WHERE telefono = $2 AND $2 != '' AND $1 != $2",
                 number, lid,
             )
+            # 2. candidatos
+            c_existe = await conn.fetchval("SELECT 1 FROM candidatos WHERE telefono = $1", number)
+            if not c_existe:
+                await conn.execute(
+                    "UPDATE candidatos SET telefono = $1 WHERE telefono = $2 AND $2 != '' AND $1 != $2",
+                    number, lid,
+                )
+            else:
+                await conn.execute(
+                    """
+                    UPDATE candidatos c
+                    SET nombre = COALESCE(NULLIF(c.nombre, 'Candidato'), l.nombre, c.nombre),
+                        estado = CASE WHEN c.estado = 'RECORDATORIO_ENVIADO' THEN l.estado ELSE c.estado END,
+                        vacante_interes = COALESCE(NULLIF(c.vacante_interes, ''), l.vacante_interes, c.vacante_interes),
+                        nave_interes = COALESCE(NULLIF(c.nave_interes, ''), l.nave_interes, c.nave_interes),
+                        ultima_interaccion = GREATEST(c.ultima_interaccion, l.ultima_interaccion)
+                    FROM candidatos l
+                    WHERE c.telefono = $1 AND l.telefono = $2
+                    """,
+                    number, lid,
+                )
+                await conn.execute(
+                    "DELETE FROM candidatos WHERE telefono = $2 AND $2 != '' AND $1 != $2",
+                    number, lid,
+                )
+            # 3. mensajes_bandeja
+            mb_existe = await conn.fetchval("SELECT 1 FROM mensajes_bandeja WHERE telefono = $1", number)
+            if not mb_existe:
+                await conn.execute(
+                    "UPDATE mensajes_bandeja SET telefono = $1 WHERE telefono = $2 AND $2 != '' AND $1 != $2",
+                    number, lid,
+                )
+            else:
+                await conn.execute(
+                    "DELETE FROM mensajes_bandeja WHERE telefono = $2 AND $2 != '' AND $1 != $2",
+                    number, lid,
+                )
+            # 4. n8n_chat_histories
             await conn.execute(
-                "UPDATE candidatos SET telefono = $1 WHERE telefono = $2 AND $2 != '' AND $1 != $2 "
-                "AND NOT EXISTS (SELECT 1 FROM candidatos WHERE telefono = $1)",
-                number, lid,
+                "UPDATE n8n_chat_histories SET session_id = $1 WHERE session_id = $2 OR session_id = $3",
+                f"{number}@c.us", f"{lid}@c.us", f"{lid}@lid",
             )
+            # 5. rate_limiting
             await conn.execute(
-                "DELETE FROM candidatos WHERE telefono = $2 AND $2 != '' AND $1 != $2",
-                number, lid,
+                "DELETE FROM rate_limiting WHERE telefono = $1",
+                lid,
             )
 
 
@@ -218,24 +338,22 @@ async def procesar_webhook(body: dict) -> None:
         return
 
     session = body.get("session") or "default"
-    get_info = await waha_client.get_contact(session, payload.get("from"))
-    contacto = _fix_lid(get_info)
-    remitente_original = get_info.get("id") or ""
+    remitente_raw = payload.get("from") or ""
+    contacto = await _resolver_contacto(session, remitente_raw, payload)
+    remitente_original = contacto.get("id") or remitente_raw
 
     if await _es_reclutador(remitente_original):
         return
 
     await _migrar_lid(contacto.get("number"), contacto.get("lid"))
-    await _actualizar_rate_limiting(contacto.get("number") or payload.get("from", "").split("@")[0])
+    await _actualizar_rate_limiting(contacto.get("number") or remitente_raw.split("@")[0])
 
     number = contacto.get("number")
-    # Solo dígitos: un remitente que no sea un teléfono real (p.ej. "status" de
-    # status@broadcast) creaba filas basura en `candidatos` con ese texto como
-    # teléfono. El filtro de remitentes de arriba ya los descarta; esto cubre
-    # cualquier otro identificador especial que WhatsApp añada en el futuro.
-    if not number or not str(number).isdigit():
-        logger.debug("procesar_webhook: remitente sin teléfono válido (%r), se ignora", number)
+    if not number:
+        logger.debug("procesar_webhook: remitente sin identificador válido (%r), se ignora", number)
         return
+
+    chat_id = contacto.get("chat_id") or (remitente_original if "@" in remitente_original else f"{number}@c.us")
 
     pool = get_pool()
     await pool.execute("UPDATE candidatos SET ultima_ejecucion_id = $1 WHERE telefono = $2", str(uuid.uuid4()), number)
@@ -244,7 +362,11 @@ async def procesar_webhook(body: dict) -> None:
     candidato = await _obtener_candidato(number)
 
     if (candidato.get("Faltas") or 0) >= 3:
-        await waha_client.send_text(session, f"{number}@c.us", _MENSAJE_3_FALTAS)
+        await waha_client.send_text(session, chat_id, _MENSAJE_3_FALTAS)
+        return
+
+    if (candidato.get("cancelaciones") or 0) >= 4:
+        await waha_client.send_text(session, chat_id, _MENSAJE_4_CANCELACIONES)
         return
 
     async def _tarea():
@@ -254,7 +376,7 @@ async def procesar_webhook(body: dict) -> None:
             logger.exception("procesar_webhook: fallo en analizador_y_chat para telefono=%s", number)
 
     async def _avisar_escribiendo():
-        await waha_client.start_typing(session, f"{number}@c.us")
+        await waha_client.start_typing(session, chat_id)
 
     await _procesar_con_debounce(number, _tarea, al_primero=_avisar_escribiendo)
 

@@ -133,3 +133,35 @@ def test_sin_split_devuelve_un_solo_mensaje():
     items = parser.procesar_respuesta_ia("Un solo mensaje", CANDIDATO)
 
     assert len(items) == 1
+
+
+# --- Pie de menú / Navegación -----------------------------------------------
+
+def test_pie_de_menu_no_se_duplica_cuando_ia_lo_incluye():
+    """Si la IA escribe el pie de menú y además coincide con el turno % 3 == 0,
+    el parser debe limpiarlo antes y añadirlo exactamente una sola vez."""
+    candidato_tercer_mensaje = {"nombre_chat": "Oscar", "mensajes_bot_enviados": 3}
+    respuesta = (
+        '{"mensaje_al_usuario": "Gracias por responder.\\n\\n'
+        '(Escribe \\"Menú\\" para volver al menú principal o \\"Cambiar sucursal\\" para cambiar de nave)"}'
+    )
+    items = parser.procesar_respuesta_ia(respuesta, candidato_tercer_mensaje)
+
+    assert len(items) == 1
+    msg = items[0]["message_to_user"]
+    # Debe aparecer exactamente 1 vez
+    assert msg.count("volver al menú principal") == 1
+
+
+def test_pie_de_menu_se_elimina_en_turnos_intermedios_si_ia_lo_escribe():
+    """En turnos que NO son múltiplo de 3, si la IA escribe el pie de menú,
+    se elimina para respetar la regla de enviarlo solo cada 3 mensajes."""
+    candidato_turno_1 = {"nombre_chat": "Oscar", "mensajes_bot_enviados": 1}
+    respuesta = (
+        '{"mensaje_al_usuario": "Hola Oscar.\\n\\n'
+        '_(Escribe \\"Menú\\" para volver al menú principal o \\"Cambiar sucursal\\" para cambiar de nave)_"}'
+    )
+    items = parser.procesar_respuesta_ia(respuesta, candidato_turno_1)
+
+    assert len(items) == 1
+    assert "volver al menú principal" not in items[0]["message_to_user"]

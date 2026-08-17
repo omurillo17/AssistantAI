@@ -5,12 +5,14 @@ import { Bell, UserCircle, Building2, ChevronDown, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState, useRef } from "react";
 import { useTenant } from "@/hooks/useTenant";
 import { useLocalStorageValue } from "@/hooks/useLocalStorageValue";
+import ChangePasswordModal from "@/components/usuarios/ChangePasswordModal";
 
 export function TopNavbar() {
   const pathname = usePathname();
   const router = useRouter();
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
   const username = useLocalStorageValue("tci_username") || "Usuario";
   const role = useLocalStorageValue("tci_role") || "USER";
   
@@ -383,7 +385,7 @@ export function TopNavbar() {
           {isMenuOpen && (
             <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-50 text-slate-800 border border-slate-100">
               <button 
-                onClick={() => { setIsMenuOpen(false); router.push("/usuarios"); }} 
+                onClick={() => { setIsMenuOpen(false); setIsPasswordModalOpen(true); }} 
                 className="block w-full text-left px-4 py-2 text-sm hover:bg-slate-50 transition-colors"
               >
                 Cambiar Contraseña
@@ -398,6 +400,12 @@ export function TopNavbar() {
           )}
         </div>
       </div>
+
+      <ChangePasswordModal
+        isOpen={isPasswordModalOpen}
+        onClose={() => setIsPasswordModalOpen(false)}
+        username={username}
+      />
     </nav>
   );
 }

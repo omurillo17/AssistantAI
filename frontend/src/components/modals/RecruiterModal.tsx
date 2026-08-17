@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef } from "react";
 import { COUNTRY_CODES } from "@/types";
 
 type Props = {
@@ -31,10 +32,18 @@ export default function RecruiterModal({
   onSave,
   onCancel,
 }: Props) {
+  const isBackdropMouseDown = useRef(false);
+
   return (
     <div
       className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4"
-      onClick={onCancel}
+      onMouseDown={(e) => { isBackdropMouseDown.current = (e.target === e.currentTarget); }}
+      onMouseUp={(e) => {
+        if (isBackdropMouseDown.current && e.target === e.currentTarget) {
+          onCancel();
+        }
+        isBackdropMouseDown.current = false;
+      }}
     >
       <div
         className="bg-white w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl p-6 md:p-8 shadow-2xl relative"

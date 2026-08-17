@@ -117,14 +117,15 @@ def start_scheduler() -> AsyncIOScheduler:
         max_instances=1,
         coalesce=True,
     )
-    scheduler.add_job(
-        job_vigilante,
-        trigger=IntervalTrigger(minutes=1),
-        id="vigilante",
-        replace_existing=True,
-        max_instances=1,
-        coalesce=True,
-    )
+    # job_vigilante DESACTIVADO para evitar envíos masivos de recordatorios
+    # scheduler.add_job(
+    #     job_vigilante,
+    #     trigger=IntervalTrigger(minutes=1),
+    #     id="vigilante",
+    #     replace_existing=True,
+    #     max_instances=1,
+    #     coalesce=True,
+    # )
     scheduler.start()
     _scheduler = scheduler
     for job in scheduler.get_jobs():

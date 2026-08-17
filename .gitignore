@@ -24,3 +24,4 @@ __pycache__/
 # alta/edicion de vacante. Es una cache: si falta, el backend lo pide a
 # /api/prompt-context. Versionarlo solo genera conflictos.
 virgo_data/data/prompt_context.json
+virgo_data/uploads/

@@ -12,6 +12,13 @@ export async function resolveGrupoNaveIds(grupoId: string | null | undefined): P
     `SELECT naves_asignadas FROM grupos_reclutamiento WHERE id = $1`,
     [grupoId]
   );
-  const raw = res.rows[0]?.naves_asignadas;
+  let raw = res.rows[0]?.naves_asignadas;
+  if (typeof raw === 'string') {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      raw = [];
+    }
+  }
   return Array.isArray(raw) ? raw.map(String) : [];
 }

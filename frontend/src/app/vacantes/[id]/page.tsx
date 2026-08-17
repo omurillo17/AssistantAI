@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { Plus, Trash2, Save, ChevronLeft, CheckCircle2, Users, Filter, ToggleLeft, ToggleRight, HelpCircle, X } from "lucide-react";
 
@@ -105,6 +105,7 @@ export default function VacanteFiltrosPage() {
   const [toast, setToast] = useState<{ msg: string; isError: boolean } | null>(null);
   const [showTemplatePanel, setShowTemplatePanel] = useState(false);
   const [showPreguntasBaseModal, setShowPreguntasBaseModal] = useState(false);
+  const isBackdropMouseDown = useRef(false);
 
   // New filter form state
   const [newFiltro, setNewFiltro] = useState<Omit<Filtro, "id" | "activo">>({
@@ -671,7 +672,16 @@ export default function VacanteFiltrosPage() {
       </div>
       {/* Modal Preguntas Base */}
       {showPreguntasBaseModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4" onClick={() => setShowPreguntasBaseModal(false)}>
+        <div
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4"
+          onMouseDown={(e) => { isBackdropMouseDown.current = (e.target === e.currentTarget); }}
+          onMouseUp={(e) => {
+            if (isBackdropMouseDown.current && e.target === e.currentTarget) {
+              setShowPreguntasBaseModal(false);
+            }
+            isBackdropMouseDown.current = false;
+          }}
+        >
           <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl relative flex flex-col max-h-[85vh]" onClick={(e) => e.stopPropagation()}>
             <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50 rounded-t-2xl">
               <div>

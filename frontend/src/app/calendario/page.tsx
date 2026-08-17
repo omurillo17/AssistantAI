@@ -118,10 +118,12 @@ export default function CalendarioPage() {
   const reconciledRef = useRef<Set<string>>(new Set());
   const [recruiterColors, setRecruiterColors] = useState<Record<string, string>>({});
   const [recruiterNames, setRecruiterNames] = useState<Record<string, string>>({});
+  const [recruiterPhones, setRecruiterPhones] = useState<Record<string, string>>({});
   const [recruiterIdToEmail, setRecruiterIdToEmail] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{ msg: string; isError: boolean } | null>(null);
   const [myCalId, setMyCalId] = useState("");
+  const isBackdropMouseDown = useRef(false);
 
   // Panel lateral
   const [expandedRecruiters, setExpandedRecruiters] = useState<Record<string, boolean>>({});
@@ -198,6 +200,7 @@ export default function CalendarioPage() {
           const recs: any[] = Array.isArray(recData) ? recData : recData.data || [];
           const colorMap: Record<string, string> = {};
           const nameMap: Record<string, string> = {};
+          const phoneMap: Record<string, string> = {};
           const idToEmailMap: Record<string, string> = {};
           const palette = ["#6366f1", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
           let myCalIdLocal = "";
@@ -208,7 +211,11 @@ export default function CalendarioPage() {
             if (calId) {
               colorMap[calId] = r.color || palette[i % palette.length];
               nameMap[calId] = r.nombre || r.name || calId;
-              if (r.reclutador_id) idToEmailMap[r.reclutador_id] = calId;
+              if (r.telefono) phoneMap[calId] = r.telefono;
+              if (r.reclutador_id) {
+                idToEmailMap[r.reclutador_id] = calId;
+                if (r.telefono) phoneMap[r.reclutador_id] = r.telefono;
+              }
               if (r.reclutador_id == myRecruiterId) {
                 myCalIdLocal = calId;
               }
@@ -216,6 +223,7 @@ export default function CalendarioPage() {
           });
           setRecruiterColors(colorMap);
           setRecruiterNames(nameMap);
+          setRecruiterPhones(phoneMap);
           setRecruiterIdToEmail(idToEmailMap);
           if (myCalIdLocal) setMyCalId(myCalIdLocal);
         }
@@ -288,30 +296,46 @@ export default function CalendarioPage() {
 
   // ── Events ──────────────────────────────────────────────────────────────
   const events: CalendarEvent[] = useMemo(() => {
-    const dbEvents = candidatos
-      .filter((c) => c.fecha_entrevista?.trim() && !(c.id && orphanedCandidatoIds.has(c.id)))
-      .map((c) => {
-        const fechaStr = c.fecha_entrevista!;
-        let startDate = new Date(fechaStr);
-        if (isNaN(startDate.getTime())) startDate = parse(fechaStr, "dd/MM/yyyy HH:mm", new Date());
-        if (isNaN(startDate.getTime())) {
-          startDate = parse(fechaStr, "dd/MM/yyyy", new Date());
-          if (!isNaN(startDate.getTime())) startDate.setHours(10, 0, 0, 0);
-        }
-        if (isNaN(startDate.getTime())) return null;
-        return {
-          id: c.telefono,
-          title: `${c.nombre_chat || c.nombre_solicitud || "Candidato"} – ${c.vacante_interes || "Sin vacante"}`,
-          start: startDate,
-          end: new Date(startDate.getTime() + 60 * 60 * 1000),
-          resource: {
-            ...c,
-            creator_email: c.asignado_a_id ? (recruiterIdToEmail[c.asignado_a_id] || "sin_asignar") : "sin_asignar",
-          },
-        };
-      }).filter(Boolean) as CalendarEvent[];
+    // Helper to get normalized 10-digit phone number
+    const cleanPhone = (p: string | null | undefined): string => {
+      if (!p) return "";
+      const digits = String(p).replace(/\D/g, "");
+      return digits.length >= 10 ? digits.slice(-10) : digits;
+    };
 
-    const parsedGcalEvents = googleEvents.map((ge, idx) => {
+    // Index DB candidates
+    const candByEventId = new Map<string, Candidato>();
+    const candByPhone = new Map<string, Candidato>();
+    const activeCandidates = candidatos.filter(
+      (c) => c.fecha_entrevista?.trim() && !(c.id && orphanedCandidatoIds.has(c.id))
+    );
+
+    for (const c of activeCandidates) {
+      if (c.event_id) {
+        candByEventId.set(c.event_id, c);
+      }
+      const cTel = cleanPhone(c.telefono);
+      if (cTel) {
+        candByPhone.set(cTel, c);
+      }
+    }
+
+    // Set to track which candidate IDs/telefonos have been matched/included
+    const representedCandidateIds = new Set<string>();
+    const representedPhones = new Set<string>();
+
+    // Deduplicate raw GCal events by id first
+    const uniqueGcalMap = new Map<string, any>();
+    for (const ge of googleEvents) {
+      if (ge && ge.id && !uniqueGcalMap.has(ge.id)) {
+        uniqueGcalMap.set(ge.id, ge);
+      }
+    }
+
+    const unifiedEvents: CalendarEvent[] = [];
+
+    // Process all Google Calendar events
+    for (const [gcalId, ge] of uniqueGcalMap.entries()) {
       let nombre = ge.title || ge.summary || "Candidato";
       let vacante = "Sin especificar";
       let telefono = "No registrado";
@@ -343,39 +367,95 @@ export default function CalendarioPage() {
         ge.calendarId || ge.creator?.email || ge.organizer?.email || (typeof ge.creator === 'string' ? ge.creator : '') || "desconocido"
       ).toLowerCase();
 
-      return {
-        id: ge.id || `gcal-sin-id-${idx}`,
-        title: ge.title || ge.summary || "Entrevista",
-        start: new Date(ge.start?.dateTime || ge.start?.date || ge.start || new Date()),
-        end: new Date(ge.end?.dateTime || ge.end?.date || ge.end || new Date()),
-        resource: {
-          ...ge,
-          es_google_calendar: true,
-          resumen_ia: desc,
-          creator_email: creatorEmail,
-          nombre_chat: nombre,
-          vacante_interes: vacante,
-          telefono,
-          nave_interes: nave,
-          estado: "Agendado (GCal)",
-        },
-      };
-    });
+      const gePhoneClean = cleanPhone(telefono);
+      const matchedCandidate = candByEventId.get(gcalId) || (gePhoneClean ? candByPhone.get(gePhoneClean) : null);
 
-    // Deduplicate GCal events by id (since multiple calendars might share the same event)
-    const uniqueGcalEventsMap = new Map();
-    parsedGcalEvents.forEach(ev => {
-      if (!uniqueGcalEventsMap.has(ev.id)) {
-        uniqueGcalEventsMap.set(ev.id, ev);
+      const startDate = new Date(ge.start?.dateTime || ge.start?.date || ge.start || new Date());
+      const endDate = new Date(ge.end?.dateTime || ge.end?.date || ge.end || new Date());
+
+      if (matchedCandidate) {
+        if (matchedCandidate.id) representedCandidateIds.add(matchedCandidate.id);
+        const cPhone = cleanPhone(matchedCandidate.telefono);
+        if (cPhone) representedPhones.add(cPhone);
+
+        const candName = matchedCandidate.nombre_chat || matchedCandidate.nombre_ine || matchedCandidate.nombre_solicitud || matchedCandidate.nombre || nombre;
+        const candVacante = matchedCandidate.vacante_interes || vacante;
+
+        unifiedEvents.push({
+          id: gcalId || matchedCandidate.event_id || matchedCandidate.telefono,
+          title: `${candName} – ${candVacante}`,
+          start: startDate,
+          end: endDate,
+          resource: {
+            ...matchedCandidate,
+            ...ge,
+            event_id: gcalId || matchedCandidate.event_id,
+            es_google_calendar: true,
+            creator_email: creatorEmail !== "desconocido" ? creatorEmail : (matchedCandidate.asignado_a_id ? (recruiterIdToEmail[matchedCandidate.asignado_a_id] || "sin_asignar") : "sin_asignar"),
+            nombre_chat: candName,
+            vacante_interes: candVacante,
+            telefono: matchedCandidate.telefono || telefono,
+            nave_interes: matchedCandidate.nave_interes || nave,
+            estado: matchedCandidate.estado || "Agendado (GCal)",
+            resumen_ia: matchedCandidate.resumen_ia || desc,
+          },
+        });
+      } else {
+        // Evento directo de GCal (bloqueo, junta o cita sin candidato en DB)
+        unifiedEvents.push({
+          id: gcalId,
+          title: ge.title || ge.summary || "Entrevista",
+          start: startDate,
+          end: endDate,
+          resource: {
+            ...ge,
+            es_google_calendar: true,
+            resumen_ia: desc,
+            creator_email: creatorEmail,
+            nombre_chat: nombre,
+            vacante_interes: vacante,
+            telefono,
+            nave_interes: nave,
+            estado: "Agendado (GCal)",
+          },
+        });
       }
-    });
+    }
 
-    let allEvents: CalendarEvent[] = [...dbEvents, ...Array.from(uniqueGcalEventsMap.values())];
+    // Add any DB candidates that were not matched to any GCal event
+    for (const c of activeCandidates) {
+      if (c.id && representedCandidateIds.has(c.id)) continue;
+      const cPhone = cleanPhone(c.telefono);
+      if (cPhone && representedPhones.has(cPhone)) continue;
+
+      const fechaStr = c.fecha_entrevista!;
+      let startDate = new Date(fechaStr);
+      if (isNaN(startDate.getTime())) startDate = parse(fechaStr, "dd/MM/yyyy HH:mm", new Date());
+      if (isNaN(startDate.getTime())) {
+        startDate = parse(fechaStr, "dd/MM/yyyy", new Date());
+        if (!isNaN(startDate.getTime())) startDate.setHours(10, 0, 0, 0);
+      }
+      if (isNaN(startDate.getTime())) continue;
+
+      unifiedEvents.push({
+        id: c.event_id || c.telefono,
+        title: `${c.nombre_chat || c.nombre_ine || c.nombre_solicitud || c.nombre || "Candidato"} – ${c.vacante_interes || "Sin vacante"}`,
+        start: startDate,
+        end: new Date(startDate.getTime() + 60 * 60 * 1000),
+        resource: {
+          ...c,
+          creator_email: c.asignado_a_id ? (recruiterIdToEmail[c.asignado_a_id] || "sin_asignar") : "sin_asignar",
+        },
+      });
+    }
+
+    let allEvents = unifiedEvents;
+
     const storedEmpresaId = typeof window !== "undefined" ? localStorage.getItem("tci_empresa_id") : null;
     if (storedEmpresaId) {
       const allowedCalIds = new Set(Object.keys(recruiterColors));
       allEvents = allEvents.filter((ev) => {
-        if (!ev.resource.es_google_calendar) return true; // eventos de BD ya vienen escopeados
+        if (!ev.resource.es_google_calendar) return true;
         const email = (ev.resource.creator_email || "").toLowerCase();
         return allowedCalIds.has(email);
       });
@@ -435,8 +515,11 @@ export default function CalendarioPage() {
     setCancelPassword("");
     setCancelError("");
     setCancelReason("Por imprevistos de agenda en el equipo de reclutamiento.");
+    const recEmail = (event.resource.creator_email || "").toLowerCase();
+    const recId = event.resource.asignado_a_id;
+    const assignedPhone = (recEmail && recruiterPhones[recEmail]) || (recId && recruiterPhones[recId]) || "";
     const defaultTel = typeof window !== "undefined" ? localStorage.getItem("tci_telefono") : "";
-    setRecruiterPhone(defaultTel || "5213323379399");
+    setRecruiterPhone(assignedPhone || defaultTel || "");
   };
 
   const confirmCancel = async () => {
@@ -498,8 +581,11 @@ export default function CalendarioPage() {
     setNewDate(format(event.start, "yyyy-MM-dd"));
     setNewTime(format(event.start, "HH:mm"));
     setRescheduleReason("Por reorganización de agenda de entrevistas.");
+    const recEmail = (event.resource.creator_email || "").toLowerCase();
+    const recId = event.resource.asignado_a_id;
+    const assignedPhone = (recEmail && recruiterPhones[recEmail]) || (recId && recruiterPhones[recId]) || "";
     const defaultTel = typeof window !== "undefined" ? localStorage.getItem("tci_telefono") : "";
-    setRecruiterPhone(defaultTel || "5213323379399");
+    setRecruiterPhone(assignedPhone || defaultTel || "");
   };
 
   const confirmReschedule = async () => {
@@ -773,7 +859,13 @@ export default function CalendarioPage() {
       {cancelTarget && (
         <div
           className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center z-[2000]"
-          onClick={() => setCancelTarget(null)}
+          onMouseDown={(e) => { isBackdropMouseDown.current = (e.target === e.currentTarget); }}
+          onMouseUp={(e) => {
+            if (isBackdropMouseDown.current && e.target === e.currentTarget) {
+              setCancelTarget(null);
+            }
+            isBackdropMouseDown.current = false;
+          }}
         >
           <div
             className="bg-white w-[90%] max-w-md rounded-2xl p-6 shadow-2xl"
@@ -845,7 +937,7 @@ export default function CalendarioPage() {
                     }`}
                 />
                 {cancelError && (
-                  <p className="text-xs text-red-500 mt-1 font-medium">{cancelError}</p>
+                  <p className="text-red-500 text-xs mt-1 font-medium">{cancelError}</p>
                 )}
               </div>
             </div>
@@ -855,13 +947,14 @@ export default function CalendarioPage() {
                 onClick={() => setCancelTarget(null)}
                 className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm transition-colors"
               >
-                No, volver
+                Volver
               </button>
               <button
                 onClick={confirmCancel}
-                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-colors shadow-sm"
+                disabled={cancelingId === cancelTarget.id}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-colors disabled:opacity-50 shadow-sm"
               >
-                Sí, cancelar cita
+                {cancelingId === cancelTarget.id ? "Cancelando..." : "Confirmar y Notificar"}
               </button>
             </div>
           </div>
@@ -872,7 +965,13 @@ export default function CalendarioPage() {
       {selectedEvent && (
         <div
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000]"
-          onClick={() => setSelectedEvent(null)}
+          onMouseDown={(e) => { isBackdropMouseDown.current = (e.target === e.currentTarget); }}
+          onMouseUp={(e) => {
+            if (isBackdropMouseDown.current && e.target === e.currentTarget) {
+              setSelectedEvent(null);
+            }
+            isBackdropMouseDown.current = false;
+          }}
         >
           <div
             className="bg-white w-[90%] max-w-md rounded-2xl p-7 shadow-2xl relative"
@@ -956,7 +1055,13 @@ export default function CalendarioPage() {
       {rescheduleTarget && (
         <div
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[2000]"
-          onClick={() => setRescheduleTarget(null)}
+          onMouseDown={(e) => { isBackdropMouseDown.current = (e.target === e.currentTarget); }}
+          onMouseUp={(e) => {
+            if (isBackdropMouseDown.current && e.target === e.currentTarget) {
+              setRescheduleTarget(null);
+            }
+            isBackdropMouseDown.current = false;
+          }}
         >
           <div
             className="bg-white w-[90%] max-w-md rounded-2xl p-6 shadow-2xl relative"
@@ -1048,7 +1153,13 @@ export default function CalendarioPage() {
       {blockTarget && (
         <div
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[2000]"
-          onClick={() => setBlockTarget(null)}
+          onMouseDown={(e) => { isBackdropMouseDown.current = (e.target === e.currentTarget); }}
+          onMouseUp={(e) => {
+            if (isBackdropMouseDown.current && e.target === e.currentTarget) {
+              setBlockTarget(null);
+            }
+            isBackdropMouseDown.current = false;
+          }}
         >
           <div
             className="bg-white w-[90%] max-w-md rounded-2xl p-6 shadow-2xl relative"

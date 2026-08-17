@@ -28,6 +28,7 @@ export type EstadoDef = {
   color: string;       // text-* tailwind
   bg: string;          // bg-* tailwind
   border: string;      // border-* tailwind
+  hex: string;         // Color hexadecimal para gráficos y semaforización
   emoji: string;
   grupo: GrupoEstado;
   asignadoPor: 'bot' | 'crm' | 'ambos';
@@ -44,6 +45,7 @@ export const ESTADOS: Record<EstadoKey, EstadoDef> = {
     color: 'text-slate-600',
     bg: 'bg-slate-100',
     border: 'border-slate-200',
+    hex: '#6366f1',
     emoji: '🆕',
     grupo: 'pipeline',
     asignadoPor: 'bot',
@@ -56,6 +58,7 @@ export const ESTADOS: Record<EstadoKey, EstadoDef> = {
     color: 'text-blue-600',
     bg: 'bg-blue-100',
     border: 'border-blue-200',
+    hex: '#0ea5e9', // Azul cielo
     emoji: '💬',
     grupo: 'pipeline',
     asignadoPor: 'bot',
@@ -68,6 +71,7 @@ export const ESTADOS: Record<EstadoKey, EstadoDef> = {
     color: 'text-cyan-600',
     bg: 'bg-cyan-100',
     border: 'border-cyan-200',
+    hex: '#22c55e', // Verde
     emoji: '📄',
     grupo: 'pipeline',
     asignadoPor: 'bot',
@@ -80,6 +84,7 @@ export const ESTADOS: Record<EstadoKey, EstadoDef> = {
     color: 'text-orange-600',
     bg: 'bg-orange-100',
     border: 'border-orange-200',
+    hex: '#f97316',
     emoji: '📝',
     grupo: 'pipeline',
     asignadoPor: 'bot',
@@ -92,6 +97,7 @@ export const ESTADOS: Record<EstadoKey, EstadoDef> = {
     color: 'text-teal-600',
     bg: 'bg-teal-100',
     border: 'border-teal-200',
+    hex: '#14b8a6',
     emoji: '✅',
     grupo: 'pipeline',
     asignadoPor: 'bot',
@@ -104,6 +110,7 @@ export const ESTADOS: Record<EstadoKey, EstadoDef> = {
     color: 'text-violet-600',
     bg: 'bg-violet-100',
     border: 'border-violet-200',
+    hex: '#10b981', // Verde
     emoji: '🪪',
     grupo: 'pipeline',
     asignadoPor: 'bot',
@@ -116,6 +123,7 @@ export const ESTADOS: Record<EstadoKey, EstadoDef> = {
     color: 'text-amber-600',
     bg: 'bg-amber-100',
     border: 'border-amber-200',
+    hex: '#f59e0b',
     emoji: '📅',
     grupo: 'pipeline',
     asignadoPor: 'bot',
@@ -128,6 +136,7 @@ export const ESTADOS: Record<EstadoKey, EstadoDef> = {
     color: 'text-red-500',
     bg: 'bg-red-50',
     border: 'border-red-200',
+    hex: '#f43f5e',
     emoji: '🚫',
     grupo: 'alerta',
     asignadoPor: 'ambos',
@@ -140,6 +149,7 @@ export const ESTADOS: Record<EstadoKey, EstadoDef> = {
     color: 'text-yellow-600',
     bg: 'bg-yellow-100',
     border: 'border-yellow-200',
+    hex: '#64748b', // Gris
     emoji: '🔔',
     grupo: 'pipeline',
     asignadoPor: 'bot',
@@ -152,6 +162,7 @@ export const ESTADOS: Record<EstadoKey, EstadoDef> = {
     color: 'text-purple-600',
     bg: 'bg-purple-100',
     border: 'border-purple-200',
+    hex: '#d946ef',
     emoji: '🆘',
     grupo: 'alerta',
     asignadoPor: 'bot',
@@ -164,6 +175,7 @@ export const ESTADOS: Record<EstadoKey, EstadoDef> = {
     color: 'text-red-600',
     bg: 'bg-red-100',
     border: 'border-red-200',
+    hex: '#eab308', // Amarillo
     emoji: '⚠️',
     grupo: 'alerta',
     asignadoPor: 'bot',
@@ -176,6 +188,7 @@ export const ESTADOS: Record<EstadoKey, EstadoDef> = {
     color: 'text-emerald-600',
     bg: 'bg-emerald-100',
     border: 'border-emerald-200',
+    hex: '#059669',
     emoji: '🤝',
     grupo: 'exitoso',
     asignadoPor: 'crm',
@@ -188,6 +201,7 @@ export const ESTADOS: Record<EstadoKey, EstadoDef> = {
     color: 'text-green-700',
     bg: 'bg-green-100',
     border: 'border-green-200',
+    hex: '#15803d',
     emoji: '🎉',
     grupo: 'exitoso',
     asignadoPor: 'crm',
@@ -200,6 +214,7 @@ export const ESTADOS: Record<EstadoKey, EstadoDef> = {
     color: 'text-red-700',
     bg: 'bg-red-100',
     border: 'border-red-200',
+    hex: '#ef4444', // Rojo
     emoji: '❌',
     grupo: 'descartado',
     asignadoPor: 'crm',
@@ -212,6 +227,7 @@ export const ESTADOS: Record<EstadoKey, EstadoDef> = {
     color: 'text-indigo-600',
     bg: 'bg-indigo-100',
     border: 'border-indigo-200',
+    hex: '#818cf8',
     emoji: '🗂️',
     grupo: 'pool',
     asignadoPor: 'crm',
@@ -224,6 +240,7 @@ export const ESTADOS: Record<EstadoKey, EstadoDef> = {
     color: 'text-gray-500',
     bg: 'bg-gray-100',
     border: 'border-gray-200',
+    hex: '#9ca3af',
     emoji: '😴',
     grupo: 'descartado',
     asignadoPor: 'crm',
@@ -236,6 +253,7 @@ export const ESTADOS: Record<EstadoKey, EstadoDef> = {
     color: 'text-purple-700',
     bg: 'bg-purple-100',
     border: 'border-purple-200',
+    hex: '#8b5cf6', // Morado
     emoji: '🌆',
     grupo: 'descartado',
     asignadoPor: 'bot',
@@ -312,6 +330,7 @@ export function getEstado(key: string): EstadoDef {
     color: 'text-slate-500',
     bg: 'bg-slate-100',
     border: 'border-slate-200',
+    hex: '#94a3b8',
     emoji: '❓',
     grupo: 'pipeline',
     asignadoPor: 'bot',
@@ -319,3 +338,32 @@ export function getEstado(key: string): EstadoDef {
     descripcion: 'Estado desconocido',
   };
 }
+
+/** Obtener el color hexadecimal del estado para gráficos y semaforización */
+export function getEstadoColor(keyOrLabel: string): string {
+  if (!keyOrLabel) return '#94a3b8';
+  if (ESTADOS[keyOrLabel as EstadoKey]?.hex) {
+    return ESTADOS[keyOrLabel as EstadoKey].hex;
+  }
+  const upper = keyOrLabel.toUpperCase().trim().replace(/\s+/g, '_');
+  if (ESTADOS[upper as EstadoKey]?.hex) {
+    return ESTADOS[upper as EstadoKey].hex;
+  }
+
+  // Búsqueda por coincidencia semántica de texto
+  if (upper.includes('DESCART') || upper.includes('RECHAZ')) return '#ef4444'; // descartado = rojo
+  if (upper.includes('NO_COINCIDE') || upper.includes('DOC')) return '#eab308'; // docs no coincide = amarillo
+  if (upper.includes('INE')) return '#10b981'; // ine validada = verde
+  if (upper.includes('RECORDATORIO')) return '#64748b'; // recordatorio = gris
+  if (upper.includes('CV')) return '#22c55e'; // cv recibido = verde
+  if (upper.includes('INTERES')) return '#0ea5e9'; // interesado = azul cielo
+  if (upper.includes('CIUDAD')) return '#8b5cf6'; // otra ciudad = morado
+  if (upper.includes('CONTRAT')) return '#15803d';
+  if (upper.includes('ENTREVIST')) return '#059669';
+  if (upper.includes('CITA')) return '#f59e0b';
+  if (upper.includes('FILTRO')) return '#14b8a6';
+  if (upper.includes('NUEVO')) return '#6366f1';
+
+  return '#94a3b8';
+}
+

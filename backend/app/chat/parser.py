@@ -33,6 +33,43 @@ _MENSAJE_HUMANO_DEFAULT = (
     "para que puedan revisarlo y darte seguimiento por este medio."
 )
 
+_DESCALIFICACION_CIUDAD_MSG = (
+    "Agradecemos mucho tu interés en nuestra vacante. 😊 Por el momento todos "
+    "nuestros puestos y entrevistas son 100% presenciales en la Zona Metropolitana "
+    "de Guadalajara, Jalisco. Al radicar fuera de la zona no nos es posible continuar "
+    "con tu proceso. ¡Te deseamos mucho éxito en tu búsqueda laboral! ✨"
+)
+
+_MUNICIPIOS_ZMG_JALISCO = {
+    "GUADALAJARA", "ZAPOPAN", "TLAQUEPAQUE", "TONALA", "TONALÁ", "TLAJOMULCO",
+    "EL SALTO", "IXTLAHUACAN", "IXTLAHUACÁN", "ZAPOTLANEJO", "ZMG", "JALISCO",
+    "GDL", "CHAPALA", "SAN CRISTOBAL", "TETLAN", "ATEMAJAC", "ANALCO",
+    "COLON INDUSTRIAL", "JARDINES DE LA CRUZ", "MANDARINA"
+}
+
+def _es_ciudad_no_apta(ciudad_str: str) -> bool:
+    if not ciudad_str:
+        return False
+    norm = str(ciudad_str).upper().strip()
+    if not norm or norm in ("PENDIENTE", "DESCONOCIDO", "NONE", "NULL"):
+        return False
+    if any(m in norm for m in _MUNICIPIOS_ZMG_JALISCO):
+        return False
+    return True
+
+
+def _es_nombre_valido(nombre: str | None) -> bool:
+    if not nombre:
+        return False
+    clean = re.sub(r"[{}\[\]\"'|]", "", str(nombre)).strip()
+    if not clean or len(clean) < 2:
+        return False
+    if clean.upper() in ("DESCONOCIDO", "CANDIDATO", "NO REGISTRADO", "PENDIENTE", "USUARIO", "SIN REGISTRAR", "NONE", "NULL"):
+        return False
+    if clean.isdigit() or re.match(r"^\+?\d+$", clean):
+        return False
+    return True
+
 _CLEANUP_RE = re.compile(
     r"ACTUALIZAR_(?:NOMBRE|VACANTE|NAVE)\s*\|\s*[^|\n]+(?:\||)"
     r"|LUGAR_RESIDENCIA\s*\|?[^|\n]*(?:\||)"
@@ -58,10 +95,22 @@ _JSON_COLA_RE = re.compile(
     r'\{\s*"(?:memoria_update|etiquetas_internas|mensaje_al_usuario)"[\s\S]*$'
 )
 
+_YAML_COLA_RE = re.compile(
+    r'\n?\s*(?:memoria_update|etiquetas_internas)\s*:[\s\S]*$',
+    re.IGNORECASE,
+)
+
 # Rescate del resumen cuando ese JSON de cola viene truncado: json.loads no
 # puede parsearlo, pero `memoria_update` suele estar completo (es la primera
 # clave), así que se extrae con regex para no perder la memoria del candidato.
 _MEMORIA_UPDATE_RE = re.compile(r'"memoria_update"\s*:\s*"((?:[^"\\]|\\.)*)"')
+
+# Patrón para detectar y limpiar pies de menú (para evitar que se dupliquen si el
+# modelo los genera por su cuenta y además el parser los añade cada 3 mensajes).
+_MENU_FOOTER_RE = re.compile(
+    r'\s*_?\(\s*(?:Escribe\s+)?["“\']?Menú["”\']?[^)]*(?:menú principal|cambiar de nave)[^)]*\)_?',
+    re.IGNORECASE,
+)
 
 
 def _extract_code(text: str, code_name: str, code_config: dict) -> dict | None:
@@ -132,7 +181,13 @@ def _generate_database_updates(detected_codes: list[dict]) -> tuple[dict, list[d
             actions.append({"type": "database_update", "table": "candidatos", "field": "estado", "value": "INTERESADO"})
         elif action == "lugar_residencia":
             updates["lugar_residencia"] = value
-            actions.append({"type": "database_update", "table": "candidatos", "field": "lugar_residencia", "value": value})
+            if _es_ciudad_no_apta(value):
+                updates["estado"] = "OTRA_CIUDAD"
+                updates["resumen_ia"] = f"Descalificado automáticamente: Radica en otra ciudad ({value})"
+                actions.append({"type": "database_update", "table": "candidatos", "field": "lugar_residencia", "value": value})
+                actions.append({"type": "database_update", "table": "candidatos", "field": "estado", "value": "OTRA_CIUDAD"})
+            else:
+                actions.append({"type": "database_update", "table": "candidatos", "field": "lugar_residencia", "value": value})
         elif action == "ciudad_no_apta":
             updates["lugar_residencia"] = value
             updates["estado"] = "OTRA_CIUDAD"
@@ -199,119 +254,242 @@ def _parse_special_codes(ai_response: Any) -> dict:
 
 
 def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
-    """Puerto de la 'LÓGICA DEL NODO' completa (secciones 1-6 del código
-    original). Devuelve una lista de items (uno por segmento [SPLIT])
-    listos para mandar por WhatsApp en orden, cada uno con el `result`
-    completo del parser (para poder aplicar database_updates una sola vez
-    con el último item, igual que hacía n8n al pasar el mismo `result`
-    con distinto `message_to_user` en cada item)."""
+    """Procesa la respuesta del agente de IA. Soporta:
+    1. Formato JSON estructurado (mensajes_al_usuario: list[str], memoria_update, etiquetas_internas).
+    2. Formato JSON estándar (mensaje_al_usuario: str con [SPLIT]).
+    3. Fallback retrocompatible para respuestas de texto plano con special codes.
+    
+    Devuelve una lista de items (uno por cada mensaje a enviar por WhatsApp)."""
 
-    # 1. Obtener rawInput (soporta objeto JSON directo o texto string)
     raw_input: Any = raw_response
     if isinstance(raw_input, dict):
-        if isinstance(raw_input.get("output"), str):
+        if isinstance(raw_input.get("output"), (str, dict)):
             raw_input = raw_input["output"]
-        elif isinstance(raw_input.get("text"), str):
+        elif isinstance(raw_input.get("text"), (str, dict)):
             raw_input = raw_input["text"]
-        elif isinstance(raw_input.get("message"), str):
+        elif isinstance(raw_input.get("message"), (str, dict)):
             raw_input = raw_input["message"]
 
-    input_for_parser: Any = raw_input
     json_parsed: dict | None = None
+    ai_response_str: str = ""
 
-    if isinstance(raw_input, str):
+    if isinstance(raw_input, dict):
+        json_parsed = raw_input
+        ai_response_str = json.dumps(raw_input, ensure_ascii=False)
+    elif isinstance(raw_input, str):
+        ai_response_str = raw_input
         trimmed = raw_input.strip()
-        if trimmed.startswith("{"):
-            try:
-                json_parsed = json.loads(trimmed)
-                input_for_parser = json_parsed
-            except json.JSONDecodeError:
-                json_parsed = None
+        clean_str = re.sub(r"^```json\s*", "", trimmed, flags=re.IGNORECASE)
+        clean_str = re.sub(r"```\s*$", "", clean_str).strip()
+        
+        try:
+            parsed = json.loads(clean_str)
+            if isinstance(parsed, dict):
+                json_parsed = parsed
+        except json.JSONDecodeError:
+            json_parsed = None
 
         if not json_parsed:
-            key_idx = trimmed.find('"mensaje_al_usuario"')
+            key_idx = clean_str.find('"mensaje_al_usuario"')
+            if key_idx == -1:
+                key_idx = clean_str.find('"mensajes_al_usuario"')
+            if key_idx == -1:
+                key_idx = clean_str.find('"memoria_update"')
             if key_idx != -1:
-                start_brace = trimmed.rfind("{", 0, key_idx)
+                start_brace = clean_str.rfind("{", 0, key_idx)
                 if start_brace != -1:
                     depth = 0
                     end_idx = -1
-                    for i in range(start_brace, len(trimmed)):
-                        if trimmed[i] == "{":
+                    for i in range(start_brace, len(clean_str)):
+                        if clean_str[i] == "{":
                             depth += 1
-                        elif trimmed[i] == "}":
+                        elif clean_str[i] == "}":
                             depth -= 1
                             if depth == 0:
                                 end_idx = i
                                 break
                     if end_idx != -1:
                         try:
-                            json_parsed = json.loads(trimmed[start_brace:end_idx + 1])
-                            input_for_parser = json_parsed
+                            parsed = json.loads(clean_str[start_brace:end_idx + 1])
+                            if isinstance(parsed, dict):
+                                json_parsed = parsed
                         except json.JSONDecodeError:
                             json_parsed = None
-    elif isinstance(raw_input, dict):
-        json_parsed = raw_input
-        input_for_parser = raw_input
 
-    # 3. Ejecutar parser
-    result = _parse_special_codes(input_for_parser)
+    result = _parse_special_codes(json_parsed if json_parsed else raw_input)
+    mensajes_candidato: list[str] = []
 
     if json_parsed:
-        if json_parsed.get("mensaje_al_usuario"):
-            result["message_to_user"] = json_parsed["mensaje_al_usuario"]
-            result["text_para_whatsapp"] = json_parsed["mensaje_al_usuario"]
-        if json_parsed.get("memoria_update"):
-            result["resumen_generado"] = json_parsed["memoria_update"]
+        # A) Extraer lista de mensajes al usuario
+        if "mensajes_al_usuario" in json_parsed:
+            raw_msgs = json_parsed["mensajes_al_usuario"]
+            if isinstance(raw_msgs, list):
+                for m in raw_msgs:
+                    if m and str(m).strip():
+                        mensajes_candidato.append(str(m).strip())
+            elif isinstance(raw_msgs, str) and raw_msgs.strip():
+                mensajes_candidato.append(raw_msgs.strip())
+
+        if not mensajes_candidato and "mensaje_al_usuario" in json_parsed:
+            raw_msg = json_parsed["mensaje_al_usuario"]
+            if isinstance(raw_msg, str) and raw_msg.strip():
+                if "[SPLIT]" in raw_msg.upper():
+                    mensajes_candidato = [s.strip() for s in re.split(r"\[SPLIT\]", raw_msg, flags=re.IGNORECASE) if s.strip()]
+                else:
+                    mensajes_candidato = [raw_msg.strip()]
+            elif isinstance(raw_msg, list):
+                for m in raw_msg:
+                    if m and str(m).strip():
+                        mensajes_candidato.append(str(m).strip())
+
+        # B) Resumen de memoria
+        resumen = json_parsed.get("memoria_update") or json_parsed.get("resumen_memoria")
+        if resumen and str(resumen).strip():
+            resumen_str = str(resumen).strip()
+            result["resumen_generado"] = resumen_str
             result["database_updates"] = result.get("database_updates") or {}
-            result["database_updates"]["resumen_ia"] = json_parsed["memoria_update"]
+            result["database_updates"]["resumen_ia"] = resumen_str
 
-        et = json_parsed.get("etiquetas_internas", json_parsed)
-        et_vacante = et.get("actualizar_vacante") or et.get("vacante_interes") or et.get("vacante")
-        if et_vacante and str(et_vacante).strip().upper() not in ("GENERAL", "NINGUNA"):
-            # "General"/"Ninguna" es el placeholder que el modelo ecoa mientras el
-            # candidato no ha elegido vacante todavia (ver VACANTE_INTERES en
-            # chat_prompt.md) -- no es una vacante "detectada" de verdad. Sin este
-            # filtro (que el fallback de regex de abajo SI tiene), se guardaba como
-            # si fuera valida y candidatos.vacante_interes quedaba atorado en
-            # 'GENERAL' para siempre (el UPSERT de n8n-incoming solo sobreescribe
-            # con un valor no vacio), rompiendo el match de vacante->reclutador.
-            result["vacante_detectada"] = str(et_vacante).strip().upper()
-        if et.get("actualizar_nave") or et.get("nave_interes") or et.get("nave"):
-            result["nave_detectada"] = str(et.get("actualizar_nave") or et.get("nave_interes") or et.get("nave")).strip().upper()
-        if et.get("actualizar_nombre") or et.get("nombre"):
-            result["nombre_detectado"] = str(et.get("actualizar_nombre") or et.get("nombre")).strip()
+        # C) Etiquetas internas / actualizaciones
+        et = json_parsed.get("etiquetas_internas") or json_parsed.get("actualizaciones")
+        if not isinstance(et, dict):
+            et = json_parsed
 
-    # 4. PARCHES Y ETIQUETAS SECRETAS
-    ai_response_str = json.dumps(raw_input) if isinstance(raw_input, dict) else str(raw_input or "")
+        if isinstance(et, dict):
+            # Nombre
+            nom = et.get("actualizar_nombre") or et.get("nombre")
+            if nom and _es_nombre_valido(str(nom)):
+                clean_nom = re.sub(r"[{}\[\]\"'|]", "", str(nom)).strip()
+                result["nombre_detectado"] = clean_nom
+                result["database_updates"] = result.get("database_updates") or {}
+                result["database_updates"]["nombre"] = clean_nom
+                result["database_updates"]["nombre_confirmado"] = True
 
-    if result.get("message_to_user") and isinstance(result["message_to_user"], str):
-        result["message_to_user"] = result["message_to_user"].split("MEMORY_UPDATE")[0].strip()
+            # Vacante
+            vac = et.get("actualizar_vacante") or et.get("vacante_interes") or et.get("vacante")
+            if vac:
+                vac_clean = str(vac).strip().upper()
+                if vac_clean not in ("GENERAL", "NINGUNA", "PENDIENTE"):
+                    result["vacante_detectada"] = vac_clean
+                    result["database_updates"] = result.get("database_updates") or {}
+                    result["database_updates"]["vacante_interes"] = vac_clean
+                    result["database_updates"]["estado"] = "INTERESADO"
+
+            # Nave
+            nav = et.get("actualizar_nave") or et.get("nave_interes") or et.get("nave")
+            if nav:
+                nav_clean = str(nav).strip().upper()
+                if nav_clean != "PENDIENTE":
+                    result["nave_detectada"] = nav_clean
+
+            # Residencia
+            lugar_res = et.get("lugar_residencia")
+            ciudad_no_apta = et.get("ciudad_no_apta")
+            if ciudad_no_apta:
+                c_str = str(ciudad_no_apta).strip()
+                result["lugar_residencia"] = c_str
+                result["database_updates"] = result.get("database_updates") or {}
+                result["database_updates"]["lugar_residencia"] = c_str
+                result["database_updates"]["estado"] = "OTRA_CIUDAD"
+                result["database_updates"]["resumen_ia"] = f"Descalificado automáticamente: Radica en otra ciudad ({c_str})"
+            elif lugar_res:
+                l_str = str(lugar_res).strip()
+                result["lugar_residencia"] = l_str
+                result["database_updates"] = result.get("database_updates") or {}
+                result["database_updates"]["lugar_residencia"] = l_str
+                if _es_ciudad_no_apta(l_str):
+                    result["database_updates"]["estado"] = "OTRA_CIUDAD"
+                    result["database_updates"]["resumen_ia"] = f"Descalificado automáticamente: Radica en otra ciudad ({l_str})"
+
+            # Privacidad
+            if et.get("privacidad_aceptada") is True:
+                result["acepto_privacidad"] = True
+
+            # Cita confirmada
+            cita_val = et.get("cita_confirmada")
+            if cita_val:
+                iso_match = re.search(r"\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?", str(cita_val))
+                if iso_match:
+                    result["fecha_entrevista_detectada"] = iso_match.group(0)
+                    result["cita_creada"] = True
+
+            # Cita cancelada
+            if et.get("cita_cancelada") is True:
+                result["cita_cancelada"] = True
+                result["database_updates"] = result.get("database_updates") or {}
+                result["database_updates"]["estado"] = "INTERESADO"
+
+            # Experiencia en actividades
+            exp_act = et.get("experiencia_actividades")
+            if exp_act and str(exp_act).strip():
+                result["experiencia_actividades"] = str(exp_act).strip()
+
+            # Respuestas filtro
+            rf = et.get("respuestas_filtro")
+            if rf:
+                result["respuestas_filtro_detectadas"] = json.dumps(rf) if isinstance(rf, dict) else str(rf)
+
+            # CV Manual
+            cv_man = et.get("cv_manual")
+            if cv_man and isinstance(cv_man, dict):
+                result["datos_cv_manual"] = cv_man
+                result["es_cv_manual"] = True
+                result["database_updates"] = result.get("database_updates") or {}
+                result["database_updates"]["tiene_cv"] = True
+                result["database_updates"]["estado"] = "CV_MANUAL"
+                result["database_updates"]["cv_manual"] = json.dumps(cv_man)
+                if _es_nombre_valido(cv_man.get("nombre")):
+                    nom_cv = re.sub(r"[{}\[\]\"'|]", "", str(cv_man["nombre"])).strip()
+                    result["nombre_detectado"] = nom_cv
+                    result["database_updates"]["nombre"] = nom_cv
+                    result["database_updates"]["nombre_confirmado"] = True
+
+            # Human alert
+            ha = et.get("human_alert")
+            if ha:
+                motivo = (ha.get("resumen_interno") if isinstance(ha, dict) else str(ha)) or "Solicitó atención humana"
+                result["motivo_final"] = motivo
+                result["database_updates"] = result.get("database_updates") or {}
+                result["database_updates"]["estado"] = "ESCALADO"
+                result["database_updates"]["escalation_reason"] = motivo
+                result["database_updates"]["escalated_at"] = datetime.now(timezone.utc).isoformat()
+                result["pending_actions"].append({"type": "alert_human", "priority": "high", "reason": motivo})
+                if isinstance(ha, dict) and ha.get("mensaje_visible"):
+                    mensajes_candidato = [str(ha["mensaje_visible"]).strip()]
 
     def _strip_quotes_pipes(s: str) -> str:
         s = re.sub(r'^["\s|]+', "", s)
         s = re.sub(r'["\s|]+$', "", s)
         return s
 
-    vac_match = re.search(r'(?:ACTUALIZAR_VACANTE|"actualizar_vacante"|"vacante_interes")\s*[:|^"]\s*([^"|\n,}]+)', ai_response_str, re.IGNORECASE)
-    if vac_match and vac_match.group(1):
-        val = _strip_quotes_pipes(vac_match.group(1).strip())
-        if val and val.upper() not in ("GENERAL", "NINGUNA"):
-            result["vacante_detectada"] = val.upper()
+    if not result.get("vacante_detectada"):
+        vac_match = re.search(r'(?:ACTUALIZAR_VACANTE|"actualizar_vacante"|"vacante_interes")\s*[:|^"]\s*([^"|\n,}]+)', ai_response_str, re.IGNORECASE)
+        if vac_match and vac_match.group(1):
+            val = _strip_quotes_pipes(vac_match.group(1).strip())
+            if val and val.upper() not in ("GENERAL", "NINGUNA", "PENDIENTE"):
+                result["vacante_detectada"] = val.upper()
+                result["database_updates"] = result.get("database_updates") or {}
+                result["database_updates"]["vacante_interes"] = val.upper()
+                result["database_updates"]["estado"] = "INTERESADO"
 
-    nave_match = re.search(r'(?:ACTUALIZAR_NAVE|"actualizar_nave"|"nave_interes")\s*[:|^"]\s*([^"|\n,}]+)', ai_response_str, re.IGNORECASE)
-    if nave_match and nave_match.group(1):
-        val = _strip_quotes_pipes(nave_match.group(1).strip())
-        if val and val.upper() != "PENDIENTE":
-            result["nave_detectada"] = val.upper()
+    if not result.get("nave_detectada"):
+        nave_match = re.search(r'(?:ACTUALIZAR_NAVE|"actualizar_nave"|"nave_interes")\s*[:|^"]\s*([^"|\n,}]+)', ai_response_str, re.IGNORECASE)
+        if nave_match and nave_match.group(1):
+            val = _strip_quotes_pipes(nave_match.group(1).strip())
+            if val and val.upper() != "PENDIENTE":
+                result["nave_detectada"] = val.upper()
 
-    nom_match = re.search(r'(?:ACTUALIZAR_NOMBRE|"actualizar_nombre")\s*[:|^"]\s*([^"|\n,}]+)', ai_response_str, re.IGNORECASE)
-    if nom_match and nom_match.group(1):
-        val = _strip_quotes_pipes(nom_match.group(1).strip())
-        if val and val not in ("Desconocido", "Candidato"):
-            result["nombre_detectado"] = val
+    if not result.get("nombre_detectado"):
+        nom_match = re.search(r'(?:ACTUALIZAR_NOMBRE|"actualizar_nombre")\s*[:|^"]\s*([^"|\n,}]+)', ai_response_str, re.IGNORECASE)
+        if nom_match and nom_match.group(1):
+            val = _strip_quotes_pipes(nom_match.group(1).strip())
+            val_clean = re.sub(r"[{}\[\]\"'|]", "", val).strip()
+            if _es_nombre_valido(val_clean):
+                result["nombre_detectado"] = val_clean
+                result["database_updates"] = result.get("database_updates") or {}
+                result["database_updates"]["nombre"] = val_clean
+                result["database_updates"]["nombre_confirmado"] = True
 
-    # Resumen desde un JSON de cola truncado (json.loads ya falló arriba, así
-    # que `resumen_generado` viene vacío aunque el modelo sí mandó memoria).
     if not result.get("resumen_generado"):
         mem_match = _MEMORIA_UPDATE_RE.search(ai_response_str)
         if mem_match and mem_match.group(1):
@@ -328,146 +506,58 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
         result["acepto_privacidad"] = True
     if "CITA_CANCELADA" in ai_response_str:
         result["cita_cancelada"] = True
-    if "ENVIAR_UBICACION" in ai_response_str:
-        result["enviar_ubicacion"] = True
+        result["database_updates"] = result.get("database_updates") or {}
+        result["database_updates"]["estado"] = "INTERESADO"
 
-    cita_match = re.search(r"CITA_CONFIRMADA[\s:|]*(.*?)([|\n]|$)", ai_response_str, re.IGNORECASE)
-    if cita_match and cita_match.group(1):
-        crudo = cita_match.group(1).replace("|", "").strip()
-        # El patrón de arriba es IGNORECASE, así que también engancha la CLAVE
-        # JSON `"cita_confirmada": "2026-08-08T09:00:00"}}` y se lleva de paso
-        # las comillas y llaves de alrededor -- en producción eso acabó
-        # guardado tal cual en candidatos.fecha_entrevista. Se extrae solo la
-        # marca de tiempo ISO del fragmento capturado; si no hay ninguna, se
-        # descarta (mejor sin fecha que con basura, y el guard de
-        # evento_creado_ok en agente.py ya cubre ese caso).
-        iso = re.search(r"\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?", crudo)
-        if iso:
-            result["fecha_entrevista_detectada"] = iso.group(0)
+    if not result.get("fecha_entrevista_detectada"):
+        cita_match = re.search(r"CITA_CONFIRMADA[\s:|]*(.*?)([|\n]|$)", ai_response_str, re.IGNORECASE)
+        if cita_match and cita_match.group(1):
+            crudo = cita_match.group(1).replace("|", "").strip()
+            iso = re.search(r"\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?", crudo)
+            if iso:
+                result["fecha_entrevista_detectada"] = iso.group(0)
+                result["cita_creada"] = True
 
-    # HUMAN_ALERT
-    human_alert_parts = re.split(r"HUMAN_ALERT", ai_response_str, flags=re.IGNORECASE)
-    if len(human_alert_parts) > 1:
-        fragmento = re.split(r"MEMORY_UPDATE", human_alert_parts[1], flags=re.IGNORECASE)[0].strip()
-        fragmento = re.sub(r"^\s*\|\s*", "", fragmento).strip()
-        partes_raw = [p.strip() for p in fragmento.split("|")]
-
-        nombre_candidato_fallback = (
-            candidato.get("nombre_chat") or candidato.get("nombre_ine") or candidato.get("nombre_solicitud") or "Candidato"
-        )
-
-        primer_campo = partes_raw[0] if partes_raw else ""
-        primer_campo_parece_resumen = bool(re.search(
-            r"candidato|documento|constancia|rfc|ine|cv|solicit|agend|conflict|no cuenta|no tiene",
-            primer_campo, re.IGNORECASE,
-        ))
-
-        if len(partes_raw) >= 3 and not primer_campo_parece_resumen:
-            nombre = partes_raw[0]
-            resumen = partes_raw[1]
-            mensaje_visible = " | ".join(partes_raw[2:]).strip()
-        elif len(partes_raw) >= 2 and primer_campo_parece_resumen:
-            nombre = nombre_candidato_fallback
-            resumen = partes_raw[0]
-            mensaje_visible = " | ".join(partes_raw[1:]).strip()
-        elif len(partes_raw) >= 2:
-            nombre = partes_raw[0]
-            resumen = partes_raw[1]
-            mensaje_visible = _MENSAJE_HUMANO_DEFAULT
+    # 5. Limpieza de mensajes a usuario
+    if not mensajes_candidato:
+        base_msg = result.get("message_to_user") or ""
+        if isinstance(base_msg, str) and base_msg.strip():
+            if "[SPLIT]" in base_msg.upper():
+                mensajes_candidato = [s.strip() for s in re.split(r"\[SPLIT\]", base_msg, flags=re.IGNORECASE) if s.strip()]
+            else:
+                mensajes_candidato = [base_msg.strip()]
         else:
-            nombre = nombre_candidato_fallback
-            resumen = "El candidato solicitó apoyo de reclutamiento humano."
-            mensaje_visible = _MENSAJE_HUMANO_DEFAULT
+            mensajes_candidato = ["¡Hola! 😊 ¿En qué puedo ayudarte hoy o qué duda tienes sobre nuestras vacantes?"]
+
+    mensajes_limpios: list[str] = []
+    for msg in mensajes_candidato:
+        m = str(msg).strip()
+        m = _JSON_COLA_RE.sub("", m)
+        m = _YAML_COLA_RE.sub("", m)
+        m = _CLEANUP_RE.sub("", m).strip()
+        m = _MENU_FOOTER_RE.sub("", m).strip()
+        if "|" in m:
+            partes = [p.strip() for p in m.split("|") if p.strip()]
+            m = partes[-1] if partes else ""
+        m = re.sub(r"^[|\s]+", "", m).strip()
 
         if (
-            not mensaje_visible
-            or re.match(r"^el candidato", mensaje_visible, re.IGNORECASE)
-            or re.search(r"impidiendo el agendamiento", mensaje_visible, re.IGNORECASE)
-            or re.search(r"solicitó escalamiento", mensaje_visible, re.IGNORECASE)
+            re.match(r"^el candidato", m, re.IGNORECASE)
+            or "impidiendo el agendamiento" in m
+            or "solicitó escalamiento" in m
         ):
-            mensaje_visible = _MENSAJE_HUMANO_DEFAULT
+            m = _MENSAJE_HUMANO_DEFAULT
 
-        result["human_alert_nombre"] = nombre.strip()
-        result["human_alert_resumen"] = resumen.strip()
-        result["message_to_user"] = mensaje_visible.strip()
+        if m:
+            mensajes_limpios.append(m)
 
-    # CV_MANUAL
-    cv_manual_match = re.search(r"CV_MANUAL[\s:|]*(\{[\s\S]*?\})", ai_response_str, re.IGNORECASE)
-    if cv_manual_match and cv_manual_match.group(1):
-        try:
-            json_limpio = cv_manual_match.group(1)
-            json_limpio = re.sub(r"```json", "", json_limpio, flags=re.IGNORECASE)
-            json_limpio = re.sub(r"```", "", json_limpio)
-            json_limpio = re.sub(r"[\n\r\t]", " ", json_limpio).strip()
-            cv_data = json.loads(json_limpio)
-            result["experiencia_manual"] = cv_data.get("experiencia")
-            result["vacante_manual"] = cv_data.get("vacante")
-            result["datos_cv_manual"] = cv_data
-            result["es_cv_manual"] = True
-            if cv_data.get("nombre") and cv_data["nombre"] != "Desconocido":
-                result["nombre_detectado"] = cv_data["nombre"]
-        except (json.JSONDecodeError, AttributeError):
-            result["datos_cv_manual"] = {"error": "La IA formateó mal el JSON", "experiencia": "Candidato llenó solicitud manual por chat."}
-            result["es_cv_manual"] = True
+    if result.get("database_updates", {}).get("estado") == "OTRA_CIUDAD":
+        mensajes_limpios = [_DESCALIFICACION_CIUDAD_MSG]
 
-    # EXPERIENCIA_ACTIVIDADES -- lo que contestó cuando Sofia le leyó las
-    # actividades del puesto. Se acepta la etiqueta de texto plano y la clave
-    # del JSON de etiquetas internas, igual que el resto de marcadores.
-    exp_match = re.search(
-        r'(?:EXPERIENCIA_ACTIVIDADES\s*\|\s*|"experiencia_actividades"\s*:\s*")([^"|\n]+)',
-        ai_response_str,
-        re.IGNORECASE,
-    )
-    if exp_match and exp_match.group(1):
-        experiencia_act = _strip_quotes_pipes(exp_match.group(1).strip())
-        if experiencia_act:
-            result["experiencia_actividades"] = experiencia_act
+    if not mensajes_limpios:
+        mensajes_limpios = ["¡Hola! 😊 ¿En qué puedo ayudarte hoy o qué duda tienes sobre nuestras vacantes?"]
 
-    # RESPUESTAS_FILTRO
-    filtro_match = re.search(r"RESPUESTAS_FILTRO[\s:|]*([\s\S]*?)(?=\n[A-Z_]+\s*\||$)", ai_response_str, re.IGNORECASE)
-    if filtro_match and filtro_match.group(1):
-        result["respuestas_filtro_detectadas"] = filtro_match.group(1).replace("|", "").strip()
-
-    # 5. LIMPIEZA VISUAL PROFUNDA
-    if result.get("message_to_user") and isinstance(result["message_to_user"], str):
-        json_key_idx = result["message_to_user"].find('"mensaje_al_usuario"')
-        if json_key_idx != -1:
-            start_b = result["message_to_user"].rfind("{", 0, json_key_idx)
-            if start_b != -1:
-                result["message_to_user"] = result["message_to_user"][:start_b]
-
-        result["message_to_user"] = _JSON_COLA_RE.sub("", result["message_to_user"])
-
-        result["message_to_user"] = _CLEANUP_RE.sub("", result["message_to_user"]).strip()
-
-        if result.get("fecha_entrevista_detectada"):
-            result["message_to_user"] = result["message_to_user"].replace(result["fecha_entrevista_detectada"], "").replace("|", "").strip()
-
-        msg = result["message_to_user"]
-        if (
-            re.match(r"^el candidato", msg, re.IGNORECASE)
-            or "impidiendo el agendamiento" in msg
-            or "Solicitó escalamiento" in msg
-            or "solicitó escalamiento" in msg
-        ):
-            result["message_to_user"] = _MENSAJE_HUMANO_DEFAULT
-
-        if "|" in result["message_to_user"]:
-            partes = [p.strip() for p in result["message_to_user"].split("|") if p.strip()]
-            result["message_to_user"] = partes[-1] if partes else _MENSAJE_HUMANO_DEFAULT
-
-        result["message_to_user"] = re.sub(r"^[|\s]+", "", result["message_to_user"]).strip()
-
-    if not result.get("message_to_user") or not isinstance(result["message_to_user"], str) or result["message_to_user"].strip() == "":
-        result["message_to_user"] = "¡Hola! 😊 ¿En qué puedo ayudarte hoy o qué duda tienes sobre nuestras vacantes?"
-
-    # 6. SPLIT DE MENSAJES Y MENÚ CADA 3 MENSAJES
-    if "[SPLIT]" in result["message_to_user"].upper():
-        mensajes = [m.strip() for m in re.split(r"\[SPLIT\]", result["message_to_user"], flags=re.IGNORECASE) if m.strip() != ""]
-    else:
-        mensajes = [result["message_to_user"]]
-
-    output = [{**result, "message_to_user": msg} for msg in mensajes]
+    output = [{**result, "message_to_user": msg} for msg in mensajes_limpios]
 
     mensajes_enviados = candidato.get("mensajes_bot_enviados") or 0
     if mensajes_enviados % 3 == 0 and output:
