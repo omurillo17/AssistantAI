@@ -41,8 +41,6 @@ export async function POST(request: Request) {
       es_cv,
       mensaje_ia,
       mensaje_candidato,
-      message_type,
-      media_url,
       lugar_residencia,
       nombre_confirmado,
     } = data;
@@ -307,17 +305,14 @@ export async function POST(request: Request) {
     // helper es idempotente, solo asigna si `asignado_a_id` sigue en NULL.
     await asignarReclutadorPorVacante(candidatoId, finalVacante, nave, empresaId);
 
-    // 5. Insertar historial de mensajes
-    // Mensaje del usuario
-    await pool.query(`INSERT INTO conversation_history (telefono, role, content, message_type, media_url) VALUES ($1, 'user', $2, $3, $4)`,
-      [telefono, mensaje_candidato, message_type, media_url]
-    );
-    // Respuesta IA
-    if (mensaje_ia) {
-      await pool.query(`INSERT INTO conversation_history (telefono, role, content, message_type) VALUES ($1, 'assistant', $2, 'text')`,
-        [telefono, mensaje_ia]
-      );
-    }
+    // 5. El historial de mensajes (conversation_history) ya NO se inserta
+    // aquí: el backend de Python (agente.py) lo guarda directo apenas pasa
+    // cada evento real (mensaje del usuario al llegar, cada respuesta del
+    // bot justo cuando se manda por WAHA). Insertarlo aquí -- al final de
+    // todo el pipeline -- causaba que el orden en la plataforma no
+    // coincidiera con el de WhatsApp cuando un turno tardaba más que el
+    // siguiente, y además solo se guardaba el primer mensaje de una
+    // respuesta partida ([SPLIT]).
 
     // 6. Actualizar bandeja compartida (mensajes_bandeja)
     // La vista previa del chat debe reflejar el ÚLTIMO mensaje real del turno:

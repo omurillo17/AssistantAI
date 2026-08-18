@@ -620,8 +620,10 @@ async def cargar_prompt(webhook_payload: dict, contacto: dict, candidato: dict) 
         nombre_real = nombre_candidato
 
     semaforo_ine = "PENDIENTE"
-    if dbData.get("nombre_confirmado") is True or dbData.get("estado") == "INE_VALIDADA" or dbData.get("cv_manual"):
+    if dbData.get("estado") == "INE_VALIDADA" or dbData.get("curp_ine") or dbData.get("datos_ine"):
         semaforo_ine = "VERIFICADO"
+
+    semaforo_privacidad = "ACEPTADA" if dbData.get("privacidad_aceptada") else "PENDIENTE"
 
     replacements = {
         "NOMBRE_WHATSAPP": ((webhook_payload.get("_data") or {}).get("notifyName")) or "Usuario",
@@ -633,6 +635,7 @@ async def cargar_prompt(webhook_payload: dict, contacto: dict, candidato: dict) 
         "FECHA_HORA_ACTUAL": fecha_actual,
         "FECHA_MANANA": fecha_manana,
         "ANIO_ACTUAL": str(anio_actual),
+        "STATUS_PRIVACIDAD": semaforo_privacidad,
         "STATUS_INE": semaforo_ine,
         "NOMBRE_REGISTRADO": nombre_real,
         "LUGAR_RESIDENCIA": dbData.get("lugar_residencia") or "Pendiente",

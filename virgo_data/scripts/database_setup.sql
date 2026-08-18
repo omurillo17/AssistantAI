@@ -708,6 +708,43 @@ ALTER TABLE vacantes_def ADD COLUMN IF NOT EXISTS funciones TEXT DEFAULT '';
 -- Sinonimos con los que el candidato puede referirse a la vacante.
 ALTER TABLE vacantes_def ADD COLUMN IF NOT EXISTS palabras_clave TEXT DEFAULT '';
 
+-- Notificaciones en tiempo real (LISTEN/NOTIFY) para el modulo de Mensajes del
+-- frontend: reemplaza el polling de 4s por un push cuando de verdad se
+-- inserta un mensaje o cambia la bandeja, sin importar que servicio escribio
+-- (Python via asyncpg o Next.js via pg) -- el trigger vive en la BD, no en
+-- el codigo de cada servicio, para no depender de acordarse de notificar en
+-- cada punto de insercion.
+CREATE OR REPLACE FUNCTION notify_conversation_history_insert() RETURNS trigger AS $$
+BEGIN
+    PERFORM pg_notify('conversation_history_insert', json_build_object(
+        'telefono', NEW.telefono,
+        'role', NEW.role,
+        'id', NEW.id
+    )::text);
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_conversation_history_notify ON conversation_history;
+CREATE TRIGGER trg_conversation_history_notify
+    AFTER INSERT ON conversation_history
+    FOR EACH ROW EXECUTE FUNCTION notify_conversation_history_insert();
+
+CREATE OR REPLACE FUNCTION notify_mensajes_bandeja_change() RETURNS trigger AS $$
+BEGIN
+    PERFORM pg_notify('mensajes_bandeja_change', json_build_object(
+        'telefono', NEW.telefono,
+        'candidato_id', NEW.candidato_id
+    )::text);
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_mensajes_bandeja_notify ON mensajes_bandeja;
+CREATE TRIGGER trg_mensajes_bandeja_notify
+    AFTER INSERT OR UPDATE ON mensajes_bandeja
+    FOR EACH ROW EXECUTE FUNCTION notify_mensajes_bandeja_change();
+
 -- ============================================
 DO $$
 BEGIN

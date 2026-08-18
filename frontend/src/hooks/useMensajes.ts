@@ -198,14 +198,45 @@ export function useMensajes() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadChat, loadConversaciones, loadReclutadores, loadCatalogos]);
 
-  // ─── Polling ────────────────────────────────────────────
+  // ─── Tiempo real (SSE) ──────────────────────────────────
+  // Reemplaza el polling de 4s: el backend empuja un evento apenas se
+  // inserta un mensaje o cambia la bandeja (ver /api/db/mensajes/stream).
+  // El orden ya no depende de "cuándo lo vio el polling" sino de que cada
+  // fila en conversation_history trae su timestamp real (fix en agente.py).
+  const conversacionesRefreshRef = useRef<NodeJS.Timeout | null>(null);
+  const refrescarConversaciones = useCallback(() => {
+    if (conversacionesRefreshRef.current) clearTimeout(conversacionesRefreshRef.current);
+    // Se agrupan ráfagas de eventos (p.ej. una respuesta partida en varios
+    // mensajes) en un solo refetch de la lista en vez de uno por evento.
+    conversacionesRefreshRef.current = setTimeout(() => loadConversaciones(false), 600);
+  }, [loadConversaciones]);
+
+  useEffect(() => {
+    const es = new EventSource("/api/db/mensajes/stream");
+    es.onmessage = (ev) => {
+      try {
+        const data = JSON.parse(ev.data);
+        const phone = activePhoneRef.current;
+        if (data?.telefono && phone && data.telefono === phone) {
+          loadChat(phone, false);
+        }
+        refrescarConversaciones();
+      } catch {
+        // evento no parseable, se ignora
+      }
+    };
+    return () => es.close();
+  }, [loadChat, refrescarConversaciones]);
+
+  // Red de seguridad por si el SSE se cae en silencio (proxy, reinicio del
+  // servidor, etc.) -- mucho más espaciado que el polling anterior.
   useEffect(() => {
     if (pollingRef.current) clearInterval(pollingRef.current);
     pollingRef.current = setInterval(() => {
       const phone = activePhoneRef.current;
       if (phone) loadChat(phone, false);
       loadConversaciones(false);
-    }, 4000);
+    }, 30000);
     return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
   }, [loadChat, loadConversaciones]);
 

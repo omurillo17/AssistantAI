@@ -386,6 +386,11 @@ async def analizador_y_chat(body: dict, contacto: dict, candidato: dict) -> None
     igual que hacía el 'Ejecutar Subflujo' -> 'Ejecutar Subflujo'
     original, pero como llamadas directas en el mismo proceso."""
     payload = body["payload"]
+    numero = contacto.get("number")
+
+    # Releer el candidato fresco de BD tras el debounce (evita usar datos obsoletos si hubo mensajes previos recientes)
+    if numero:
+        candidato = await _obtener_candidato(numero) or candidato
 
     if candidato and candidato.get("estado") in ("OTRA_CIUDAD", "RECHAZADO", "INACTIVO"):
         logger.info("Candidato telefono=%s está en estado %s -- se omite procesamiento para ahorrar tokens", contacto.get("number"), candidato.get("estado"))

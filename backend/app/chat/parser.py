@@ -392,8 +392,10 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
                     result["database_updates"]["resumen_ia"] = f"Descalificado automáticamente: Radica en otra ciudad ({l_str})"
 
             # Privacidad
-            if et.get("privacidad_aceptada") is True:
+            priv_val = et.get("privacidad_aceptada")
+            if priv_val is True or str(priv_val).strip().lower() in ("true", "1", "si", "sí", "aceptada"):
                 result["acepto_privacidad"] = True
+                result["database_updates"]["privacidad_aceptada"] = True
 
             # Cita confirmada
             cita_val = et.get("cita_confirmada")
@@ -474,6 +476,17 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
                 result["nombre_detectado"] = val_clean
                 result["database_updates"]["nombre"] = val_clean
                 result["database_updates"]["nombre_confirmado"] = True
+        else:
+            # Rescate desde saludo en mensaje de IA (ej. "¡Gracias, Leonardo Javier Orozco Gomez!")
+            for texto_saludo in (mensajes_candidato or [ai_response_str]):
+                saludo_match = re.search(r'[¡!]?(?:Gracias|Hola|Mucho gusto|Perfecto|Excelente),?\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,4})[!\s,\.]', str(texto_saludo))
+                if saludo_match and saludo_match.group(1):
+                    nom_saludo = saludo_match.group(1).strip()
+                    if _es_nombre_valido(nom_saludo) and nom_saludo.upper() not in ("CANDIDATO", "USUARIO", "EQUIPO"):
+                        result["nombre_detectado"] = nom_saludo
+                        result["database_updates"]["nombre"] = nom_saludo
+                        result["database_updates"]["nombre_confirmado"] = True
+                        break
 
     if not result.get("resumen_generado"):
         mem_match = _MEMORIA_UPDATE_RE.search(ai_response_str)
@@ -488,6 +501,14 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
 
     if "PRIVACIDAD_ACEPTADA" in ai_response_str:
         result["acepto_privacidad"] = True
+        result["database_updates"]["privacidad_aceptada"] = True
+    elif not result.get("acepto_privacidad"):
+        for m in (mensajes_candidato or []):
+            m_lower = str(m).lower()
+            if "aviso de privacidad" in m_lower and ("gracias por aceptar" in m_lower or "aceptar el aviso" in m_lower or "aceptaste el aviso" in m_lower):
+                result["acepto_privacidad"] = True
+                result["database_updates"]["privacidad_aceptada"] = True
+                break
     if "CITA_CANCELADA" in ai_response_str:
         result["cita_cancelada"] = True
         result["database_updates"]["estado"] = "INTERESADO"
@@ -539,6 +560,27 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
 
     if not mensajes_limpios:
         mensajes_limpios = ["¡Hola! 😊 ¿En qué puedo ayudarte hoy o qué duda tienes sobre nuestras vacantes?"]
+
+    # Rescate adicional de nombre si aún no se detectó
+    if not result.get("nombre_detectado"):
+        for texto_saludo in mensajes_limpios:
+            saludo_match = re.search(r'[¡!]?(?:Gracias|Hola|Mucho gusto|Perfecto|Excelente),?\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,4})[!\s,\.]', str(texto_saludo))
+            if saludo_match and saludo_match.group(1):
+                nom_saludo = saludo_match.group(1).strip()
+                if _es_nombre_valido(nom_saludo) and nom_saludo.upper() not in ("CANDIDATO", "USUARIO", "EQUIPO"):
+                    result["nombre_detectado"] = nom_saludo
+                    result["database_updates"]["nombre"] = nom_saludo
+                    result["database_updates"]["nombre_confirmado"] = True
+                    break
+
+    # Rescate adicional de aceptación de privacidad
+    if not result.get("acepto_privacidad"):
+        for m in mensajes_limpios:
+            m_lower = str(m).lower()
+            if "aviso de privacidad" in m_lower and ("gracias por aceptar" in m_lower or "aceptar el aviso" in m_lower or "aceptaste el aviso" in m_lower or "aceptar el aviso de privacidad" in m_lower):
+                result["acepto_privacidad"] = True
+                result["database_updates"]["privacidad_aceptada"] = True
+                break
 
     output = [{**result, "message_to_user": msg} for msg in mensajes_limpios]
 
