@@ -29,6 +29,27 @@ _DEBOUNCE_SECONDS = 8.0
 _debounce_deadlines: dict[str, float] = {}
 _debounce_lock = asyncio.Lock()
 
+# Un turno en vuelo por candidato. El debounce de arriba solo agrupa lo que
+# llega MIENTRAS SE ESPERA: en cuanto empieza `tarea()` se borra el deadline,
+# así que un mensaje que entra durante el turno arranca un ciclo nuevo y su
+# `tarea()` corría EN PARALELO con la anterior.
+#
+# Eso rompía la conversación, porque un turno lee el historial al empezar
+# (memoria.cargar_historial) y no lo escribe hasta el final
+# (memoria.guardar_turno, después de mandar por WAHA). Entre esos dos momentos
+# hay Gemini más el regulador de ritmo, que por diseño espera
+# WAHA_SEGUNDOS_ENTRE_MENSAJES (~8-15 s) por mensaje: una ventana enorme. El
+# segundo turno cargaba un historial sin lo que el bot acababa de contestar y
+# el modelo, al no verlo, lo repetía.
+#
+# Visto en producción: el candidato respondió "Si" al aviso de privacidad y
+# Sofía le mandó el aviso otra vez, palabra por palabra.
+_turno_locks: dict[str, asyncio.Lock] = {}
+# Cuántas tareas tienen o esperan el lock de cada teléfono. Sin esto el
+# diccionario crece para siempre; y borrar la entrada sin contar dejaría al que
+# espera con un lock huérfano, sin exclusión frente a los turnos siguientes.
+_turno_en_espera: dict[str, int] = {}
+
 
 async def _procesar_con_debounce(telefono: str, tarea, al_primero=None) -> None:
     async with _debounce_lock:
@@ -57,7 +78,27 @@ async def _procesar_con_debounce(telefono: str, tarea, al_primero=None) -> None:
     async with _debounce_lock:
         _debounce_deadlines.pop(telefono, None)
 
-    await tarea()
+    lock = _turno_locks.get(telefono)
+    if lock is None:
+        lock = asyncio.Lock()
+        _turno_locks[telefono] = lock
+    _turno_en_espera[telefono] = _turno_en_espera.get(telefono, 0) + 1
+
+    if lock.locked():
+        logger.info(
+            "_procesar_con_debounce: ya hay un turno en curso para telefono=%s; se espera a que termine",
+            telefono,
+        )
+    try:
+        async with lock:
+            await tarea()
+    finally:
+        restantes = _turno_en_espera.get(telefono, 1) - 1
+        if restantes <= 0:
+            _turno_en_espera.pop(telefono, None)
+            _turno_locks.pop(telefono, None)
+        else:
+            _turno_en_espera[telefono] = restantes
 
 _MENSAJE_3_FALTAS = (
     "Hola. 🚨 Hemos notado en nuestros registros que no te has presentado a tus últimas 3 entrevistas "
@@ -209,12 +250,61 @@ def _fix_lid(get_info_result: dict, payload: dict | None = None) -> dict:
     return result
 
 
+def _debe_guardar_lid(lid: str | None, telefono: str | None) -> bool:
+    """Si el par LID -> teléfono vale la pena persistir.
+
+    Se descarta el caso `lid == telefono`, que es como queda `number` cuando la
+    resolución falló y se usó el LID como identificador provisional: guardarlo
+    haría creer que ese LID ya está resuelto y bloquearía el intento real.
+    """
+    if not lid or not telefono:
+        return False
+    if lid == telefono:
+        return False
+    # Mismo criterio que usa _resolver_contacto para decidir si `number` sigue
+    # siendo un LID: un móvil mexicano llega a 13 dígitos (521 + 10), un LID pasa
+    # de ahí.
+    return len(str(telefono)) <= 13
+
+
+async def _leer_lid_guardado(lid: str) -> str | None:
+    """Teléfono ya conocido para ese LID, o None."""
+    pool = get_pool()
+    return await pool.fetchval("SELECT telefono FROM lid_telefono WHERE lid = $1", lid)
+
+
+async def _guardar_lid(lid: str | None, telefono: str | None) -> None:
+    """Persiste el par LID -> teléfono para no depender de WAHA la próxima vez.
+
+    WAHA olvida los LID viejos: de 33 sesiones huérfanas encontradas el
+    19/08/2026, 17 ya no aparecían en su lista de chats y su mapeo se perdió.
+    """
+    if not _debe_guardar_lid(lid, telefono):
+        return
+    pool = get_pool()
+    await pool.execute(
+        "INSERT INTO lid_telefono (lid, telefono) VALUES ($1, $2) "
+        "ON CONFLICT (lid) DO UPDATE SET telefono = EXCLUDED.telefono, updated_at = NOW()",
+        lid,
+        telefono,
+    )
+
+
 async def _resolver_contacto(session: str, remitente_raw: str, payload: dict) -> dict:
     get_info = await waha_client.get_contact(session, remitente_raw)
     contacto = _fix_lid(get_info, payload)
 
     lid_val = contacto.get("lid")
     number = contacto.get("number") or ""
+
+    if lid_val and (number == lid_val or len(number) > 13 or not number.startswith("52")):
+        # Primero lo que ya sabemos: evita traer los ~4000 chats de WAHA (1.5 MB)
+        # en cada mensaje que llega por LID, y sigue funcionando aunque WAHA esté
+        # reiniciándose o ya haya olvidado ese LID.
+        guardado = await _leer_lid_guardado(lid_val)
+        if guardado:
+            contacto["number"] = guardado
+            return contacto
 
     # Si 'number' sigue siendo un LID largo y no un teléfono normal, consultar chats de WAHA
     if lid_val and (number == lid_val or len(number) > 13 or not number.startswith("52")):
@@ -234,6 +324,7 @@ async def _resolver_contacto(session: str, remitente_raw: str, payload: dict) ->
         except Exception:
             logger.debug("_resolver_contacto: no se pudo resolver LID %s vía chats", lid_val)
 
+    await _guardar_lid(lid_val, contacto.get("number"))
     return contacto
 
 
@@ -371,7 +462,16 @@ async def procesar_webhook(body: dict) -> None:
 
     async def _tarea():
         try:
-            await analizador_y_chat(body, contacto, candidato)
+            # Se relee el expediente AQUÍ, no el de arriba: entre aquel SELECT y
+            # este punto pasaron el debounce y, si el candidato ya tenía un
+            # turno en curso, la espera del lock. El turno anterior pudo dejar
+            # el expediente en otro estado (privacidad aceptada, CV recibido,
+            # cita creada), y con la copia vieja cargar_prompt() arma el
+            # system prompt con datos caducos: el modelo vuelve a pedir lo que
+            # el candidato acaba de dar. Visto en producción con el aviso de
+            # privacidad mandado dos veces.
+            candidato_fresco = await _obtener_candidato(number) or candidato
+            await analizador_y_chat(body, contacto, candidato_fresco)
         except Exception:
             logger.exception("procesar_webhook: fallo en analizador_y_chat para telefono=%s", number)
 

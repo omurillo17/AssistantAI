@@ -549,6 +549,27 @@ CREATE TABLE IF NOT EXISTS processed_webhooks (
 );
 
 -- ============================================
+-- TABLA: lid_telefono
+-- Mapeo del LID de WhatsApp al telefono real
+-- ============================================
+-- WhatsApp entrega el remitente a veces como LID (identificador opaco) en vez
+-- del numero. La resolucion se hacia solo contra WAHA, que OLVIDA los LID
+-- viejos: de 33 sesiones huerfanas encontradas el 19/08/2026, 17 ya no existian
+-- en WAHA y su mapeo se perdio para siempre. Aqui queda persistido.
+--
+-- La PK es el lid y no el telefono: WhatsApp rota los LID, asi que un mismo
+-- candidato puede acumular varios a lo largo del tiempo.
+
+CREATE TABLE IF NOT EXISTS lid_telefono (
+    lid VARCHAR(50) PRIMARY KEY,
+    telefono VARCHAR(20) NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_lid_telefono_telefono ON lid_telefono(telefono);
+
+-- ============================================
 -- VISTAS
 -- ============================================
 

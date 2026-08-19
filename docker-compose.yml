@@ -57,6 +57,17 @@ services:
       - ./virgo_data:/app/virgo_files
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    # python:3.12-slim no trae curl ni wget; urllib evita instalar nada extra.
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=5).status == 200 else 1)\"",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     depends_on:
       postgres:
         condition: service_healthy
@@ -138,11 +149,24 @@ services:
       - ./virgo_data:/app/virgo_data
       - ./virgo_data:/app/virgo_files
       - ./virgo_data/uploads:/app/public/uploads
+    # /api/health toca Postgres: si la base se cae, el contenedor pasa a
+    # unhealthy en vez de seguir sirviendo páginas rotas en silencio.
+    # wget viene en busybox (node:24-alpine), no hace falta instalar nada.
+    # 127.0.0.1 y no "localhost": /etc/hosts del contenedor resuelve localhost
+    # también a ::1, el wget de busybox intenta esa primero y next-server solo
+    # escucha en IPv4 (0.0.0.0:3001), así que el chequeo fallaba siempre con
+    # "Connection refused" y el contenedor quedaba unhealthy aun sirviendo bien.
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -q --spider http://127.0.0.1:3001/api/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
     depends_on:
       postgres:
         condition: service_healthy
       backend:
-        condition: service_started
+        condition: service_healthy
 
   cloudflared:
     image: cloudflare/cloudflared:latest

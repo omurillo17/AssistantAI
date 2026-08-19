@@ -115,6 +115,30 @@ def test_una_vacante_real_si_se_registra():
     assert items[0]["vacante_detectada"] == "CHECADOR DE ALMACÉN"
 
 
+def test_rescate_vacante_desde_memoria_update():
+    respuesta = (
+        '{"mensajes_al_usuario": ["Para continuar, ¿me compartes tu nombre?"], '
+        '"memoria_update": "Nombre: Candidato. Vacante: OPERADOR DE ALMACEN. Etapa: Nombre.", '
+        '"etiquetas_internas": {}}'
+    )
+    items = parser.procesar_respuesta_ia(respuesta, CANDIDATO)
+
+    assert items[0]["vacante_detectada"] == "OPERADOR DE ALMACEN"
+    assert items[0]["database_updates"]["vacante_interes"] == "OPERADOR DE ALMACEN"
+
+
+def test_rescate_vacante_desde_frase_conversacional_ia():
+    respuesta = (
+        '{"mensajes_al_usuario": ["¡Excelente opción! Para continuar con tu postulación a Operador de Almacén, ¿me podrías compartir tu nombre completo? ✨"], '
+        '"memoria_update": "Etapa: nombre", '
+        '"etiquetas_internas": {}}'
+    )
+    items = parser.procesar_respuesta_ia(respuesta, CANDIDATO)
+
+    assert items[0]["vacante_detectada"] == "OPERADOR DE ALMACÉN"
+    assert items[0]["database_updates"]["vacante_interes"] == "OPERADOR DE ALMACÉN"
+
+
 # --- [SPLIT] ----------------------------------------------------------------
 
 def test_split_produce_un_item_por_mensaje():
@@ -165,3 +189,50 @@ def test_pie_de_menu_se_elimina_en_turnos_intermedios_si_ia_lo_escribe():
 
     assert len(items) == 1
     assert "volver al menú principal" not in items[0]["message_to_user"]
+
+
+# --- Bucle de la ciudad (residencia sin etiquetar) --------------------------
+# El modelo redactaba "¡Zapopan está dentro de nuestra cobertura!" pero omitía
+# `etiquetas_internas.lugar_residencia`. El campo quedaba vacío, la regla
+# Diamante de residencia volvía a pedir la ciudad y la conversación entraba en
+# bucle (producción, 13/08/2026 en adelante).
+
+
+def test_detecta_municipio_zmg_en_respuesta_suelta():
+    assert parser.detectar_municipio_zmg("Zapopan") == "ZAPOPAN"
+    assert parser.detectar_municipio_zmg("zapopan") == "ZAPOPAN"
+
+
+def test_detecta_municipio_zmg_dentro_de_una_frase():
+    assert parser.detectar_municipio_zmg("vivo en Tonalá desde hace años") == "TONALA"
+    assert parser.detectar_municipio_zmg("Soy de El Salto") == "EL SALTO"
+
+
+def test_detecta_municipio_zmg_ignora_acentos_y_mayusculas():
+    assert parser.detectar_municipio_zmg("ixtlahuacán") == "IXTLAHUACAN"
+
+
+def test_no_detecta_municipio_fuera_de_la_zona():
+    assert parser.detectar_municipio_zmg("Villahermosa, Tabasco") is None
+    assert parser.detectar_municipio_zmg("Monterrey") is None
+
+
+def test_no_detecta_municipio_cuando_no_hay_ciudad():
+    assert parser.detectar_municipio_zmg("hola, me interesa el trabajo") is None
+    assert parser.detectar_municipio_zmg("") is None
+    assert parser.detectar_municipio_zmg(None) is None
+
+
+def test_no_confunde_municipio_incrustado_en_otra_palabra():
+    """El match es por palabra completa: 'TONALA' no debe salir de 'TONALADA'."""
+    assert parser.detectar_municipio_zmg("trabajé cargando una tonalada") is None
+
+
+def test_la_etiqueta_del_modelo_sigue_teniendo_prioridad():
+    """Cuando el modelo SÍ etiqueta, el parser la respeta tal cual."""
+    respuesta = (
+        '{"mensaje_al_usuario": "¡Excelente!", '
+        '"etiquetas_internas": {"lugar_residencia": "Tlaquepaque"}}'
+    )
+    items = parser.procesar_respuesta_ia(respuesta, CANDIDATO)
+    assert items[0]["database_updates"]["lugar_residencia"] == "Tlaquepaque"

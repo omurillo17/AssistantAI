@@ -3,26 +3,64 @@
  */
 
 /**
- * Cleans string input by removing invisible unicode characters
- * (variation selectors, zero-width spaces, etc.) and fallback text.
+ * Placeholders que el pipeline escribe cuando no logra sacar un nombre real.
+ * Se comparan en minúsculas y ya sin la puntuación envolvente, porque en la BD
+ * aparecen envueltos en llaves ("{Desconocido}", "{{{Desconocido}}}") por un
+ * serializador que arrastró las llaves de la plantilla.
+ */
+const PLACEHOLDERS = new Set([
+  "candidato",
+  "no registrado",
+  "desconocido",
+  "sin nombre",
+  "usuario",
+]);
+
+/**
+ * Deja el pushname de WhatsApp en algo presentable, o cadena vacía si no queda
+ * nada que parezca el nombre de una persona.
+ *
+ * El pushname lo escribe el propio candidato y llega tal cual: con emojis
+ * ("Michelle Torres🍒"), en unicode decorativo ("𝓒𝓐𝓡𝓣𝓔𝓡"), como handle de red
+ * social ("cervantezgerardo91") o como placeholder del pipeline. Aquí se limpia
+ * lo decorativo y se rechaza lo que no es un nombre; quien decide el reemplazo
+ * es getCandidateDisplayName(), que cae al siguiente campo o al teléfono.
+ *
+ * Se usa \p{L} (cualquier alfabeto) en vez de A-Za-z a propósito: hay
+ * candidatos registrados en árabe y descartarlos sería tratar su nombre real
+ * como basura.
  */
 export function cleanName(str?: string | null): string {
   if (!str) return "";
-  
-  // Remove invisible unicode characters like \uFE0F, \u200B-\u200D, \uFEFF
-  const cleaned = str.replace(/[\uFE0F\u200B-\u200D\u200E\u200F\uFEFF]/g, "").trim();
-  
-  // Filter out default placeholder strings or phone numbers
-  if (
-    !cleaned ||
-    cleaned === "Candidato" ||
-    cleaned === "No registrado" ||
-    cleaned === "Desconocido" ||
-    /^\+?\d+$/.test(cleaned)
-  ) {
-    return "";
-  }
-  
+
+  // NFKC convierte las variantes tipográficas que WhatsApp deja pasar en sus
+  // letras normales: "𝓒𝓐𝓡𝓣𝓔𝓡 𝓢𝓛𝓞𝓣𝓣" -> "CARTER SLOTT".
+  let cleaned = str.normalize("NFKC");
+
+  // Emojis, banderas, pictogramas y los invisibles que los acompañan.
+  cleaned = cleaned
+    .replace(/[\p{Extended_Pictographic}\p{Regional_Indicator}\p{Emoji_Modifier}]/gu, "")
+    .replace(/[\uFE0F\uFE0E\u200B-\u200D\u200E\u200F\uFEFF]/g, "");
+
+  // Puntuación envolvente y espacios repetidos que deja la limpieza anterior.
+  cleaned = cleaned
+    .replace(/^[\s{}[\]()<>"'`~*_.,;:!¡¿?@#/\\|-]+/, "")
+    .replace(/[\s{}[\]()<>"'`~*_,;:!¡¿?@#/\\|-]+$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned) return "";
+  if (PLACEHOLDERS.has(cleaned.toLowerCase())) return "";
+
+  // Un dígito delata un handle ("joelharo01", "Rdgoluv16") o un teléfono
+  // guardado como nombre; los nombres de persona no llevan números.
+  if (/\d/u.test(cleaned)) return "";
+
+  // Con una sola letra no hay nombre que mostrar: son restos de un pushname
+  // que era puro emoji.
+  const letras = cleaned.match(/\p{L}/gu);
+  if (!letras || letras.length < 2) return "";
+
   return cleaned;
 }
 

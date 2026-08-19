@@ -615,6 +615,43 @@ async def _almacenar_mensajes(contacto: dict, candidato: dict, item: dict, junta
 
 # --- Orquestador principal ---------------------------------------------------
 
+def _session_id_memoria(numero: str | None, chat_id: str) -> str:
+    """Clave estable de la memoria del candidato.
+
+    Se prefiere `{numero}@c.us` para que los turnos que llegan por LID caigan en
+    la misma sesión que los que llegan por número. Si el número no se pudo
+    resolver, se cae a `chat_id` para no perder el turno.
+    """
+    digitos = "".join(filter(str.isdigit, str(numero or "")))
+    if digitos:
+        return f"{digitos}@c.us"
+    return chat_id
+
+
+def _rescatar_residencia(candidato: dict, items: list[dict], mensaje_usuario: str) -> str | None:
+    """Municipio a guardar cuando el modelo no etiquetó la residencia, o None.
+
+    `etiquetas_internas.lugar_residencia` es opcional en el prompt y el modelo
+    la omite casi siempre: redacta "¡Zapopan está dentro de nuestra cobertura!"
+    sin emitirla. El campo se queda vacío, la regla Diamante de residencia ve
+    LUGAR_RESIDENCIA="Pendiente" y vuelve a pedir la ciudad; al turno siguiente
+    pasa lo mismo y la conversación entra en bucle sin salida posible (visto en
+    producción desde el 13/08/2026).
+
+    Solo actúa cuando no hay nada guardado y el modelo tampoco etiquetó nada, así
+    que nunca pisa un dato bueno ni contradice al modelo.
+    """
+    if (candidato.get("lugar_residencia") or "").strip():
+        return None
+    ya_etiquetado = any(
+        (item.get("database_updates", {}).get("lugar_residencia") or "").strip()
+        for item in items
+    )
+    if ya_etiquetado:
+        return None
+    return parser.detectar_municipio_zmg(mensaje_usuario)
+
+
 async def procesar_turno(webhook_body: dict, contacto: dict, candidato: dict, system_prompt_base: str, agenda: dict, mensaje_override: str | None) -> None:
     payload = webhook_body["payload"]
     session = webhook_body.get("session") or "default"
@@ -638,7 +675,21 @@ async def procesar_turno(webhook_body: dict, contacto: dict, candidato: dict, sy
 
     mensaje_para_ia = mensaje_override or juntado["mensaje_completo"] or "[Mensaje sin texto]"
 
-    session_id = chat_id
+    # La memoria se indexa por el TELÉFONO resuelto, nunca por `chat_id`.
+    #
+    # WhatsApp entrega el remitente a veces como LID ("151226570248433@lid") en
+    # vez del número, y `chat_id` conserva ese remitente crudo porque es la
+    # dirección a la que hay que responder. Pero `number` sí queda resuelto al
+    # teléfono real, y es lo que usan `conversation_history` y `candidatos`.
+    #
+    # Cuando se usaba `chat_id`, un turno que entraba por LID se guardaba en una
+    # sesión aparte y `cargar_historial` devolvía vacío: el modelo no veía nada
+    # de la conversación y volvía a saludar desde el PASO 1. En la BD quedaban
+    # sesiones "@lid" sueltas de un solo turno -- 33 al detectar esto.
+    #
+    # `{number}@c.us` es además la forma canónica a la que `_migrar_lid`
+    # (ingesta.py) consolida las sesiones cuando logra resolver el LID.
+    session_id = _session_id_memoria(numero, chat_id)
     historial = await memoria.cargar_historial(session_id)
 
     ejecucion = await _ejecutar_agente(system_prompt, historial, mensaje_para_ia, candidato, reclutador)
@@ -649,6 +700,17 @@ async def procesar_turno(webhook_body: dict, contacto: dict, candidato: dict, sy
     if not items:
         return
     primero = items[0]
+
+    municipio_rescatado = _rescatar_residencia(candidato, items, mensaje_para_ia)
+    if municipio_rescatado:
+        logger.info(
+            "procesar_turno: el modelo no etiquetó la residencia; se detectó "
+            "'%s' en el mensaje del candidato (telefono=%s)",
+            municipio_rescatado,
+            numero,
+        )
+        primero.setdefault("database_updates", {})["lugar_residencia"] = municipio_rescatado
+        primero["lugar_residencia"] = municipio_rescatado
     es_human_alert = any(c.get("code") == "HUMAN_ALERT" for c in primero.get("detected_codes", []))
 
     # Lo que hicieron las tools manda sobre lo que el modelo haya escrito: el

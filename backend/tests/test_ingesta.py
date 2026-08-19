@@ -9,6 +9,7 @@ y quedaba un candidato basura con teléfono "status" en la base.
 
 import time
 
+from app.chat import ingesta
 from app.chat.ingesta import _es_mensaje_valido, _es_remitente_ignorado
 
 
@@ -101,3 +102,28 @@ def test_ignora_eventos_que_no_son_mensajes():
 
 def test_ignora_notificaciones_de_protocolo():
     assert not _es_mensaje_valido(_mensaje(type="e2e_notification"))
+
+
+# --- Mapeo LID -> teléfono --------------------------------------------------
+# WAHA olvida los LID viejos: de 33 sesiones huérfanas encontradas el
+# 19/08/2026, solo 402 de 3853 LID seguían siendo resolubles contra su API.
+# Por eso el par se persiste en `lid_telefono` en cuanto se resuelve.
+
+def test_guarda_el_par_lid_telefono_resuelto():
+    assert ingesta._debe_guardar_lid("151226570248433", "5213322475557")
+
+
+def test_no_guarda_cuando_el_numero_sigue_siendo_el_lid():
+    """`number` se queda igual al LID cuando la resolución falla; guardarlo
+    haría creer que ya está resuelto y bloquearía el intento real después."""
+    assert not ingesta._debe_guardar_lid("151226570248433", "151226570248433")
+
+
+def test_no_guarda_un_lid_sin_telefono_ni_al_reves():
+    assert not ingesta._debe_guardar_lid("151226570248433", None)
+    assert not ingesta._debe_guardar_lid(None, "5213322475557")
+    assert not ingesta._debe_guardar_lid("", "")
+
+
+def test_no_guarda_si_el_telefono_tiene_pinta_de_lid():
+    assert not ingesta._debe_guardar_lid("151226570248433", "259312979075083")

@@ -625,6 +625,15 @@ async def cargar_prompt(webhook_payload: dict, contacto: dict, candidato: dict) 
 
     semaforo_privacidad = "ACEPTADA" if dbData.get("privacidad_aceptada") else "PENDIENTE"
 
+    vacante_interes = dbData.get("vacante_interes") or ""
+    if not vacante_interes or str(vacante_interes).strip().upper() in ("NINGUNA", "GENERAL", "PENDIENTE", "DESCONOCIDA", "X"):
+        resumen_prev = dbData.get("resumen_ia") or ""
+        vac_match = re.search(r'Vacante:\s*([^.\n|]+)', resumen_prev, re.IGNORECASE)
+        if vac_match and vac_match.group(1):
+            cand_vac = vac_match.group(1).strip().upper()
+            if cand_vac not in ("NINGUNA", "GENERAL", "PENDIENTE", "DESCONOCIDA", "X"):
+                vacante_interes = cand_vac
+
     replacements = {
         "NOMBRE_WHATSAPP": ((webhook_payload.get("_data") or {}).get("notifyName")) or "Usuario",
         "TELEFONO_ID": contacto.get("number") or "000",
@@ -640,7 +649,7 @@ async def cargar_prompt(webhook_payload: dict, contacto: dict, candidato: dict) 
         "NOMBRE_REGISTRADO": nombre_real,
         "LUGAR_RESIDENCIA": dbData.get("lugar_residencia") or "Pendiente",
         "ESTADO_ACTUAL": estado_actual,
-        "VACANTE_INTERES": dbData.get("vacante_interes") or "Ninguna",
+        "VACANTE_INTERES": vacante_interes or "Ninguna",
         "RESUMEN_ANTERIOR": dbData.get("resumen_ia") or "Conversacion nueva.",
     }
     for key, value in replacements.items():

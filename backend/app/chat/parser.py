@@ -12,10 +12,19 @@ rompería el chat en producción sin tocar el prompt."""
 
 import json
 import re
+import unicodedata
 from datetime import datetime, timezone
 from typing import Any
 
 from app.chat.mensajes_comunes import DESCALIFICACION_CIUDAD_MSG
+
+
+def _normalizar_vacante(v: str | None) -> str:
+    if not v:
+        return ""
+    nfd = unicodedata.normalize("NFD", str(v))
+    sin_acentos = "".join(c for c in nfd if unicodedata.category(c) != "Mn")
+    return sin_acentos.upper().strip()
 
 _SPECIAL_CODES = {
     "NAME_UPDATE": {"pattern": re.compile(r"NAME_UPDATE\s*\|\s*([^|]+)\s*\|", re.IGNORECASE), "action": "update_name", "field": "nombre"},
@@ -41,6 +50,42 @@ _MUNICIPIOS_ZMG_JALISCO = {
     "GDL", "CHAPALA", "SAN CRISTOBAL", "TETLAN", "ATEMAJAC", "ANALCO",
     "COLON INDUSTRIAL", "JARDINES DE LA CRUZ", "MANDARINA"
 }
+
+def _normalizar_texto(texto: str) -> str:
+    """Mayúsculas y sin acentos, para comparar contra _MUNICIPIOS_ZMG_JALISCO."""
+    norm = unicodedata.normalize("NFD", str(texto).upper())
+    return "".join(c for c in norm if unicodedata.category(c) != "Mn")
+
+
+# Se construye una sola vez: los municipios ya normalizados, de más largo a más
+# corto para que "EL SALTO" gane antes que un nombre más corto contenido en él.
+_MUNICIPIOS_NORMALIZADOS = sorted(
+    {_normalizar_texto(m) for m in _MUNICIPIOS_ZMG_JALISCO},
+    key=len,
+    reverse=True,
+)
+
+
+def detectar_municipio_zmg(texto: str | None) -> str | None:
+    """Devuelve el municipio de ZMG/Jalisco que el candidato escribió, o None.
+
+    Red de seguridad para cuando el modelo redacta bien ("¡Zapopan está dentro
+    de nuestra cobertura!") pero olvida emitir `etiquetas_internas.lugar_residencia`,
+    que el prompt marca como opcional. Sin ese campo en la BD, la regla Diamante
+    de residencia vuelve a pedir la ciudad en cada turno y la conversación entra
+    en bucle: el modelo no puede salir porque la propia regla se lo impide.
+
+    Solo se consulta cuando el campo está vacío, así que nunca pisa un dato bueno.
+    """
+    if not texto:
+        return None
+    norm = _normalizar_texto(texto)
+    for municipio in _MUNICIPIOS_NORMALIZADOS:
+        # \b evita que "TONALA" haga match dentro de otra palabra.
+        if re.search(rf"\b{re.escape(municipio)}\b", norm):
+            return municipio
+    return None
+
 
 def _es_ciudad_no_apta(ciudad_str: str) -> bool:
     if not ciudad_str:
@@ -362,7 +407,7 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
             vac = et.get("actualizar_vacante") or et.get("vacante_interes") or et.get("vacante")
             if vac:
                 vac_clean = str(vac).strip().upper()
-                if vac_clean not in ("GENERAL", "NINGUNA", "PENDIENTE"):
+                if vac_clean not in ("GENERAL", "NINGUNA", "PENDIENTE", "DESCONOCIDA", "X"):
                     result["vacante_detectada"] = vac_clean
                     result["database_updates"]["vacante_interes"] = vac_clean
                     result["database_updates"]["estado"] = "INTERESADO"
@@ -454,11 +499,43 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
     if not result.get("vacante_detectada"):
         vac_match = re.search(r'(?:ACTUALIZAR_VACANTE|"actualizar_vacante"|"vacante_interes")\s*[:|^"]\s*([^"|\n,}]+)', ai_response_str, re.IGNORECASE)
         if vac_match and vac_match.group(1):
-            val = _strip_quotes_pipes(vac_match.group(1).strip())
-            if val and val.upper() not in ("GENERAL", "NINGUNA", "PENDIENTE"):
-                result["vacante_detectada"] = val.upper()
-                result["database_updates"]["vacante_interes"] = val.upper()
+            val = _strip_quotes_pipes(vac_match.group(1).strip()).upper()
+            if val and val not in ("GENERAL", "NINGUNA", "PENDIENTE", "DESCONOCIDA", "X"):
+                result["vacante_detectada"] = val
+                result["database_updates"]["vacante_interes"] = val
                 result["database_updates"]["estado"] = "INTERESADO"
+
+    if not result.get("vacante_detectada"):
+        # Rescate 1: Desde memoria_update
+        resumen_cand = result.get("resumen_generado") or ""
+        vac_mem_match = re.search(r'Vacante:\s*([^.\n|]+)', resumen_cand, re.IGNORECASE)
+        if vac_mem_match and vac_mem_match.group(1):
+            val_mem = _strip_quotes_pipes(vac_mem_match.group(1).strip()).upper()
+            if val_mem and val_mem not in ("GENERAL", "NINGUNA", "PENDIENTE", "DESCONOCIDA", "X"):
+                result["vacante_detectada"] = val_mem
+                result["database_updates"]["vacante_interes"] = val_mem
+                result["database_updates"]["estado"] = "INTERESADO"
+
+    if not result.get("vacante_detectada"):
+        # Rescate 2: Desde menciones en mensajes de la IA (ej. "postulación a Operador de Almacén", "vacante de Auxiliar de Sistemas")
+        for texto_msg in (mensajes_candidato or [ai_response_str]):
+            v_phrase_match = re.search(
+                r'(?:vacante(?:\s+disponible)?\s+de|postulación\s+a(?:\s+la\s+vacante\s+de)?|interesa\s+la\s+vacante\s+de|proceso\s+para(?:\s+la\s+vacante\s+de)?|refieres\s+a\s+la\s+vacante\s+de)\s+\*?([A-ZÁÉÍÓÚÑa-záéíóúñ/\s]{4,35}?)\*?(?:,|\.|\?|!|\n|\s+está|\s+en\s+nuestra|\s+cuenta|\s+disponible|\s*¿|\s*\()',
+                str(texto_msg),
+                re.IGNORECASE,
+            )
+            if v_phrase_match and v_phrase_match.group(1):
+                val_phrase = _strip_quotes_pipes(v_phrase_match.group(1).strip()).upper()
+                if val_phrase not in ("GENERAL", "NINGUNA", "PENDIENTE", "DESCONOCIDA", "ESTA VACANTE", "NUESTRA VACANTE"):
+                    result["vacante_detectada"] = val_phrase
+                    result["database_updates"]["vacante_interes"] = val_phrase
+                    result["database_updates"]["estado"] = "INTERESADO"
+                    break
+
+    if not result.get("vacante_detectada") and candidato.get("vacante_interes"):
+        cand_v = str(candidato.get("vacante_interes")).strip().upper()
+        if cand_v not in ("GENERAL", "NINGUNA", "PENDIENTE", "DESCONOCIDA", "X"):
+            result["vacante_detectada"] = cand_v
 
     if not result.get("nave_detectada"):
         nave_match = re.search(r'(?:ACTUALIZAR_NAVE|"actualizar_nave"|"nave_interes")\s*[:|^"]\s*([^"|\n,}]+)', ai_response_str, re.IGNORECASE)

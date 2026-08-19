@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 
 import { useMensajes } from "@/hooks/useMensajes";
+import AvatarCandidato from "@/components/AvatarCandidato";
 
 // ─── HELPERS ─────────────────────────────────────────────
 function ensureUTC(ts: string): string {
@@ -136,9 +137,7 @@ function TarjetaConversacion({ conv, isActive, onClick }: { conv: Conversacion; 
   return (
     <div className={`px-4 py-3 border-b border-slate-100 transition-colors cursor-pointer flex gap-4 ${isActive ? "bg-[#f0f2f5]" : "bg-white hover:bg-[#f5f6f6]"}`} onClick={onClick}>
       <div className="relative">
-        <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold shadow-sm ${conv.escalado ? "bg-danger/10 text-danger" : "bg-slate-200 text-slate-600"}`}>
-          {(conv.nombre || conv.telefono)?.[0]?.toUpperCase() || "?"}
-        </div>
+        <AvatarCandidato telefono={conv.telefono} nombre={conv.nombre} escalado={conv.escalado} size={48} />
         {(conv.mensajes_no_leidos ?? 0) > 0 && <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-[#25D366] rounded-full border-2 border-white" />}
       </div>
       <div className="flex-1 min-w-0">
@@ -263,9 +262,12 @@ function MensajesInner() {
               )}
               <div className="flex-shrink-0 bg-[#f0f2f5] px-4 py-2 border-b border-slate-200 flex justify-between items-center shadow-sm relative z-10">
                 <div className="flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg font-bold shadow-sm flex-shrink-0 ${m.candidatoActivo?.escalado ? "bg-danger/10 text-danger" : "bg-slate-200 text-slate-600"}`}>
-                    {m.candidatoActivo?.nombre?.[0]?.toUpperCase() || "?"}
-                  </div>
+                  <AvatarCandidato
+                    telefono={m.candidatoActivo?.telefono || m.convActiva?.telefono || m.activePhone}
+                    nombre={m.candidatoActivo?.nombre || m.convActiva?.nombre}
+                    escalado={m.candidatoActivo?.escalado}
+                    size={40}
+                  />
                   <div className="relative">
                     <button onClick={() => m.setShowPhoneModal(!m.showPhoneModal)} className="font-bold text-[#111b21] hover:underline text-left cursor-pointer focus:outline-none">
                       {m.candidatoActivo?.nombre || m.convActiva?.nombre || m.activePhone}

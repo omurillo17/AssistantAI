@@ -159,11 +159,18 @@ export async function POST(request: Request) {
 
     // Extraer y procesar lugar de residencia
     let finalLugarResidencia = (lugar_residencia && typeof lugar_residencia === 'string') ? lugar_residencia.trim() : '';
+    // Rescate desde el resumen (memoria_update) cuando la etiqueta no vino.
+    // El prefijo "Lugar de " es opcional a propósito: el formato que pide el
+    // prompt es "Residencia: X", así que buscar solo "Lugar de residencia:"
+    // hacía que este rescate no entrara nunca.
     if (!finalLugarResidencia && resumen && typeof resumen === 'string') {
-      const resMatch = resumen.match(/Lugar de residencia:\s*([^.\n|]+)/i);
+      const resMatch = resumen.match(/(?:Lugar de )?residencia:\s*([^.\n|]+)/i);
       if (resMatch && resMatch[1]) {
         const extRes = resMatch[1].trim();
-        if (extRes && !['Pendiente', 'Desconocido', 'None', 'Null'].includes(extRes)) {
+        // 'X' es el literal de la plantilla del prompt cuando el modelo la copia
+        // sin rellenar; guardarlo dejaría basura en el expediente.
+        const noUsables = ['pendiente', 'desconocido', 'none', 'null', 'x', 'n/a'];
+        if (extRes && !noUsables.includes(extRes.toLowerCase())) {
           finalLugarResidencia = extRes;
         }
       }
