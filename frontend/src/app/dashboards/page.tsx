@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -18,7 +18,6 @@ import { ESTADOS, getEstado, getEstadoColor, type EstadoKey } from "@/lib/estado
 import type { Candidato } from "@/types";
 import { CandidateModal } from "@/components/CandidateModal";
 import { useTenantChange } from "@/hooks/useTenant";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
 import { formatNaveName, getCandidateDisplayName } from "@/lib/formatters";
 
 const CHART_COLORS = ["#6366f1", "#8b5cf6", "#ec4899", "#f43f5e", "#f59e0b", "#10b981", "#0ea5e9"];
@@ -60,6 +59,7 @@ function buildCandidatosTimeline(candidatos: Candidato[], range: TimeRange): { p
 
   if (range === "1d") {
     for (let h = 0; h < 24; h++) {
+      
       const key = String(h).padStart(2, "0") + ":00";
       counts.set(key, 0);
       points.push({ key, label: key, fullDate: `${key} hrs`, count: 0 });
@@ -163,12 +163,11 @@ export default function DashboardsPage() {
 
   const [timeRange, setTimeRange] = useState<TimeRange>("1m");
   const [isTimelineExpanded, setIsTimelineExpanded] = useState(false);
+  const isBackdropMouseDown = useRef(false);
 
   // Drill-down interactivo al hacer clic en estados
   const [selectedEstadoModal, setSelectedEstadoModal] = useState<string | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<Candidato | null>(null);
-  const timelineBackdrop = useBackdropClose(() => setIsTimelineExpanded(false));
-  const estadoModalBackdrop = useBackdropClose(() => setSelectedEstadoModal(null));
   const [modalSearch, setModalSearch] = useState<string>("");
 
 
@@ -1012,7 +1011,13 @@ export default function DashboardsPage() {
       {isTimelineExpanded && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/70 backdrop-blur-sm animate-fade-in"
-          {...timelineBackdrop}
+          onMouseDown={(e) => { isBackdropMouseDown.current = (e.target === e.currentTarget); }}
+          onMouseUp={(e) => {
+            if (isBackdropMouseDown.current && e.target === e.currentTarget) {
+              setIsTimelineExpanded(false);
+            }
+            isBackdropMouseDown.current = false;
+          }}
         >
           <div
             className="bg-white w-full max-w-5xl rounded-3xl shadow-2xl border border-slate-100 flex flex-col max-h-[95vh] overflow-hidden"
@@ -1177,7 +1182,13 @@ export default function DashboardsPage() {
       {selectedEstadoModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in"
-          {...estadoModalBackdrop}
+          onMouseDown={(e) => { isBackdropMouseDown.current = (e.target === e.currentTarget); }}
+          onMouseUp={(e) => {
+            if (isBackdropMouseDown.current && e.target === e.currentTarget) {
+              setSelectedEstadoModal(null);
+            }
+            isBackdropMouseDown.current = false;
+          }}
         >
           <div
             className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-100 flex flex-col max-h-[90vh] overflow-hidden"

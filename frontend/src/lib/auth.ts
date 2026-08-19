@@ -82,23 +82,26 @@ function safeCompare(a: string, b: string): boolean {
  * porque n8n no se podía redesplegar junto con el frontend; ahora los dos
  * extremos son nuestros y se despliegan juntos, así que basta una.
  *
- * Fail-open deliberado: si no hay ninguna llave configurada se permite el
- * acceso y se registra una advertencia, para que un despliegue sin la
- * variable siga funcionando en vez de tumbar la ingesta de WhatsApp.
+ * Falla CERRADO, igual que verify_api_key() en backend/app/security.py: sin
+ * llave configurada se rechaza todo. Antes fallaba abierto para que un
+ * despliegue sin la variable no tumbara la ingesta de WhatsApp, pero eso
+ * dejaba /api/webhook/*, /api/upload-cv y /api/cron/* accesibles sin
+ * autenticación ante un simple olvido en el .env; el modo degradado seguro
+ * es que la ingesta se caiga ruidosamente, no que se abra.
  */
 export function verifyInternalApiKey(request: Request): boolean {
   const expectedKey =
     process.env.INTERNAL_API_KEY || process.env.N8N_API_KEY || process.env.WEBHOOK_API_KEY;
   if (!expectedKey) {
     if (!warned.has("INTERNAL_API_KEY")) {
-      console.warn(
-        "[seguridad] INTERNAL_API_KEY no está configurada: /api/webhook/*, /api/upload-cv, " +
-          "/api/prompt-context y /api/cron quedan sin autenticación. Configúrala en " +
+      console.error(
+        "[seguridad] INTERNAL_API_KEY no está configurada: se rechazan todas las llamadas a " +
+          "/api/webhook/*, /api/upload-cv, /api/prompt-context y /api/cron. Configúrala en " +
           "frontend/.env.local con el mismo valor que la del backend."
       );
       warned.add("INTERNAL_API_KEY");
     }
-    return true;
+    return false;
   }
   const provided = request.headers.get("x-api-key");
   return provided !== null && safeCompare(provided, expectedKey);

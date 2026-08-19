@@ -9,7 +9,7 @@ waha_files_final/
 *.dump
 node_modules/
 *.vscode/
-
+uploads/
 # Herramientas de agentes: los worktrees son copias temporales del repo (si se
 # commitean quedan como gitlink roto) y settings.local.json es por máquina.
 # .claude/settings.json sí se versiona: es la config compartida del proyecto.

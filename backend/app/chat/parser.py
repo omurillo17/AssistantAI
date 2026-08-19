@@ -12,10 +12,19 @@ rompería el chat en producción sin tocar el prompt."""
 
 import json
 import re
+import unicodedata
 from datetime import datetime, timezone
 from typing import Any
 
 from app.chat.mensajes_comunes import DESCALIFICACION_CIUDAD_MSG
+
+
+def _normalizar_vacante(v: str | None) -> str:
+    if not v:
+        return ""
+    nfd = unicodedata.normalize("NFD", str(v))
+    sin_acentos = "".join(c for c in nfd if unicodedata.category(c) != "Mn")
+    return sin_acentos.upper().strip()
 
 _SPECIAL_CODES = {
     "NAME_UPDATE": {"pattern": re.compile(r"NAME_UPDATE\s*\|\s*([^|]+)\s*\|", re.IGNORECASE), "action": "update_name", "field": "nombre"},
@@ -41,6 +50,42 @@ _MUNICIPIOS_ZMG_JALISCO = {
     "GDL", "CHAPALA", "SAN CRISTOBAL", "TETLAN", "ATEMAJAC", "ANALCO",
     "COLON INDUSTRIAL", "JARDINES DE LA CRUZ", "MANDARINA"
 }
+
+def _normalizar_texto(texto: str) -> str:
+    """Mayúsculas y sin acentos, para comparar contra _MUNICIPIOS_ZMG_JALISCO."""
+    norm = unicodedata.normalize("NFD", str(texto).upper())
+    return "".join(c for c in norm if unicodedata.category(c) != "Mn")
+
+
+# Se construye una sola vez: los municipios ya normalizados, de más largo a más
+# corto para que "EL SALTO" gane antes que un nombre más corto contenido en él.
+_MUNICIPIOS_NORMALIZADOS = sorted(
+    {_normalizar_texto(m) for m in _MUNICIPIOS_ZMG_JALISCO},
+    key=len,
+    reverse=True,
+)
+
+
+def detectar_municipio_zmg(texto: str | None) -> str | None:
+    """Devuelve el municipio de ZMG/Jalisco que el candidato escribió, o None.
+
+    Red de seguridad para cuando el modelo redacta bien ("¡Zapopan está dentro
+    de nuestra cobertura!") pero olvida emitir `etiquetas_internas.lugar_residencia`,
+    que el prompt marca como opcional. Sin ese campo en la BD, la regla Diamante
+    de residencia vuelve a pedir la ciudad en cada turno y la conversación entra
+    en bucle: el modelo no puede salir porque la propia regla se lo impide.
+
+    Solo se consulta cuando el campo está vacío, así que nunca pisa un dato bueno.
+    """
+    if not texto:
+        return None
+    norm = _normalizar_texto(texto)
+    for municipio in _MUNICIPIOS_NORMALIZADOS:
+        # \b evita que "TONALA" haga match dentro de otra palabra.
+        if re.search(rf"\b{re.escape(municipio)}\b", norm):
+            return municipio
+    return None
+
 
 def _es_ciudad_no_apta(ciudad_str: str) -> bool:
     if not ciudad_str:
@@ -362,7 +407,7 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
             vac = et.get("actualizar_vacante") or et.get("vacante_interes") or et.get("vacante")
             if vac:
                 vac_clean = str(vac).strip().upper()
-                if vac_clean not in ("GENERAL", "NINGUNA", "PENDIENTE"):
+                if vac_clean not in ("GENERAL", "NINGUNA", "PENDIENTE", "DESCONOCIDA", "X"):
                     result["vacante_detectada"] = vac_clean
                     result["database_updates"]["vacante_interes"] = vac_clean
                     result["database_updates"]["estado"] = "INTERESADO"
@@ -392,8 +437,10 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
                     result["database_updates"]["resumen_ia"] = f"Descalificado automáticamente: Radica en otra ciudad ({l_str})"
 
             # Privacidad
-            if et.get("privacidad_aceptada") is True:
+            priv_val = et.get("privacidad_aceptada")
+            if priv_val is True or str(priv_val).strip().lower() in ("true", "1", "si", "sí", "aceptada"):
                 result["acepto_privacidad"] = True
+                result["database_updates"]["privacidad_aceptada"] = True
 
             # Cita confirmada
             cita_val = et.get("cita_confirmada")
@@ -452,11 +499,43 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
     if not result.get("vacante_detectada"):
         vac_match = re.search(r'(?:ACTUALIZAR_VACANTE|"actualizar_vacante"|"vacante_interes")\s*[:|^"]\s*([^"|\n,}]+)', ai_response_str, re.IGNORECASE)
         if vac_match and vac_match.group(1):
-            val = _strip_quotes_pipes(vac_match.group(1).strip())
-            if val and val.upper() not in ("GENERAL", "NINGUNA", "PENDIENTE"):
-                result["vacante_detectada"] = val.upper()
-                result["database_updates"]["vacante_interes"] = val.upper()
+            val = _strip_quotes_pipes(vac_match.group(1).strip()).upper()
+            if val and val not in ("GENERAL", "NINGUNA", "PENDIENTE", "DESCONOCIDA", "X"):
+                result["vacante_detectada"] = val
+                result["database_updates"]["vacante_interes"] = val
                 result["database_updates"]["estado"] = "INTERESADO"
+
+    if not result.get("vacante_detectada"):
+        # Rescate 1: Desde memoria_update
+        resumen_cand = result.get("resumen_generado") or ""
+        vac_mem_match = re.search(r'Vacante:\s*([^.\n|]+)', resumen_cand, re.IGNORECASE)
+        if vac_mem_match and vac_mem_match.group(1):
+            val_mem = _strip_quotes_pipes(vac_mem_match.group(1).strip()).upper()
+            if val_mem and val_mem not in ("GENERAL", "NINGUNA", "PENDIENTE", "DESCONOCIDA", "X"):
+                result["vacante_detectada"] = val_mem
+                result["database_updates"]["vacante_interes"] = val_mem
+                result["database_updates"]["estado"] = "INTERESADO"
+
+    if not result.get("vacante_detectada"):
+        # Rescate 2: Desde menciones en mensajes de la IA (ej. "postulación a Operador de Almacén", "vacante de Auxiliar de Sistemas")
+        for texto_msg in (mensajes_candidato or [ai_response_str]):
+            v_phrase_match = re.search(
+                r'(?:vacante(?:\s+disponible)?\s+de|postulación\s+a(?:\s+la\s+vacante\s+de)?|interesa\s+la\s+vacante\s+de|proceso\s+para(?:\s+la\s+vacante\s+de)?|refieres\s+a\s+la\s+vacante\s+de)\s+\*?([A-ZÁÉÍÓÚÑa-záéíóúñ/\s]{4,35}?)\*?(?:,|\.|\?|!|\n|\s+está|\s+en\s+nuestra|\s+cuenta|\s+disponible|\s*¿|\s*\()',
+                str(texto_msg),
+                re.IGNORECASE,
+            )
+            if v_phrase_match and v_phrase_match.group(1):
+                val_phrase = _strip_quotes_pipes(v_phrase_match.group(1).strip()).upper()
+                if val_phrase not in ("GENERAL", "NINGUNA", "PENDIENTE", "DESCONOCIDA", "ESTA VACANTE", "NUESTRA VACANTE"):
+                    result["vacante_detectada"] = val_phrase
+                    result["database_updates"]["vacante_interes"] = val_phrase
+                    result["database_updates"]["estado"] = "INTERESADO"
+                    break
+
+    if not result.get("vacante_detectada") and candidato.get("vacante_interes"):
+        cand_v = str(candidato.get("vacante_interes")).strip().upper()
+        if cand_v not in ("GENERAL", "NINGUNA", "PENDIENTE", "DESCONOCIDA", "X"):
+            result["vacante_detectada"] = cand_v
 
     if not result.get("nave_detectada"):
         nave_match = re.search(r'(?:ACTUALIZAR_NAVE|"actualizar_nave"|"nave_interes")\s*[:|^"]\s*([^"|\n,}]+)', ai_response_str, re.IGNORECASE)
@@ -474,6 +553,17 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
                 result["nombre_detectado"] = val_clean
                 result["database_updates"]["nombre"] = val_clean
                 result["database_updates"]["nombre_confirmado"] = True
+        else:
+            # Rescate desde saludo en mensaje de IA (ej. "¡Gracias, Leonardo Javier Orozco Gomez!")
+            for texto_saludo in (mensajes_candidato or [ai_response_str]):
+                saludo_match = re.search(r'[¡!]?(?:Gracias|Hola|Mucho gusto|Perfecto|Excelente),?\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,4})[!\s,\.]', str(texto_saludo))
+                if saludo_match and saludo_match.group(1):
+                    nom_saludo = saludo_match.group(1).strip()
+                    if _es_nombre_valido(nom_saludo) and nom_saludo.upper() not in ("CANDIDATO", "USUARIO", "EQUIPO"):
+                        result["nombre_detectado"] = nom_saludo
+                        result["database_updates"]["nombre"] = nom_saludo
+                        result["database_updates"]["nombre_confirmado"] = True
+                        break
 
     if not result.get("resumen_generado"):
         mem_match = _MEMORIA_UPDATE_RE.search(ai_response_str)
@@ -488,6 +578,14 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
 
     if "PRIVACIDAD_ACEPTADA" in ai_response_str:
         result["acepto_privacidad"] = True
+        result["database_updates"]["privacidad_aceptada"] = True
+    elif not result.get("acepto_privacidad"):
+        for m in (mensajes_candidato or []):
+            m_lower = str(m).lower()
+            if "aviso de privacidad" in m_lower and ("gracias por aceptar" in m_lower or "aceptar el aviso" in m_lower or "aceptaste el aviso" in m_lower):
+                result["acepto_privacidad"] = True
+                result["database_updates"]["privacidad_aceptada"] = True
+                break
     if "CITA_CANCELADA" in ai_response_str:
         result["cita_cancelada"] = True
         result["database_updates"]["estado"] = "INTERESADO"
@@ -539,6 +637,27 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
 
     if not mensajes_limpios:
         mensajes_limpios = ["¡Hola! 😊 ¿En qué puedo ayudarte hoy o qué duda tienes sobre nuestras vacantes?"]
+
+    # Rescate adicional de nombre si aún no se detectó
+    if not result.get("nombre_detectado"):
+        for texto_saludo in mensajes_limpios:
+            saludo_match = re.search(r'[¡!]?(?:Gracias|Hola|Mucho gusto|Perfecto|Excelente),?\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,4})[!\s,\.]', str(texto_saludo))
+            if saludo_match and saludo_match.group(1):
+                nom_saludo = saludo_match.group(1).strip()
+                if _es_nombre_valido(nom_saludo) and nom_saludo.upper() not in ("CANDIDATO", "USUARIO", "EQUIPO"):
+                    result["nombre_detectado"] = nom_saludo
+                    result["database_updates"]["nombre"] = nom_saludo
+                    result["database_updates"]["nombre_confirmado"] = True
+                    break
+
+    # Rescate adicional de aceptación de privacidad
+    if not result.get("acepto_privacidad"):
+        for m in mensajes_limpios:
+            m_lower = str(m).lower()
+            if "aviso de privacidad" in m_lower and ("gracias por aceptar" in m_lower or "aceptar el aviso" in m_lower or "aceptaste el aviso" in m_lower or "aceptar el aviso de privacidad" in m_lower):
+                result["acepto_privacidad"] = True
+                result["database_updates"]["privacidad_aceptada"] = True
+                break
 
     output = [{**result, "message_to_user": msg} for msg in mensajes_limpios]
 

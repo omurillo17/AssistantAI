@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 import { pool } from '@/lib/db';
 import { enviarMensajeCandidato, enviarImagenCandidato } from '@/lib/waha';
 import { getSession } from '@/lib/auth';
+import { getCandidateDisplayName } from '@/lib/formatters';
 
 // ─── GET /api/db/mensajes/[telefono] ──────────────────────
 // Devuelve historial de conversation_history para ese candidato
@@ -45,7 +46,10 @@ export async function GET(
 
     // Info del candidato
     const candRes = await pool.query(
-      `SELECT c.id as candidato_id, c.telefono, COALESCE(NULLIF(TRIM(c.nombre_ine),''), NULLIF(TRIM(c.nombre_solicitud),''), NULLIF(TRIM(c.nombre_constancia),''), NULLIF(TRIM(c.nombre_chat),''), NULLIF(TRIM(c.nombre),''), c.telefono) AS nombre,
+      // Nombres crudos: el que se muestra lo arma getCandidateDisplayName()
+      // más abajo, igual que en la bandeja (ver /api/db/mensajes).
+      `SELECT c.id as candidato_id, c.telefono,
+              c.nombre_ine, c.nombre_solicitud, c.nombre_constancia, c.nombre_chat, c.nombre,
               c.estado, c.escalado, c.escalation_reason, c.vacante_interes, c.nave_interes, c.correo,
               COALESCE(mb.asignado_a_id, c.asignado_a_id) AS asignado_a_id
        FROM candidatos c
@@ -67,8 +71,12 @@ export async function GET(
       );
     }
 
+    const candidato = candRes.rows[0]
+      ? { ...candRes.rows[0], nombre: getCandidateDisplayName(candRes.rows[0]) }
+      : null;
+
     return NextResponse.json({
-      candidato: candRes.rows[0] || null,
+      candidato,
       mensajes: histRes.rows,
     });
   } catch (err) {

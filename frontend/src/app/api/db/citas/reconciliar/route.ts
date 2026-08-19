@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { pool } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { getCandidateDisplayName } from '@/lib/formatters';
 
 const bodySchema = z.object({
   candidato_ids: z.array(z.string().uuid()).min(1).max(200),
@@ -52,7 +53,7 @@ export async function POST(request: Request) {
        WHERE id = ANY($1::uuid[])
          AND estado IN ('CITA_AGENDADA', 'RECORDATORIO_ENVIADO')${empresaClause}
        RETURNING id, telefono, asignado_a_id, vacante_interes,
-                 COALESCE(NULLIF(TRIM(nombre_chat),''), NULLIF(TRIM(nombre_solicitud),''), NULLIF(TRIM(nombre),''), telefono) AS nombre`,
+                 nombre_ine, nombre_solicitud, nombre_constancia, nombre_chat, nombre`,
       params
     );
 
@@ -62,7 +63,7 @@ export async function POST(request: Request) {
           `INSERT INTO notificaciones (reclutador_id, mensaje) VALUES ($1, $2)`,
           [
             row.asignado_a_id,
-            `⚠️ La cita de ${row.nombre} (${row.vacante_interes || 'vacante'}) ya no existe en Google Calendar. Se marcó como cancelada automáticamente — verifica con el candidato si sigue interesado.`,
+            `⚠️ La cita de ${getCandidateDisplayName(row)} (${row.vacante_interes || 'vacante'}) ya no existe en Google Calendar. Se marcó como cancelada automáticamente — verifica con el candidato si sigue interesado.`,
           ]
         );
       }

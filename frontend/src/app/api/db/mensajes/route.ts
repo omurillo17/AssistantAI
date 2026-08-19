@@ -5,6 +5,7 @@ import { z } from "zod";
 import { pool } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { resolveGrupoNaveIds } from '@/lib/grupos';
+import { getCandidateDisplayName } from '@/lib/formatters';
 
 const postSchema = z.object({
   candidato_id: z.string().uuid("ID de candidato inválido").optional(),
@@ -89,7 +90,15 @@ export async function GET(request: Request) {
       SELECT
         c.id AS candidato_id,
         c.telefono,
-        COALESCE(NULLIF(TRIM(c.nombre_ine),''), NULLIF(TRIM(c.nombre_solicitud),''), NULLIF(TRIM(c.nombre_constancia),''), NULLIF(TRIM(c.nombre_chat),''), NULLIF(TRIM(c.nombre),''), c.telefono) AS nombre,
+        -- Los nombres van crudos: el que se muestra lo decide
+        -- getCandidateDisplayName() abajo, que además de elegir el campo
+        -- descarta emojis, handles y placeholders. En SQL solo se podría
+        -- comprobar que no estén vacíos.
+        c.nombre_ine,
+        c.nombre_solicitud,
+        c.nombre_constancia,
+        c.nombre_chat,
+        c.nombre,
         c.estado,
         c.escalado,
         c.escalation_reason,
@@ -112,7 +121,14 @@ export async function GET(request: Request) {
       LIMIT 1000
     `, queryParams);
 
-    return NextResponse.json(res.rows);
+    // `nombre` es el que pinta la bandeja; los campos crudos siguen viajando
+    // por si la vista de detalle necesita distinguir de dónde salió.
+    const conversaciones = res.rows.map((row) => ({
+      ...row,
+      nombre: getCandidateDisplayName(row),
+    }));
+
+    return NextResponse.json(conversaciones);
   } catch (err) {
     console.error('Error fetching mensajes bandeja:', err);
     return NextResponse.json({ error: 'Error al conectar con la base de datos' }, { status: 500 });

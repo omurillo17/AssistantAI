@@ -119,15 +119,55 @@ async def _juntar_mensajes(telefono: str) -> dict:
     row = await pool.fetchrow(
         "WITH recolectados AS ("
         "  DELETE FROM conversation_history WHERE telefono = $1 AND role = 'user_temp' "
-        "  RETURNING content, message_type, media_url"
+        "  RETURNING content, message_type, media_url, timestamp"
         ") "
-        "SELECT STRING_AGG(content, '. ') AS mensaje_completo, "
-        "MAX(message_type) AS message_type, MAX(media_url) AS media_url FROM recolectados",
+        "SELECT STRING_AGG(content, '. ' ORDER BY timestamp, content) AS mensaje_completo, "
+        "MAX(message_type) AS message_type, MAX(media_url) AS media_url, "
+        # Timestamp real del primer mensaje del lote (no el de cuándo termina de
+        # procesar el turno) -- ver `_guardar_mensaje_usuario` / procesar_turno.
+        "MIN(timestamp) AS primer_timestamp FROM recolectados",
         telefono,
     )
     if row is None:
-        return {"mensaje_completo": None, "message_type": None, "media_url": None}
+        return {"mensaje_completo": None, "message_type": None, "media_url": None, "primer_timestamp": None}
     return dict(row)
+
+
+async def _guardar_mensaje_usuario(telefono: str, juntado: dict) -> None:
+    """Guarda el turno agregado del usuario en `conversation_history` con su
+    timestamp REAL (el de cuando llegó por WhatsApp), no el de `NOW()` al
+    terminar todo el pipeline (Gemini + envío por WAHA puede tardar varios
+    segundos). Sin esto, dos turnos consecutivos del mismo candidato pueden
+    quedar en orden invertido en la plataforma si el segundo termina de
+    procesarse antes que el primero (visto en producción)."""
+    pool = get_pool()
+    msg_content = juntado.get("mensaje_completo") or "[Mensaje multimedia]"
+    msg_type = juntado.get("message_type") or "text"
+    media_url = juntado.get("media_url")
+    timestamp = juntado.get("primer_timestamp")
+    # OJO: sin el cast ::timestamp, Postgres infiere el tipo de $5 a partir de
+    # la otra rama del COALESCE (NOW(), que es timestamptz) -- y asyncpg, al
+    # mandar un datetime naive como timestamptz, lo interpreta con la
+    # zona horaria del SISTEMA del contenedor (TZ=America/Mexico_City en
+    # docker-compose), sumando 6h de más al guardarlo. Visto en producción:
+    # los mensajes del usuario quedaban con hora futura en la bandeja.
+    await pool.execute(
+        "INSERT INTO conversation_history (telefono, role, content, message_type, media_url, timestamp) "
+        "VALUES ($1, 'user', $2, $3, $4, COALESCE($5::timestamp, NOW()))",
+        telefono, msg_content, msg_type, media_url, timestamp,
+    )
+
+
+async def _guardar_mensaje_asistente(telefono: str, texto: str) -> None:
+    """Guarda cada mensaje del bot en el momento REAL en que se manda por WAHA
+    (no todos juntos al final del turno). Además de arreglar el orden, esto
+    evita que se pierdan los mensajes de una respuesta partida ([SPLIT]): antes
+    solo se guardaba el primer item de `items` vía n8n-incoming."""
+    pool = get_pool()
+    await pool.execute(
+        "INSERT INTO conversation_history (telefono, role, content, message_type) VALUES ($1, 'assistant', $2, 'text')",
+        telefono, texto,
+    )
 
 
 async def _guardar_mensaje_usuario_escalado(telefono: str, juntado: dict) -> None:
@@ -135,13 +175,22 @@ async def _guardar_mensaje_usuario_escalado(telefono: str, juntado: dict) -> Non
     msg_content = juntado.get("mensaje_completo") or "[Mensaje multimedia]"
     msg_type = juntado.get("message_type") or "text"
     media_url = juntado.get("media_url")
+    timestamp = juntado.get("primer_timestamp")
 
+    # Mismo fix que `_guardar_mensaje_usuario`: sin esto, el mensaje del
+    # candidato se guarda con NOW() de cuando el debounce (hasta 8s) termina
+    # de esperar, no de cuando llegó en realidad. Con un candidato escalado,
+    # el reclutador puede contestar manualmente (vía "Tomar Control") más
+    # rápido que esos 8s -- su respuesta quedaba con timestamp MÁS TEMPRANO
+    # que el mensaje del candidato al que respondía (visto en producción).
     await pool.execute(
-        "INSERT INTO conversation_history (telefono, role, content, message_type, media_url) VALUES ($1, 'user', $2, $3, $4)",
+        "INSERT INTO conversation_history (telefono, role, content, message_type, media_url, timestamp) "
+        "VALUES ($1, 'user', $2, $3, $4, COALESCE($5::timestamp, NOW()))",
         telefono,
         msg_content,
         msg_type,
         media_url,
+        timestamp,
     )
     await pool.execute(
         "UPDATE candidatos SET ultima_interaccion = NOW() WHERE telefono = $1",
@@ -530,7 +579,7 @@ def _extraer_resumen_n8n_incoming(resumen_generado: str | None) -> str:
     return resumen_generado
 
 
-async def _almacenar_mensajes(contacto: dict, candidato: dict, item: dict, juntado: dict, webhook_payload: dict) -> None:
+async def _almacenar_mensajes(contacto: dict, candidato: dict, item: dict, juntado: dict, webhook_payload: dict, ultimo_texto: str | None = None) -> None:
     body = {
         "telefono": contacto.get("number"),
         "nombre": item.get("nombre_detectado") or candidato.get("nombre") or "Candidato",
@@ -548,7 +597,9 @@ async def _almacenar_mensajes(contacto: dict, candidato: dict, item: dict, junta
         "nombre_wpp": (webhook_payload.get("_data") or {}).get("notifyName") or "",
         "nave": item.get("nave_detectada") or "",
         "es_cv": bool(item.get("es_cv_manual")),
-        "mensaje_ia": item.get("message_to_user") or "",
+        # El preview de la bandeja debe reflejar el ÚLTIMO mensaje que
+        # realmente se mandó, no el primero de una respuesta partida.
+        "mensaje_ia": ultimo_texto or item.get("message_to_user") or "",
         "mensaje_candidato": juntado.get("mensaje_completo") or "[Mensaje multimedia]",
         "message_type": juntado.get("message_type") or "text",
         "media_url": juntado.get("media_url"),
@@ -563,6 +614,43 @@ async def _almacenar_mensajes(contacto: dict, candidato: dict, item: dict, junta
 
 
 # --- Orquestador principal ---------------------------------------------------
+
+def _session_id_memoria(numero: str | None, chat_id: str) -> str:
+    """Clave estable de la memoria del candidato.
+
+    Se prefiere `{numero}@c.us` para que los turnos que llegan por LID caigan en
+    la misma sesión que los que llegan por número. Si el número no se pudo
+    resolver, se cae a `chat_id` para no perder el turno.
+    """
+    digitos = "".join(filter(str.isdigit, str(numero or "")))
+    if digitos:
+        return f"{digitos}@c.us"
+    return chat_id
+
+
+def _rescatar_residencia(candidato: dict, items: list[dict], mensaje_usuario: str) -> str | None:
+    """Municipio a guardar cuando el modelo no etiquetó la residencia, o None.
+
+    `etiquetas_internas.lugar_residencia` es opcional en el prompt y el modelo
+    la omite casi siempre: redacta "¡Zapopan está dentro de nuestra cobertura!"
+    sin emitirla. El campo se queda vacío, la regla Diamante de residencia ve
+    LUGAR_RESIDENCIA="Pendiente" y vuelve a pedir la ciudad; al turno siguiente
+    pasa lo mismo y la conversación entra en bucle sin salida posible (visto en
+    producción desde el 13/08/2026).
+
+    Solo actúa cuando no hay nada guardado y el modelo tampoco etiquetó nada, así
+    que nunca pisa un dato bueno ni contradice al modelo.
+    """
+    if (candidato.get("lugar_residencia") or "").strip():
+        return None
+    ya_etiquetado = any(
+        (item.get("database_updates", {}).get("lugar_residencia") or "").strip()
+        for item in items
+    )
+    if ya_etiquetado:
+        return None
+    return parser.detectar_municipio_zmg(mensaje_usuario)
+
 
 async def procesar_turno(webhook_body: dict, contacto: dict, candidato: dict, system_prompt_base: str, agenda: dict, mensaje_override: str | None) -> None:
     payload = webhook_body["payload"]
@@ -581,9 +669,27 @@ async def procesar_turno(webhook_body: dict, contacto: dict, candidato: dict, sy
         await _guardar_mensaje_usuario_escalado(numero, juntado)
         return
 
+    # Se guarda YA (con su timestamp real), no hasta que termine todo el
+    # pipeline -- ver docstring de `_guardar_mensaje_usuario`.
+    await _guardar_mensaje_usuario(numero, juntado)
+
     mensaje_para_ia = mensaje_override or juntado["mensaje_completo"] or "[Mensaje sin texto]"
 
-    session_id = chat_id
+    # La memoria se indexa por el TELÉFONO resuelto, nunca por `chat_id`.
+    #
+    # WhatsApp entrega el remitente a veces como LID ("151226570248433@lid") en
+    # vez del número, y `chat_id` conserva ese remitente crudo porque es la
+    # dirección a la que hay que responder. Pero `number` sí queda resuelto al
+    # teléfono real, y es lo que usan `conversation_history` y `candidatos`.
+    #
+    # Cuando se usaba `chat_id`, un turno que entraba por LID se guardaba en una
+    # sesión aparte y `cargar_historial` devolvía vacío: el modelo no veía nada
+    # de la conversación y volvía a saludar desde el PASO 1. En la BD quedaban
+    # sesiones "@lid" sueltas de un solo turno -- 33 al detectar esto.
+    #
+    # `{number}@c.us` es además la forma canónica a la que `_migrar_lid`
+    # (ingesta.py) consolida las sesiones cuando logra resolver el LID.
+    session_id = _session_id_memoria(numero, chat_id)
     historial = await memoria.cargar_historial(session_id)
 
     ejecucion = await _ejecutar_agente(system_prompt, historial, mensaje_para_ia, candidato, reclutador)
@@ -594,6 +700,17 @@ async def procesar_turno(webhook_body: dict, contacto: dict, candidato: dict, sy
     if not items:
         return
     primero = items[0]
+
+    municipio_rescatado = _rescatar_residencia(candidato, items, mensaje_para_ia)
+    if municipio_rescatado:
+        logger.info(
+            "procesar_turno: el modelo no etiquetó la residencia; se detectó "
+            "'%s' en el mensaje del candidato (telefono=%s)",
+            municipio_rescatado,
+            numero,
+        )
+        primero.setdefault("database_updates", {})["lugar_residencia"] = municipio_rescatado
+        primero["lugar_residencia"] = municipio_rescatado
     es_human_alert = any(c.get("code") == "HUMAN_ALERT" for c in primero.get("detected_codes", []))
 
     # Lo que hicieron las tools manda sobre lo que el modelo haya escrito: el
@@ -639,6 +756,7 @@ async def procesar_turno(webhook_body: dict, contacto: dict, candidato: dict, sy
     if es_human_alert:
         if primero.get("message_to_user"):
             await waha_client.send_text(session, chat_id, primero["message_to_user"])
+            await _guardar_mensaje_asistente(numero, primero["message_to_user"])
             enviados.append(primero["message_to_user"])
         alerta = _preparar_alerta_humano(candidato, contacto, payload, reclutador, primero.get("human_alert_nombre"), primero.get("human_alert_resumen"))
         await waha_client.send_text(session, f"{alerta['telefono_destino']}@c.us", alerta["mensaje_alerta"])
@@ -647,6 +765,7 @@ async def procesar_turno(webhook_body: dict, contacto: dict, candidato: dict, sy
         for i, item in enumerate(items):
             if item.get("message_to_user"):
                 await waha_client.send_text(session, chat_id, item["message_to_user"])
+                await _guardar_mensaje_asistente(numero, item["message_to_user"])
                 enviados.append(item["message_to_user"])
             if i < len(items) - 1:
                 await asyncio.sleep(_ENTRE_MENSAJES_SEGUNDOS)
@@ -660,4 +779,4 @@ async def procesar_turno(webhook_body: dict, contacto: dict, candidato: dict, sy
         mensaje_para_ia,
         "\n\n".join(enviados) or primero.get("message_to_user") or "",
     )
-    await _almacenar_mensajes(contacto, candidato, primero, juntado, payload)
+    await _almacenar_mensajes(contacto, candidato, primero, juntado, payload, ultimo_texto=(enviados[-1] if enviados else None))

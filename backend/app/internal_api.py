@@ -21,17 +21,24 @@ _warned = False
 
 
 def auth_headers() -> dict[str, str]:
-    """Header `x-api-key` para llamar al frontend. Devuelve {} si la llave no
-    está configurada: el frontend responde en modo fail-open y avisa por su
-    cuenta, así que un despliegue sin la variable sigue funcionando (sin
-    autenticación) en vez de romperse."""
+    """Header `x-api-key` para llamar al frontend.
+
+    Si la llave no está configurada devuelve {} y la petición sale sin header.
+    ANTES eso era inofensivo porque verifyInternalApiKey() en el frontend
+    fallaba abierto; hoy falla CERRADO, así que sin llave el frontend responde
+    401 y se pierde TODO lo que el backend persiste por esa vía: nombre,
+    vacante, privacidad, citas. El síntoma no es un error visible sino que el
+    expediente deja de avanzar y Sofía repite las mismas preguntas en bucle.
+    Por eso es error, no warning: es una caída total de la persistencia.
+    """
     global _warned
     key = ENV.INTERNAL_API_KEY
     if not key:
         if not _warned:
-            logger.warning(
-                "INTERNAL_API_KEY no está configurada: las llamadas a %s saldrán "
-                "sin header x-api-key y sus endpoints quedan sin autenticación.",
+            logger.error(
+                "INTERNAL_API_KEY no está configurada: las llamadas a %s saldrán sin "
+                "header x-api-key y el frontend las rechazará con 401. No se guardará "
+                "nombre, vacante ni privacidad, y el chat entrará en bucle.",
                 ENV.FRONTEND_API_BASE,
             )
             _warned = True

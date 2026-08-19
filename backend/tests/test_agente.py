@@ -229,3 +229,63 @@ async def test_si_falla_el_envio_de_la_alerta_no_se_propaga(monkeypatch):
     await agente._alertar_fallo_tool("crear_evento", Exception("x"), {}, {})
 
     agente._alertas_fallo_enviadas.clear()
+
+
+# --- Bucle de la ciudad -----------------------------------------------------
+# El modelo confirmaba la ciudad en el texto pero no la etiquetaba, el campo
+# quedaba vacío y la regla Diamante de residencia la volvía a pedir turno tras
+# turno. Producción, del 13/08/2026 en adelante.
+
+def test_rescata_la_ciudad_que_el_modelo_no_etiqueto():
+    items = [{"message_to_user": "¡Excelente! Zapopan está dentro de la zona.", "database_updates": {}}]
+    assert agente._rescatar_residencia({}, items, "Zapopan") == "ZAPOPAN"
+
+
+def test_no_rescata_si_el_candidato_ya_tiene_residencia_guardada():
+    items = [{"database_updates": {}}]
+    assert agente._rescatar_residencia({"lugar_residencia": "GUADALAJARA"}, items, "Zapopan") is None
+
+
+def test_no_rescata_si_el_modelo_ya_etiqueto_la_residencia():
+    """La etiqueta del modelo manda: el rescate no debe contradecirla."""
+    items = [{"database_updates": {"lugar_residencia": "Tlaquepaque"}}]
+    assert agente._rescatar_residencia({}, items, "Zapopan") is None
+
+
+def test_no_rescata_una_ciudad_fuera_de_la_zona():
+    """Descalificar por ciudad es decisión del modelo (ciudad_no_apta), no de aquí."""
+    items = [{"database_updates": {}}]
+    assert agente._rescatar_residencia({}, items, "vivo en Villahermosa") is None
+
+
+def test_no_rescata_cuando_el_mensaje_no_trae_ciudad():
+    items = [{"database_updates": {}}]
+    assert agente._rescatar_residencia({}, items, "sí, me interesa mucho") is None
+
+
+# --- Memoria partida por LID ------------------------------------------------
+# WhatsApp entrega el remitente como LID a veces; `chat_id` conserva ese LID
+# porque es la dirección de respuesta, pero usarlo como clave de memoria dejaba
+# el turno en una sesión aparte y el modelo arrancaba sin historial. En la BD
+# quedaron 33 sesiones "@lid" sueltas, casi todas de un solo turno.
+
+def test_la_memoria_usa_el_telefono_aunque_el_turno_llegue_por_lid():
+    session_id = agente._session_id_memoria("5213322475557", "151226570248433@lid")
+    assert session_id == "5213322475557@c.us"
+
+
+def test_el_turno_por_numero_y_el_turno_por_lid_caen_en_la_misma_sesion():
+    por_numero = agente._session_id_memoria("5213322475557", "5213322475557@c.us")
+    por_lid = agente._session_id_memoria("5213322475557", "151226570248433@lid")
+    assert por_numero == por_lid
+
+
+def test_la_memoria_cae_al_chat_id_si_no_hay_numero_resuelto():
+    """Sin teléfono no se inventa una clave: se conserva el turno donde se pueda."""
+    assert agente._session_id_memoria(None, "151226570248433@lid") == "151226570248433@lid"
+    assert agente._session_id_memoria("", "151226570248433@lid") == "151226570248433@lid"
+
+
+def test_el_lid_sin_resolver_usa_la_forma_que_consolida_migrar_lid():
+    """_migrar_lid (ingesta.py) busca '{lid}@c.us' para consolidar la sesión."""
+    assert agente._session_id_memoria("151226570248433", "151226570248433@lid") == "151226570248433@c.us"

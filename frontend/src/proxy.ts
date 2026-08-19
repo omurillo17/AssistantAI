@@ -28,6 +28,7 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/api/db/reclutador_vacantes") || // La ruta valida sesión o x-api-key
     pathname.startsWith("/api/db/encargados-por-nave") || // La ruta valida sesión o x-api-key
     pathname.startsWith("/api/waha-status") || // Chequeo de estado de WAHA
+    pathname === "/api/health" || // Sonda del healthcheck de Docker (sin cookie)
     pathname.startsWith("/portal") || // Portal público de candidatos
     pathname.startsWith("/api/portal") || // API pública del portal de candidatos
     pathname === "/favicon.ico"
