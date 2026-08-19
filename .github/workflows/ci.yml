@@ -70,5 +70,15 @@ jobs:
         run: npm run lint
         continue-on-error: true
 
+      # El build recolecta page data importando cada route module, y lib/db.ts
+      # evalúa ENV.DATABASE_URL al importarse (no dentro de una función), así
+      # que sin estas variables next build revienta en /api/db/mensajes/stream.
+      # Son valores ficticios a propósito: el Pool de pg no abre conexión hasta
+      # la primera query, y durante el build nunca se ejecuta ninguna.
       - name: Build
         run: npm run build
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+          JWT_SECRET: ci-dummy-secret-para-build
+          APP_PASSWORD: ci-dummy
+          WAHA_API_KEY: ci-dummy
