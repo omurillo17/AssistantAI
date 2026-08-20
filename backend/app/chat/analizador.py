@@ -126,6 +126,28 @@ def _distancia_levenshtein(a: str, b: str) -> int:
     return matrix[len(b)][len(a)]
 
 
+# RFC de persona física: 4 letras + AAMMDD + 3 de homoclave. Sus primeros 10
+# caracteres son, por construcción, los mismos 10 primeros de la CURP.
+_RFC_PERSONA_FISICA_RE = re.compile(r"^[A-ZÑ&]{4}\d{6}[A-Z0-9]{3}$")
+_CURP_RE = re.compile(r"^[A-Z0-9]{18}$")
+
+
+def _es_rfc_del_mismo_titular(a: str, b: str) -> bool:
+    """True si uno de los dos valores es la CURP y el otro el RFC de la MISMA
+    persona (mismos 10 caracteres de raíz).
+
+    La Constancia de Situación Fiscal muestra el RFC y la CURP juntos, y Gemini
+    a veces copia el RFC en el campo `curp_rfc`. Comparado contra la CURP del
+    INE eso daba una distancia enorme y el candidato acababa marcado como
+    "documentos que no coinciden" siendo la misma persona -- bloqueado sin poder
+    agendar (visto en producción el 19/08/2026).
+    """
+    curp, rfc = (a, b) if _CURP_RE.match(a) else (b, a)
+    if not _CURP_RE.match(curp) or not _RFC_PERSONA_FISICA_RE.match(rfc):
+        return False
+    return curp[:10] == rfc[:10]
+
+
 def _evaluar_curps(c1_raw: str | None, c2_raw: str | None) -> dict:
     if not c1_raw or not c2_raw:
         return {"tipo": "OK"}
@@ -134,6 +156,8 @@ def _evaluar_curps(c1_raw: str | None, c2_raw: str | None) -> dict:
     if not c1 or not c2:
         return {"tipo": "OK"}
     if c1 == c2:
+        return {"tipo": "OK"}
+    if _es_rfc_del_mismo_titular(c1, c2):
         return {"tipo": "OK"}
     dist = _distancia_levenshtein(c1, c2)
     core_match = len(c1) >= 10 and len(c2) >= 10 and c1[:10] == c2[:10]

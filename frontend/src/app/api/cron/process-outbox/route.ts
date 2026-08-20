@@ -32,6 +32,22 @@ export async function GET(request: Request) {
     const PAUSA_MS = Number(process.env.OUTBOX_PAUSA_MS || 10000);
     const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+    // Contraparte de salida de la lista negra (`numeros_ignorados`): el filtro
+    // de ingesta.py solo corta lo que ENTRA, pero a quien ya tenía expediente
+    // antes de entrar a la lista le pueden quedar recordatorios encolados. Se
+    // marcan aquí en vez de excluirlos del SELECT para que no se re-escaneen
+    // en cada ciclo, y queda el rastro de por qué nunca salieron.
+    await pool.query(`
+      UPDATE cola_mensajes
+      SET estado = 'IGNORADO',
+          error_detalle = 'Numero en numeros_ignorados: la IA no le responde',
+          updated_at = NOW()
+      WHERE estado = 'PENDIENTE'
+        AND RIGHT(regexp_replace(telefono, '[^0-9]', '', 'g'), 10) IN (
+          SELECT telefono FROM numeros_ignorados WHERE activo = TRUE
+        )
+    `);
+
     // Solo intentar los que tienen reintentos < 5
     const res = await pool.query(`
       SELECT id, telefono, texto

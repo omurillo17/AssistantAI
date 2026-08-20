@@ -711,7 +711,21 @@ async def procesar_turno(webhook_body: dict, contacto: dict, candidato: dict, sy
         )
         primero.setdefault("database_updates", {})["lugar_residencia"] = municipio_rescatado
         primero["lugar_residencia"] = municipio_rescatado
-    es_human_alert = any(c.get("code") == "HUMAN_ALERT" for c in primero.get("detected_codes", []))
+    # Se aceptan las DOS formas de escalar, no solo el código pipe:
+    # `detected_codes` viene del formato legado `HUMAN_ALERT|motivo|`, que el
+    # prompt actual prohíbe emitir (§8: "Nunca incluyas ... barras `|`"), y
+    # `pending_actions` de la rama JSON `etiquetas_internas.human_alert`, que es
+    # la única que el prompt enseña (§4.5). Mirando solo la primera, el
+    # escalamiento automático nunca se disparó en producción.
+    es_human_alert = any(
+        c.get("code") == "HUMAN_ALERT" for c in primero.get("detected_codes", [])
+    ) or any(
+        a.get("type") == "alert_human" for a in primero.get("pending_actions", [])
+    )
+    # `human_alert_resumen` lo pone la rama JSON del parser; `motivo_final`, la
+    # rama pipe. Sin este fallback la alerta al reclutador salía siempre con el
+    # texto genérico "El usuario solicitó hablar con un humano".
+    motivo_escalamiento = primero.get("human_alert_resumen") or primero.get("motivo_final")
 
     # Lo que hicieron las tools manda sobre lo que el modelo haya escrito: el
     # marcador de texto (CITA_CONFIRMADA / CITA_CANCELADA) se pierde cuando
@@ -758,9 +772,13 @@ async def procesar_turno(webhook_body: dict, contacto: dict, candidato: dict, sy
             await waha_client.send_text(session, chat_id, primero["message_to_user"])
             await _guardar_mensaje_asistente(numero, primero["message_to_user"])
             enviados.append(primero["message_to_user"])
-        alerta = _preparar_alerta_humano(candidato, contacto, payload, reclutador, primero.get("human_alert_nombre"), primero.get("human_alert_resumen"))
+        alerta = _preparar_alerta_humano(candidato, contacto, payload, reclutador, primero.get("human_alert_nombre"), motivo_escalamiento)
         await waha_client.send_text(session, f"{alerta['telefono_destino']}@c.us", alerta["mensaje_alerta"])
-        await _marcar_escalado(alerta["telefono_candidato"], alerta["nombre_candidato"], alerta["vacante"], primero.get("human_alert_resumen"))
+        await _marcar_escalado(alerta["telefono_candidato"], alerta["nombre_candidato"], alerta["vacante"], motivo_escalamiento)
+        logger.info(
+            "procesar_turno: candidato telefono=%s escalado a %s (motivo=%s)",
+            numero, alerta["telefono_destino"], motivo_escalamiento,
+        )
     elif primero.get("message_to_user"):
         for i, item in enumerate(items):
             if item.get("message_to_user"):

@@ -193,6 +193,42 @@ async def _es_reclutador(remitente_id: str) -> bool:
     return False
 
 
+def _clave_lista_negra(*numeros: str | None) -> list[str]:
+    """Normaliza cada identificador a sus últimos 10 dígitos, que es como se
+    guarda `numeros_ignorados.telefono`. WhatsApp entrega el mismo número como
+    5213312345678, 523312345678 o 3312345678 según el dispositivo y la versión
+    de WAHA, así que comparar la cadena completa fallaría justo con quien se
+    quiere silenciar."""
+    claves = set()
+    for numero in numeros:
+        digitos = "".join(c for c in (numero or "") if c.isdigit())
+        if len(digitos) >= 10:
+            claves.add(digitos[-10:])
+    return sorted(claves)
+
+
+async def _es_numero_ignorado(*numeros: str | None) -> bool:
+    """Lista negra manual de `numeros_ignorados`: reclutadoras, jefes y demás
+    gente interna que le escribe al WhatsApp del bot. `_es_reclutador()` solo
+    cubre al equipo dado de alta en `reclutadores`; esta es la manija para el
+    resto, sin tener que darlos de alta como reclutadores."""
+    claves = _clave_lista_negra(*numeros)
+    if not claves:
+        return False
+    try:
+        pool = get_pool()
+        row = await pool.fetchrow(
+            "SELECT telefono FROM numeros_ignorados WHERE activo = TRUE AND telefono = ANY($1::text[])",
+            claves,
+        )
+    except Exception:
+        # Fail-soft: si la consulta truena, se prefiere contestarle a alguien
+        # de la lista antes que dejar de contestarle a todos los candidatos.
+        logger.exception("_es_numero_ignorado: consulta falló para %s", claves)
+        return False
+    return row is not None
+
+
 def _fix_lid(get_info_result: dict, payload: dict | None = None) -> dict:
     """Extrae el número telefónico real (dígitos) o el LID si no hay teléfono disponible,
     soportando tanto WEBJS como NOWEB de WAHA."""
@@ -432,6 +468,16 @@ async def procesar_webhook(body: dict) -> None:
     remitente_raw = payload.get("from") or ""
     contacto = await _resolver_contacto(session, remitente_raw, payload)
     remitente_original = contacto.get("id") or remitente_raw
+
+    # Antes que `_es_reclutador()`, que sale a la red: la lista negra es una
+    # consulta indexada local y corta el turno igual de pronto -- sin crear
+    # expediente, sin guardar el mensaje y sin gastar una llamada a Gemini.
+    if await _es_numero_ignorado(contacto.get("number"), remitente_original, remitente_raw):
+        logger.info(
+            "procesar_webhook: remitente en numeros_ignorados (%s), no se responde",
+            contacto.get("number") or remitente_raw,
+        )
+        return
 
     if await _es_reclutador(remitente_original):
         return

@@ -488,6 +488,22 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
                 result["database_updates"]["escalation_reason"] = motivo
                 result["database_updates"]["escalated_at"] = datetime.now(timezone.utc).isoformat()
                 result["pending_actions"].append({"type": "alert_human", "priority": "high", "reason": motivo})
+                # El escalamiento se dispara en agente.py leyendo `detected_codes`,
+                # que hasta ahora SOLO se llenaba con el formato pipe
+                # `HUMAN_ALERT|motivo|`. Pero el prompt (§4.5 y §8) enseña
+                # únicamente esta rama JSON y además prohíbe explícitamente las
+                # barras `|` en la respuesta, así que el modelo nunca podía
+                # emitir el código pipe: la alerta al reclutador y el
+                # `escalado = TRUE` quedaban inalcanzables. Cero escalamientos
+                # automáticos en 339 candidatos hasta el 20/08/2026 -- los dos
+                # únicos escalados de la BD los hizo una reclutadora a mano.
+                if not any(c.get("code") == "HUMAN_ALERT" for c in result["detected_codes"]):
+                    result["detected_codes"].append({
+                        "code": "HUMAN_ALERT",
+                        "action": "escalate_to_human",
+                        "value": motivo,
+                    })
+                result["human_alert_resumen"] = motivo
                 if isinstance(ha, dict) and ha.get("mensaje_visible"):
                     mensajes_candidato = [str(ha["mensaje_visible"]).strip()]
 

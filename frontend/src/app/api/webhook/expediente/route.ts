@@ -49,10 +49,23 @@ export async function POST(request: Request) {
       return clean || null;
     };
     const CURP_REGEX = /^[A-Z0-9]{18}$/;
+    // RFC de persona física: 4 letras + AAMMDD + 3 de homoclave. Sus primeros 10
+    // caracteres coinciden por construcción con los de la CURP del mismo titular.
+    const RFC_PERSONA_FISICA_REGEX = /^[A-ZÑ&]{4}\d{6}[A-Z0-9]{3}$/;
     const safe_curp_ine = normalizeCurp(curp_ine);
     const safe_curp_rfc = normalizeCurp(curp_rfc);
+    // La Constancia de Situación Fiscal trae RFC y CURP juntos y Gemini a veces
+    // copia el RFC en `curp_rfc`. Un RFC de 13 caracteres cuya raíz es la misma
+    // que la de la CURP del INE es la MISMA persona, no un documento ajeno: no
+    // debe mandar al candidato a DOCUMENTOS_NO_COINCIDEN (que además bloquea
+    // crear_evento en agente.py y lo deja sin poder agendar). Si la raíz NO
+    // coincide sí se sigue mandando a revisión manual.
+    const rfcCoincideConCurpIne = !!safe_curp_rfc && !!safe_curp_ine
+      && RFC_PERSONA_FISICA_REGEX.test(safe_curp_rfc)
+      && CURP_REGEX.test(safe_curp_ine)
+      && safe_curp_rfc.slice(0, 10) === safe_curp_ine.slice(0, 10);
     const curpIneFormatoInvalido = !!safe_curp_ine && !CURP_REGEX.test(safe_curp_ine);
-    const curpRfcFormatoInvalido = !!safe_curp_rfc && !CURP_REGEX.test(safe_curp_rfc);
+    const curpRfcFormatoInvalido = !!safe_curp_rfc && !CURP_REGEX.test(safe_curp_rfc) && !rfcCoincideConCurpIne;
 
     let safe_nombre_chat = (nombre_chat || '').replace(/[\uFE0F\u200B-\u200D\u200E\u200F\uFEFF]/g, '').trim();
     if (!safe_nombre_chat || safe_nombre_chat === telefono || safe_nombre_chat === 'Candidato' || /^\+?\d+$/.test(safe_nombre_chat)) {

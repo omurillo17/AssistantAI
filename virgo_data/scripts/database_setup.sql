@@ -549,6 +549,61 @@ CREATE TABLE IF NOT EXISTS processed_webhooks (
 );
 
 -- ============================================
+-- TABLA: numeros_ignorados
+-- Lista negra: numeros a los que Sofia NO debe contestar
+-- ============================================
+-- Reclutadoras, jefes, proveedores y demas gente interna que le escribe al
+-- WhatsApp del bot. Sin esta lista el pipeline los trata como un candidato
+-- mas: les crea expediente, gasta llamadas a Gemini y les manda el aviso de
+-- privacidad. `_es_reclutador()` en ingesta.py ya cubre al equipo dado de
+-- alta en `reclutadores`, pero no a nadie mas -- esta tabla es la manija
+-- manual para el resto.
+--
+-- `telefono` se guarda normalizado a los ULTIMOS 10 DIGITOS a proposito: el
+-- mismo numero llega de WhatsApp como 5213312345678, 523312345678 o
+-- 3312345678 segun el dispositivo y la version de WAHA, asi que comparar la
+-- cadena completa fallaria justo con quien se quiere silenciar.
+--
+-- `activo` en vez de borrar el renglon: quitar a alguien de la lista es
+-- reversible y queda el motivo por el que se puso.
+
+CREATE TABLE IF NOT EXISTS numeros_ignorados (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    telefono VARCHAR(20) NOT NULL UNIQUE,
+    nombre VARCHAR(255),
+    motivo TEXT,
+    activo BOOLEAN DEFAULT TRUE,
+    creado_por VARCHAR(100),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+
+    CONSTRAINT telefono_normalizado_10_digitos CHECK (telefono ~ '^[0-9]{10}$')
+);
+
+CREATE INDEX IF NOT EXISTS idx_numeros_ignorados_activos
+    ON numeros_ignorados(telefono) WHERE activo = TRUE;
+
+-- La normalizacion vive en la BD y no en quien inserta: esta tabla se
+-- administra a mano con psql, y pegar el numero como viene de WhatsApp
+-- (+52 1 33 1234 5678, 5213312345678, 3312345678@c.us) es justo lo que se va
+-- a hacer. El trigger lo recorta a los ultimos 10 digitos; la CHECK de arriba
+-- sigue rechazando lo que ni asi queda como telefono (un numero incompleto,
+-- texto suelto), para que un renglon invalido truene al insertarse en vez de
+-- quedarse callado sin silenciar a nadie.
+CREATE OR REPLACE FUNCTION normalizar_numero_ignorado() RETURNS trigger AS $$
+BEGIN
+    NEW.telefono := RIGHT(regexp_replace(COALESCE(NEW.telefono, ''), '[^0-9]', '', 'g'), 10);
+    NEW.updated_at := NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_normalizar_numero_ignorado ON numeros_ignorados;
+CREATE TRIGGER trg_normalizar_numero_ignorado
+    BEFORE INSERT OR UPDATE ON numeros_ignorados
+    FOR EACH ROW EXECUTE FUNCTION normalizar_numero_ignorado();
+
+-- ============================================
 -- TABLA: lid_telefono
 -- Mapeo del LID de WhatsApp al telefono real
 -- ============================================
@@ -769,5 +824,5 @@ CREATE TRIGGER trg_mensajes_bandeja_notify
 -- ============================================
 DO $$
 BEGIN
-    RAISE NOTICE 'Database setup completado - 17 tablas, 3 vistas, 3 funciones';
+    RAISE NOTICE 'Database setup completado - 18 tablas, 3 vistas, 4 funciones';
 END $$;
