@@ -185,6 +185,13 @@ function MensajesInner() {
         {/* Sidebar */}
         <aside className="w-80 bg-white border-r border-slate-200 flex flex-col z-10">
           <div className="flex text-[11px] font-bold border-b border-slate-200">
+            {/* Sólo ROOT/ADMIN: es la única pestaña que incluye las
+                conversaciones asignadas a otros reclutadores. */}
+            {m.puedeVerTodo && (
+              <button onClick={() => m.setActiveTab("todos")} className={`flex-1 py-2.5 text-center transition-colors ${m.activeTab === "todos" ? "bg-primary text-white" : "bg-[#f0f2f5] text-slate-600 hover:bg-slate-200"}`}>
+                Todos
+              </button>
+            )}
             <button onClick={() => m.setActiveTab("mis_chats")} className={`flex-1 py-2.5 text-center transition-colors ${m.activeTab === "mis_chats" ? "bg-primary text-white" : "bg-[#f0f2f5] text-slate-600 hover:bg-slate-200"}`}>
               Mis Chats
             </button>
@@ -226,8 +233,8 @@ function MensajesInner() {
               <div className="p-6 text-center text-xs text-slate-500">
                 <p className="font-semibold mb-1">No hay conversaciones</p>
                 {m.activeTab === "mis_chats" ? (
-                  <button onClick={() => m.setActiveTab("compartida")} className="text-primary hover:underline text-xs mt-1 block w-full font-medium">
-                    Ver Bandeja General
+                  <button onClick={() => m.setActiveTab(m.puedeVerTodo ? "todos" : "compartida")} className="text-primary hover:underline text-xs mt-1 block w-full font-medium">
+                    {m.puedeVerTodo ? "Ver todas las conversaciones" : "Ver Bandeja General"}
                   </button>
                 ) : (
                   <p className="text-[11px] text-slate-400">Las nuevas interacciones por WhatsApp aparecerán aquí.</p>
@@ -350,6 +357,11 @@ function MensajesInner() {
                 {m.estaAtendidoPorOtro && (
                   <div className="mb-2 flex items-center justify-center gap-2 text-xs text-danger bg-danger/10 rounded-lg shadow-sm px-4 py-2 font-medium">
                     <AlertTriangle size={14} /><span>Este chat está siendo atendido por {m.convActiva?.asignado_a_nombre}.</span>
+                  </div>
+                )}
+                {m.supervisandoChatDeOtro && (
+                  <div className="mb-2 flex items-center justify-center gap-2 text-xs text-amber-700 bg-amber-50 rounded-lg shadow-sm px-4 py-2 font-medium">
+                    <AlertTriangle size={14} /><span>Este chat lo atiende {m.convActiva?.asignado_a_nombre}. Puedes intervenir como supervisor.</span>
                   </div>
                 )}
                 <div className="flex items-center gap-2">

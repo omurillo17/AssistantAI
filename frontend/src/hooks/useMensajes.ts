@@ -8,6 +8,9 @@ import { useTenantChange } from "./useTenant";
 
 const normalize = (str?: string | null) => str ? str.trim().toUpperCase() : "";
 
+/** "todos" sólo se ofrece a ROOT/ADMIN (ver `puedeVerTodo`). */
+export type TabBandeja = "todos" | "mis_chats" | "compartida" | "descartados";
+
 export function useMensajes() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -15,8 +18,15 @@ export function useMensajes() {
   // ─── State ──────────────────────────────────────────────
   const nombre = useLocalStorageValue("tci_username") || "Reclutador";
   const reclutadorId = useLocalStorageValue("tci_reclutador_id");
+  // ROOT y ADMIN supervisan a todos los reclutadores. Además NO tienen
+  // `reclutador_id` (en la tabla `usuarios` va NULL), así que para ellos
+  // "mis_chats" siempre sale vacío y "compartida" sólo trae las conversaciones
+  // sin dueño: sin esta pestaña, todas las asignadas a un reclutador les
+  // quedaban invisibles aunque el API sí se las devuelve.
+  const role = useLocalStorageValue("tci_role") || "";
+  const puedeVerTodo = role === "ROOT" || role === "ADMIN";
 
-  const [activeTab, setActiveTab] = useState<"mis_chats" | "compartida" | "descartados">("mis_chats");
+  const [activeTab, setActiveTab] = useState<TabBandeja>("mis_chats");
   const [conversaciones, setConversaciones] = useState<Conversacion[]>([]);
   const [loading, setLoading] = useState(true);
   const [activePhone, setActivePhone] = useState<string | null>(null);
@@ -141,10 +151,17 @@ export function useMensajes() {
       });
       setConversaciones(safeData);
       if (showLoad && safeData.length > 0) {
-        const rId = localStorage.getItem("tci_reclutador_id");
-        const hasMine = rId ? safeData.some(c => c.asignado_a_id === rId) : false;
-        if (!hasMine) {
-          setActiveTab("compartida");
+        // Se lee de localStorage y no del hook: esto corre dentro de un
+        // callback estable (deps vacías) que no se recrea al hidratar.
+        const rol = localStorage.getItem("tci_role") || "";
+        if (rol === "ROOT" || rol === "ADMIN") {
+          setActiveTab("todos");
+        } else {
+          const rId = localStorage.getItem("tci_reclutador_id");
+          const hasMine = rId ? safeData.some(c => c.asignado_a_id === rId) : false;
+          if (!hasMine) {
+            setActiveTab("compartida");
+          }
         }
       }
     } catch {
@@ -571,6 +588,9 @@ export function useMensajes() {
     let matchesTab = false;
     if (activeTab === "descartados") {
       matchesTab = isDescartado;
+    } else if (activeTab === "todos") {
+      // Sin filtro de dueño: incluye las asignadas a otros reclutadores.
+      matchesTab = !isDescartado;
     } else if (activeTab === "mis_chats") {
       matchesTab = !isDescartado && isAsignadoAMi;
     } else {
@@ -582,8 +602,20 @@ export function useMensajes() {
   });
 
   const convActiva = conversaciones.find(c => c.telefono === activePhone);
+  // ROOT/ADMIN quedan fuera: como no tienen `reclutador_id`, cualquier chat con
+  // dueño les salía como "atendido por otro" y con el input bloqueado. Siguen
+  // viendo el aviso de quién lo atiende (lo pinta la propia pantalla).
   const estaAtendidoPorOtro = Boolean(
+    !puedeVerTodo &&
     candidatoActivo?.escalado &&
+    convActiva?.asignado_a_id &&
+    convActiva.asignado_a_id !== reclutadorId
+  );
+
+  // Contraparte informativa de lo anterior: ROOT/ADMIN sí pueden escribir en un
+  // chat ajeno, pero deben ver de quién es antes de intervenir.
+  const supervisandoChatDeOtro = Boolean(
+    puedeVerTodo &&
     convActiva?.asignado_a_id &&
     convActiva.asignado_a_id !== reclutadorId
   );
@@ -591,6 +623,8 @@ export function useMensajes() {
   return {
     // State
     activeTab, setActiveTab,
+    puedeVerTodo,
+    supervisandoChatDeOtro,
     loading,
     activePhone, setActivePhone,
     mensajes,
