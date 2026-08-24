@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 
+import { verificarTokenUpload } from "@/lib/uploadToken";
+
 const JWT_SECRET = process.env.JWT_SECRET;
 
 // Rutas exclusivas para ADMIN
@@ -12,12 +14,25 @@ const adminAndEncargadoRoutes = ["/usuarios", "/api/db/usuarios", "/api/db/grupo
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Los expedientes (CV, INE, RFC, constancia) se sirven de /uploads como
+  // estáticos de Next y estaban abiertos a internet: con la URL bastaba para
+  // bajar el documento de identidad de un candidato sin sesión, y el nombre
+  // del archivo es `<telefono>_<timestamp>.<ext>`, así que tampoco era
+  // secreto. Ahora exigen sesión, con una sola excepción: WAHA los descarga
+  // por HTTP para reenviarlos por WhatsApp y no lleva cookie, así que
+  // enviarImagenCandidato() firma la ruta y manda el token en `?t=`.
+  if (pathname.startsWith("/uploads")) {
+    if (await verificarTokenUpload(pathname, request.nextUrl.searchParams.get("t"))) {
+      return NextResponse.next();
+    }
+    // Sin token válido cae al flujo normal de abajo, que exige sesión.
+  }
+
   // Rutas públicas que no requieren autenticación
   if (
     pathname.startsWith("/_next") || // Archivos estáticos de Next.js
     pathname.startsWith("/login") || // Página de Login
     pathname.startsWith("/api/auth/login") || // Endpoint de Login
-    pathname.startsWith("/uploads") || // Archivos de expedientes (CVs, INEs, etc.)
     // Rutas internas: las llama el backend Python server-to-server, sin sesión
     // de navegador. No llevan JWT; se protegen con x-api-key = INTERNAL_API_KEY
     // (ver verifyInternalApiKey en src/lib/auth.ts).

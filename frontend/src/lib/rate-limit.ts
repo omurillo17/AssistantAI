@@ -9,12 +9,24 @@ const rateLimitOptions = {
 const tokenCache = new LRUCache<string, number>(rateLimitOptions);
 
 export function rateLimit(request: NextRequest | Request, limit: number = 100) {
-  // x-forwarded-for puede traer una cadena "cliente, proxy1, proxy2":
-  // usamos solo la primera IP. Nota: estos headers los puede falsear un
-  // cliente que llegue directo al servidor; detrás de un reverse proxy
-  // confiable (nginx/traefik) sí reflejan la IP real.
+  // De dónde sale la IP, en orden de confianza:
+  //
+  // 1. `cf-connecting-ip`: lo pone cloudflared, que es el ÚNICO camino desde
+  //    internet (los puertos del compose están atados a 127.0.0.1). El cliente
+  //    no lo puede falsear porque cloudflared lo sobrescribe.
+  // 2. `x-forwarded-for`: se toma la ÚLTIMA entrada, no la primera. La cadena
+  //    es "cliente, proxy1, proxy2" y cada proxy AÑADE al final, así que la
+  //    primera entrada es justamente la que el cliente controla. Tomándola,
+  //    bastaba mandar un `X-Forwarded-For` distinto en cada petición para
+  //    estrenar cubeta y saltarse el límite por completo (verificado: 25/25
+  //    peticiones pasaban rotando la cabecera).
+  // 3. `x-real-ip` y, por último, una constante.
   const forwarded = request.headers.get('x-forwarded-for');
-  const ip = (forwarded ? forwarded.split(',')[0].trim() : null) ||
+  const forwardedParts = forwarded
+    ? forwarded.split(',').map((p) => p.trim()).filter(Boolean)
+    : [];
+  const ip = request.headers.get('cf-connecting-ip') ||
+             (forwardedParts.length > 0 ? forwardedParts[forwardedParts.length - 1] : null) ||
              request.headers.get('x-real-ip') ||
              '127.0.0.1';
 

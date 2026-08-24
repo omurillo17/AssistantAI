@@ -5,7 +5,7 @@ import { pool } from '@/lib/db';
 import { rateLimit } from '@/lib/rate-limit';
 
 const bodySchema = z.object({
-  telefono: z.string().min(8, 'El número telefónico debe tener al menos 8 dígitos'),
+  telefono: z.string().min(10, 'El número telefónico debe tener 10 dígitos'),
   empresa_id: z.string().optional().nullable(),
   nave_id: z.string().optional().nullable(),
 });
@@ -32,18 +32,24 @@ export async function POST(request: Request) {
 
     const { telefono, empresa_id, nave_id } = parsed.data;
 
-    // Sanitize phone number to digits only
+    // Sanitize phone number to digits only.
+    // Se exigen los 10 dígitos completos: con 8 bastaba para que el patrón
+    // `%12345678%` hiciera match por SUBCADENA contra cualquier teléfono que
+    // los contuviera, así que un tercero podía sacar el expediente de alguien
+    // más probando fragmentos, sin conocer el número completo.
     const digitsOnly = telefono.replace(/\D/g, '');
-    if (digitsOnly.length < 8) {
+    if (digitsOnly.length < 10) {
       return NextResponse.json(
         { error: 'Por favor ingresa un número de teléfono válido de 10 dígitos.' },
         { status: 400 }
       );
     }
 
-    // Prepare search variations (e.g. 3323379399, 523323379399, 5213323379399)
+    // Match por SUFIJO, no por subcadena: el teléfono guardado trae prefijos
+    // de país/operador variables (3323379399, 523323379399, 5213323379399),
+    // pero siempre termina en los mismos 10 dígitos.
     const last10 = digitsOnly.slice(-10);
-    const searchPattern = `%${last10}%`;
+    const searchPattern = `%${last10}`;
 
     let query = `
       SELECT id, telefono, nombre, nombre_chat, nombre_solicitud, 
@@ -102,9 +108,20 @@ export async function POST(request: Request) {
         nave_interes: cand.nave_interes || 'General',
         estado: cand.estado,
         alerta_identidad_estado: cand.alerta_identidad_estado,
-        alerta_identidad_motivo: cand.alerta_identidad_motivo,
+        // Mensaje GENÉRICO, no la nota interna: este endpoint es público (solo
+        // pide un teléfono) y `alerta_identidad_motivo` incluye la CURP leída
+        // del documento ('CURP con formato inválido ... "MESC010323MJCDNA2"'),
+        // así que bastaba conocer un teléfono para sacar la CURP de esa
+        // persona. El portal solo usa este texto para pedirle al candidato que
+        // vuelva a subir el documento, y para eso el genérico basta.
+        alerta_identidad_motivo: cand.alerta_identidad_motivo
+          ? 'No pudimos validar los datos de tu documento. Vuelve a subirlo completo, con buena luz y sin reflejos.'
+          : null,
+        // `link_cv` NO se expone: era la ruta directa a un archivo servido de
+        // forma pública desde /uploads, de modo que con un teléfono se podía
+        // descargar el CV/INE de esa persona sin sesión. El portal nunca lo
+        // usó -- la pantalla solo mira `tiene_archivos_previos`.
         tiene_cv: tieneCvRegistrado,
-        link_cv: cand.link_cv || null,
         tiene_archivos_previos: tieneInePrevio || tieneRfcPrevio || tieneCvPrevio,
       },
     });
