@@ -34,6 +34,7 @@ import google.generativeai as genai
 
 from app import gemini_client, waha_client
 from app.chat import memoria, parser
+from app.chat.vacantes import es_placeholder_vacante, limpiar_vacante
 from app.config import ENV
 from app.db import get_pool
 from app.google_calendar import list_events
@@ -482,7 +483,12 @@ def _preparar_alerta_humano(candidato: dict, contacto: dict, webhook_payload: di
     ultimo_mensaje = webhook_payload.get("body") or "Mensaje multimedia o sin texto"
     nombre = candidato.get("nombre") or human_alert_nombre or "Candidato"
     telefono = candidato.get("telefono") or contacto.get("number") or "0000000000"
-    vacante = candidato.get("vacante_interes") or "General"
+    # Sin `or "General"`: ese literal viajaba hasta el INSERT de
+    # _marcar_escalado y quedaba guardado como si fuera la vacante elegida.
+    # Para el texto de la alerta se usa una etiqueta aparte.
+    vacante = limpiar_vacante(candidato.get("vacante_interes"))
+    if es_placeholder_vacante(vacante):
+        vacante = ""
     motivo = human_alert_resumen or "El usuario solicitó hablar con un humano."
 
     nombre_destino = reclutador.get("nombre_reclutador") or "Equipo de Reclutamiento"
@@ -490,29 +496,53 @@ def _preparar_alerta_humano(candidato: dict, contacto: dict, webhook_payload: di
 
     mensaje_alerta = (
         f"🚨 *SOLICITUD DE ATENCIÓN HUMANA*\n\nHola {nombre_destino}, este usuario pide hablar con un reclutador:\n\n"
-        f"👤 *{nombre}*\n📱 wa.me/{telefono}\n💼 Interés: {vacante}\n\n"
+        f"👤 *{nombre}*\n📱 wa.me/{telefono}\n💼 Interés: {vacante or 'Sin vacante definida'}\n\n"
         f'💬 *Mensaje literal:* "{ultimo_mensaje}"\n\n🤖 *Resumen Sofía:* _{motivo}_'
     )
-    return {"telefono_destino": telefono_destino, "nombre_candidato": nombre, "telefono_candidato": telefono, "vacante": vacante, "mensaje_alerta": mensaje_alerta}
+    return {
+        "telefono_destino": telefono_destino,
+        "nombre_candidato": nombre,
+        "telefono_candidato": telefono,
+        "vacante": vacante,
+        "empresa_id": candidato.get("empresa_id"),
+        "mensaje_alerta": mensaje_alerta,
+    }
 
 
-async def _marcar_escalado(telefono: str, nombre: str, vacante: str, motivo: str | None = None) -> None:
+async def _marcar_escalado(telefono: str, nombre: str, vacante: str, motivo: str | None = None, empresa_id: str | None = None) -> None:
     pool = get_pool()
+    # Antes esto era un UPSERT con `ON CONFLICT (telefono)`, pero la única
+    # restricción única de `candidatos` es (telefono, empresa_id): Postgres
+    # rechazaba la sentencia entera con "no unique or exclusion constraint
+    # matching the ON CONFLICT specification", así que TODO escalamiento
+    # automático reventaba justo después de avisarle al reclutador y el
+    # candidato nunca quedaba marcado como escalado en el CRM.
+    # Se hace UPDATE primero (el caso real: quien escala ya venía chateando)
+    # y sólo se inserta si de verdad no existe la fila.
     row = await pool.fetchrow(
         """
-        INSERT INTO candidatos (telefono, nombre, estado, ultima_interaccion, vacante_interes, resumen_ia, escalado, escalated_at, escalation_reason)
-        VALUES ($1, $2, 'ESCALADO', NOW(), $3, 'El usuario solicitó hablar con un humano.', TRUE, NOW(), $4)
-        ON CONFLICT (telefono) DO UPDATE SET
+        UPDATE candidatos SET
             ultima_interaccion = NOW(),
             estado = 'ESCALADO',
             resumen_ia = 'El usuario solicitó hablar con un humano.',
             escalado = TRUE,
             escalated_at = NOW(),
-            escalation_reason = $4
+            escalation_reason = $2
+        WHERE telefono = $1
         RETURNING id, asignado_a_id
         """,
-        telefono, nombre, vacante, motivo or "Solicitud de atención humana",
+        telefono, motivo or "Solicitud de atención humana",
     )
+    if row is None:
+        row = await pool.fetchrow(
+            """
+            INSERT INTO candidatos (telefono, nombre, estado, ultima_interaccion, vacante_interes, resumen_ia, escalado, escalated_at, escalation_reason, empresa_id)
+            VALUES ($1, $2, 'ESCALADO', NOW(), NULLIF($3, ''), 'El usuario solicitó hablar con un humano.', TRUE, NOW(), $4, $5::uuid)
+            RETURNING id, asignado_a_id
+            """,
+            telefono, nombre, vacante or "", motivo or "Solicitud de atención humana",
+            str(empresa_id) if empresa_id else None,
+        )
     if row and row["asignado_a_id"]:
         try:
             msg_notif = f"🚨 Atención humana requerida: {nombre} ({vacante})"
@@ -551,7 +581,9 @@ def _preparar_alerta_cita(candidato: dict, contacto: dict, reclutador: dict, ite
     fecha_cita = _formatear_fecha_alerta(item.get("fecha_entrevista_detectada") or "")
     nave_candidato = candidato.get("nave_interes") or "No especificada"
     resumen_ia = candidato.get("resumen_ia") or "Sin resumen previo disponible."
-    vacante_detectada = (item.get("vacante_detectada") or candidato.get("vacante_interes") or "General").strip()
+    vacante_detectada = limpiar_vacante(item.get("vacante_detectada") or candidato.get("vacante_interes"))
+    if es_placeholder_vacante(vacante_detectada):
+        vacante_detectada = "Sin vacante definida"
 
     nombre_reclutador = reclutador.get("nombre_reclutador") or "Equipo de Reclutamiento"
     telefono_destino = (reclutador.get("telefono_reclutador") or "5213332012658").replace("@c.us", "")
@@ -774,7 +806,13 @@ async def procesar_turno(webhook_body: dict, contacto: dict, candidato: dict, sy
             enviados.append(primero["message_to_user"])
         alerta = _preparar_alerta_humano(candidato, contacto, payload, reclutador, primero.get("human_alert_nombre"), motivo_escalamiento)
         await waha_client.send_text(session, f"{alerta['telefono_destino']}@c.us", alerta["mensaje_alerta"])
-        await _marcar_escalado(alerta["telefono_candidato"], alerta["nombre_candidato"], alerta["vacante"], motivo_escalamiento)
+        await _marcar_escalado(
+            alerta["telefono_candidato"],
+            alerta["nombre_candidato"],
+            alerta["vacante"],
+            motivo_escalamiento,
+            alerta.get("empresa_id"),
+        )
         logger.info(
             "procesar_turno: candidato telefono=%s escalado a %s (motivo=%s)",
             numero, alerta["telefono_destino"], motivo_escalamiento,

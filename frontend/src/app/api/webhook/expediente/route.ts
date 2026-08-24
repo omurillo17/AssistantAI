@@ -6,6 +6,7 @@ import { verifyInternalApiKey } from '@/lib/auth';
 import { WAHA_BASE, WAHA_API_KEY, WAHA_SESSION } from '@/lib/waha';
 import { resolveEmpresaYGrupo } from '@/lib/empresaResolution';
 import { asignarReclutadorPorVacante } from '@/lib/asignacionReclutador';
+import { esPlaceholderVacante, limpiarVacante } from '@/lib/vacantes';
 
 export async function POST(request: Request) {
   if (!verifyInternalApiKey(request)) {
@@ -200,14 +201,16 @@ export async function POST(request: Request) {
     // desconocida" y manda la cita al reclutador de respaldo (pasó en
     // producción: se agendó "vacante de General" con el Equipo de Reclutamiento
     // en vez de con la reclutadora dueña de la vacante).
-    const esPlaceholderVacante = (v: string) => ['GENERAL', 'NINGUNA'].includes(v.trim().toUpperCase());
-    let safe_vacante = (vacante || '').trim();
-    if (!safe_vacante || esPlaceholderVacante(safe_vacante)) {
+    // esPlaceholderVacante vive en @/lib/vacantes: la copia local comparaba
+    // el string crudo, así que '{NINGUNA}' (con las llaves que dejaba el
+    // prompt) no coincidía con 'NINGUNA' y pasaba como vacante real.
+    let safe_vacante = limpiarVacante(vacante);
+    if (esPlaceholderVacante(safe_vacante)) {
       const matchVacanteResumen = (resumen_ia_final || '').match(/Vacante:\s*([^.\n]+)/i);
       if (matchVacanteResumen && !esPlaceholderVacante(matchVacanteResumen[1])) {
-        safe_vacante = matchVacanteResumen[1].trim();
-      } else if (dbCandidato.vacante_interes && !esPlaceholderVacante(dbCandidato.vacante_interes)) {
-        safe_vacante = dbCandidato.vacante_interes;
+        safe_vacante = limpiarVacante(matchVacanteResumen[1]);
+      } else if (!esPlaceholderVacante(dbCandidato.vacante_interes)) {
+        safe_vacante = limpiarVacante(dbCandidato.vacante_interes);
       } else {
         safe_vacante = '';
       }

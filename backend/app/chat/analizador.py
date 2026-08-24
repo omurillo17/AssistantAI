@@ -20,6 +20,7 @@ from app import gemini_client, waha_client
 from app.config import ENV
 from app.db import get_pool
 from app.chat.mensajes_comunes import DESCALIFICACION_CIUDAD_MSG
+from app.chat.vacantes import es_placeholder_vacante, limpiar_vacante
 from app.internal_api import auth_headers
 from app.utils.fechas_es import DIAS_ES, MESES_ES
 
@@ -79,15 +80,45 @@ Catálogo completo de vacantes disponibles:
   "veredicto": "VIABLE, CARTERA_GENERAL, RECHAZADO o null (sobre el perfil del candidato en CV/Solicitud, NO sobre autenticidad del documento)",
   "experiencia": "Visible en CV/Solicitud. Si no, null.",
   "motivo": "Explica brevemente el estado_validacion, sobre todo si es REVISAR_MANUAL o INVALIDO.",
-  "mensaje_usuario": "Aquí va el mensaje según las reglas de abajo (si aplica)."
+  "mensaje_usuario": "Aquí va el mensaje según las reglas de abajo (si aplica).",
+  "archivos": [
+    {{"indice": 1, "tipo": "INE_FRENTE"}},
+    {{"indice": 2, "tipo": "CONSTANCIA_FISCAL"}}
+  ]
 }}
+--- CLASIFICACIÓN ARCHIVO POR ARCHIVO (OBLIGATORIA) ---
+Además del `tipo_documento` global, devuelve SIEMPRE el arreglo "archivos" con EXACTAMENTE UNA entrada por cada imagen o PDF adjunto en este turno.
+`indice` empieza en 1 y respeta el orden en que se te adjuntaron los archivos. `tipo` debe ser uno de estos valores, sin inventar otros:
+- INE_FRENTE / INE_REVERSO: las dos caras de la credencial de elector.
+- CONSTANCIA_FISCAL: Constancia de Situación Fiscal o Cédula de Identificación Fiscal del SAT.
+- CV: currículum. SOLICITUD: formato de solicitud de empleo.
+- ACTA_NACIMIENTO, CURP, IMSS, COMPROBANTE_DOMICILIO, COMPROBANTE_ESTUDIOS, ANTECEDENTES_PENALES: otros documentos personales.
+- ANUNCIO: cartel o CAPTURA DE PANTALLA de la oferta de empleo (Facebook, WhatsApp, la vacante publicada). No es un documento del candidato.
+- IRRELEVANTE: meme, sticker, selfie, mascota, paisaje, captura sin ningún documento.
+Los archivos marcados ANUNCIO o IRRELEVANTE NO se guardan en el expediente, así que úsalos sin miedo: es preferible marcar una captura del anuncio como ANUNCIO que archivarla como si fuera un documento.
+Si un PDF trae varias páginas de distinto tipo, clasifícalo por lo que predomine.
 --- REGLAS DE MENSAJES (mensaje_usuario) ---
 1. Si estado_validacion es INVALIDO (documento evidentemente falso/broma): "¡Hola! Oye, estuve revisando la foto que me enviaste pero fíjate que no pude identificarla como un documento oficial válido (INE, RFC o Solicitud). 🧐 ¿Podrías apoyarme mandando de nuevo una foto clara de tu documento real por favor? ¡Así podré agilizar tu trámite! 😊"
 2. Si estado_validacion es REVISAR_MANUAL (foto muy baja calidad, datos clave ilegibles): "¡Gracias por la foto! 📸 Solo que no logro leer bien los datos porque se ve muy [usa calidad_imagen: borrosa/oscura/con reflejo/recortada]. ¿Me la puedes mandar de nuevo con buena luz y que se vea el documento completo? Es la última vez que te la pido, prometo que con eso es suficiente. 🙏"
 3. Si estado_validacion es VALIDO y el veredicto es VIABLE/CARTERA_GENERAL/RECHAZADO: mantén tus reglas de mensajes estándar para CV y Solicitudes.
 4. Si el documento es CONSTANCIA (SAT), INE o AMBOS_DOCS con estado_validacion VALIDO: pon null en el mensaje, el sistema se encargará."""
 
-_PLACEHOLDER_RE_TEMPLATE = "{{{name}}}"
+# El prompt vivo (empresas.prompt_ia) escribe los placeholders con llave
+# doble -- `{{VACANTE_INTERES}}` -- pero esta plantilla generaba el patrón
+# con UNA sola llave, así que el replace sólo se comía el par interno y
+# dejaba las externas: la ficha del candidato terminaba diciendo
+# `| Vacante | {Ninguna} |` y el modelo copiaba ese `{Ninguna}` literal de
+# vuelta en `actualizar_vacante`. Se acepta cualquiera de las dos formas
+# para no depender de cómo esté escrito el prompt de cada empresa.
+_PLACEHOLDER_RE_CACHE: dict[str, re.Pattern[str]] = {}
+
+
+def _placeholder_re(name: str) -> re.Pattern[str]:
+    patron = _PLACEHOLDER_RE_CACHE.get(name)
+    if patron is None:
+        patron = re.compile(r"\{\{?" + re.escape(name) + r"\}\}?")
+        _PLACEHOLDER_RE_CACHE[name] = patron
+    return patron
 
 
 # --- Clasificación de contenido -------------------------------------------
@@ -103,6 +134,91 @@ def clasificar_media(webhook_payload: dict) -> str:
     if "word" in mimetype:
         return "word"
     return "documento"
+
+
+# --- Clasificación archivo por archivo --------------------------------------
+
+# Gemini clasifica CADA adjunto del turno, no solo el "tipo de documento"
+# global: un candidato manda en la misma tanda su INE, su Constancia, su acta y
+# el pantallazo del anuncio, y antes los 10 archivos se guardaban bajo la misma
+# etiqueta (el expediente acababa mostrando la misma lista repetida como "INE" y
+# como "Constancia").
+ETIQUETAS_ARCHIVO = {
+    "INE_FRENTE": "INE — frente",
+    "INE_REVERSO": "INE — reverso",
+    "CONSTANCIA_FISCAL": "Constancia de Situación Fiscal",
+    "CV": "Currículum",
+    "SOLICITUD": "Solicitud de empleo",
+    "ACTA_NACIMIENTO": "Acta de nacimiento",
+    "CURP": "Constancia de CURP",
+    "IMSS": "Documento del IMSS",
+    "COMPROBANTE_DOMICILIO": "Comprobante de domicilio",
+    "COMPROBANTE_ESTUDIOS": "Comprobante de estudios",
+    "ANTECEDENTES_PENALES": "Carta de no antecedentes penales",
+    "ANUNCIO": "Captura del anuncio",
+    "OTRO": "Documento sin identificar",
+}
+
+# Lo que NO se archiva: la captura del anuncio de la vacante (Facebook Ads,
+# WhatsApp, el cartel de la oferta) y la basura (memes, stickers, selfies). No
+# son documentos del candidato, no se consultan nunca desde el expediente y
+# llenaban /uploads de pantallazos.
+TIPOS_ARCHIVO_DESCARTABLES = {"ANUNCIO", "IRRELEVANTE"}
+
+_ALIAS_TIPO_ARCHIVO = {
+    "INE": "INE_FRENTE",
+    "INE_ANVERSO": "INE_FRENTE",
+    "CONSTANCIA": "CONSTANCIA_FISCAL",
+    "CSF": "CONSTANCIA_FISCAL",
+    "RFC": "CONSTANCIA_FISCAL",
+    "SAT": "CONSTANCIA_FISCAL",
+    "ACTA": "ACTA_NACIMIENTO",
+    "INVALIDO": "IRRELEVANTE",
+    "MEME": "IRRELEVANTE",
+}
+
+
+def normalizar_tipo_archivo(raw: object) -> str:
+    tipo = str(raw or "").strip().upper()
+    if tipo in TIPOS_ARCHIVO_DESCARTABLES or tipo in ETIQUETAS_ARCHIVO:
+        return tipo
+    return _ALIAS_TIPO_ARCHIVO.get(tipo, "OTRO")
+
+
+def _tipos_por_documento_global(tipo_documento: str, total: int) -> list[str]:
+    """Respaldo cuando Gemini no devuelve el arreglo `archivos`: se reparte el
+    `tipo_documento` global entre los adjuntos, como se hacía antes."""
+    tipo = (tipo_documento or "").upper()
+    if tipo == "ANUNCIO":
+        return ["ANUNCIO"] * total
+    if tipo == "INVALIDO":
+        return ["IRRELEVANTE"] * total
+    if tipo == "INE":
+        return ["INE_FRENTE" if i == 0 else "INE_REVERSO" for i in range(total)]
+    if tipo in ("CONSTANCIA", "CSF", "RFC", "SAT"):
+        return ["CONSTANCIA_FISCAL"] * total
+    if tipo in ("CV", "SOLICITUD"):
+        return [tipo] * total
+    # AMBOS_DOCS y cualquier otro: no se puede saber cuál archivo es cuál, pero
+    # tampoco se descarta ninguno.
+    return ["OTRO"] * total
+
+
+def clasificar_archivos(datos: dict, total: int) -> list[str]:
+    """Un tipo por adjunto, en el mismo orden en que se le mandaron a Gemini."""
+    if total <= 0:
+        return []
+    tipos = _tipos_por_documento_global(datos.get("tipo_documento") or "", total)
+    for entrada in datos.get("archivos") or []:
+        if not isinstance(entrada, dict):
+            continue
+        try:
+            idx = int(entrada.get("indice")) - 1
+        except (TypeError, ValueError):
+            continue
+        if 0 <= idx < total:
+            tipos[idx] = normalizar_tipo_archivo(entrada.get("tipo"))
+    return tipos
 
 
 # --- Levenshtein / validación cruzada de CURP ------------------------------
@@ -232,7 +348,14 @@ async def obtener_detalle_vacantes(nave_interes: str | None, empresa_id: str | N
 
 # --- SepararJSON ------------------------------------------------------------
 
-def separar_json(gemini_text: str, telefono: str, nombre_whatsapp: str, caption_usuario: str, candidato: dict) -> dict:
+def separar_json(
+    gemini_text: str,
+    telefono: str,
+    nombre_whatsapp: str,
+    caption_usuario: str,
+    candidato: dict,
+    total_archivos: int = 0,
+) -> dict:
     """Puerto de 'SepararJSON'."""
     json_match = re.search(r"\{[\s\S]*\}", gemini_text or "")
     clean_json = json_match.group(0) if json_match else re.sub(r"```json|```", "", gemini_text or "").strip()
@@ -345,6 +468,7 @@ def separar_json(gemini_text: str, telefono: str, nombre_whatsapp: str, caption_
         "identidad_motivo": identidad_motivo,
         "curp_ine": curp_ine_salida,
         "curp_rfc": curp_rfc_salida,
+        "clasificacion_archivos": clasificar_archivos(datos, total_archivos),
     }
 
 
@@ -649,13 +773,14 @@ async def cargar_prompt(webhook_payload: dict, contacto: dict, candidato: dict) 
 
     semaforo_privacidad = "ACEPTADA" if dbData.get("privacidad_aceptada") else "PENDIENTE"
 
-    vacante_interes = dbData.get("vacante_interes") or ""
-    if not vacante_interes or str(vacante_interes).strip().upper() in ("NINGUNA", "GENERAL", "PENDIENTE", "DESCONOCIDA", "X"):
+    vacante_interes = limpiar_vacante(dbData.get("vacante_interes"))
+    if es_placeholder_vacante(vacante_interes):
+        vacante_interes = ""
         resumen_prev = dbData.get("resumen_ia") or ""
         vac_match = re.search(r'Vacante:\s*([^.\n|]+)', resumen_prev, re.IGNORECASE)
         if vac_match and vac_match.group(1):
-            cand_vac = vac_match.group(1).strip().upper()
-            if cand_vac not in ("NINGUNA", "GENERAL", "PENDIENTE", "DESCONOCIDA", "X"):
+            cand_vac = limpiar_vacante(vac_match.group(1)).upper()
+            if not es_placeholder_vacante(cand_vac):
                 vacante_interes = cand_vac
 
     replacements = {
@@ -677,7 +802,10 @@ async def cargar_prompt(webhook_payload: dict, contacto: dict, candidato: dict) 
         "RESUMEN_ANTERIOR": dbData.get("resumen_ia") or "Conversacion nueva.",
     }
     for key, value in replacements.items():
-        prompt = prompt.replace(_PLACEHOLDER_RE_TEMPLATE.format(name=key), str(value))
+        # `re.sub` con una función de reemplazo: el valor puede traer barras
+        # invertidas o `\g` (nombres, menús) que se interpretarían como
+        # referencias de grupo si se pasara como string.
+        prompt = _placeholder_re(key).sub(lambda _m, v=str(value): v, prompt)
 
     return prompt
 
@@ -763,7 +891,12 @@ async def analizar_mensaje(webhook_payload: dict, contacto: dict, candidato: dic
         logger.info("Anuncio de Facebook Ads detectado para telefono=%s: %s", telefono, headline)
         pool = get_pool()
         await pool.execute(
-            "UPDATE candidatos SET vacante_interes = $1 WHERE telefono = $2 AND (vacante_interes IS NULL OR vacante_interes = '' OR vacante_interes = 'General')",
+            # El WHERE sólo contemplaba NULL/''/'General', así que un candidato
+            # con un placeholder adornado guardado ('{Ninguna}') no recibía la
+            # vacante del anuncio. Se compara sobre el valor sin adornos.
+            "UPDATE candidatos SET vacante_interes = $1 WHERE telefono = $2 "
+            """AND UPPER(BTRIM(COALESCE(vacante_interes, ''), '{}[]"''| ')) """
+            "IN ('', 'GENERAL', 'NINGUNA', 'PENDIENTE', 'DESCONOCIDA', 'X')",
             headline,
             telefono,
         )
@@ -823,21 +956,18 @@ async def analizar_mensaje(webhook_payload: dict, contacto: dict, candidato: dic
         )
         return {"mensaje_para_agente": None, "detuvo_flujo": True}
 
-    # 6. DESCARGAR Y SUBIR TODOS LOS DOCUMENTOS/FOTOS A STORAGE
+    # 6. DESCARGAR TODOS LOS DOCUMENTOS/FOTOS
+    # Solo a memoria: la subida a storage ocurre DESPUÉS del análisis (paso 8),
+    # cuando ya se sabe qué es cada archivo. Antes se subía todo aquí, así que
+    # los pantallazos del anuncio de la vacante y los memes se quedaban en
+    # /uploads para siempre aunque el expediente nunca los referenciara.
     archivos_descargados: list[dict] = []
-    urls_subidas: list[str] = []
 
     for m_url in media_urls:
         try:
             data, mime_type = await waha_client.download_media(m_url)
             if data:
                 archivos_descargados.append({"mime_type": mime_type, "data": data})
-                try:
-                    up_url = await subir_cv(telefono, data, mime_type)
-                    if up_url:
-                        urls_subidas.append(up_url)
-                except Exception:
-                    logger.exception("analizar_mensaje: subir_cv falló para %s", m_url)
         except Exception:
             logger.exception("analizar_mensaje: download_media falló para %s", m_url)
 
@@ -854,13 +984,45 @@ async def analizar_mensaje(webhook_payload: dict, contacto: dict, candidato: dic
     captions = [r["content"] for r in temp_rows if r.get("content") and r["content"] != "[Mensaje multimedia]"]
     caption_usuario = " ".join(captions).strip() or (webhook_payload.get("body") or "")
     nombre_whatsapp = (webhook_payload.get("_data") or {}).get("notifyName") or "Candidato"
-    resultado = separar_json(gemini_text, telefono, nombre_whatsapp, caption_usuario, candidato)
+    resultado = separar_json(
+        gemini_text, telefono, nombre_whatsapp, caption_usuario, candidato,
+        total_archivos=len(archivos_descargados),
+    )
 
     mensaje_para_agente = resultado["mensaje_usuario"]
+
+    # 8. SUBIR A STORAGE SOLO LO QUE ES DOCUMENTO DEL CANDIDATO
+    archivos_guardados: list[dict] = []
+    for indice, (archivo, tipo_archivo) in enumerate(
+        zip(archivos_descargados, resultado["clasificacion_archivos"]), start=1
+    ):
+        if tipo_archivo in TIPOS_ARCHIVO_DESCARTABLES:
+            logger.info(
+                "analizar_mensaje: archivo %d/%d de %s descartado sin guardar (%s)",
+                indice, len(archivos_descargados), telefono, tipo_archivo,
+            )
+            continue
+        try:
+            up_url = await subir_cv(telefono, archivo["data"], archivo["mime_type"])
+        except Exception:
+            logger.exception("analizar_mensaje: subir_cv falló para archivo %d de %s", indice, telefono)
+            continue
+        if up_url:
+            archivos_guardados.append({
+                "url": up_url,
+                "tipo": tipo_archivo,
+                "etiqueta": ETIQUETAS_ARCHIVO.get(tipo_archivo, "Documento sin identificar"),
+            })
+
+    urls_subidas = [a["url"] for a in archivos_guardados]
 
     if resultado["tipo_origen"] != "INVALIDO":
         link_cv = urls_subidas[0] if urls_subidas else None
         resultado["cv_manual"] = resultado.get("cv_manual") or {}
+        # `archivos` es lo que lee el CRM para encasillar cada documento; `urls`
+        # y `url`/`url_reverso` se conservan por compatibilidad con expedientes
+        # y pantallas anteriores.
+        resultado["cv_manual"]["archivos"] = archivos_guardados
         resultado["cv_manual"]["urls"] = urls_subidas
         resultado["cv_manual"]["url"] = link_cv
         if len(urls_subidas) > 1:
