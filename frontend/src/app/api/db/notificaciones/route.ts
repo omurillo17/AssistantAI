@@ -40,6 +40,48 @@ export async function GET(request: Request) {
   }
 }
 
+// ─── POST /api/db/notificaciones ───────────────────────────
+// Crea una notificación desde el CRM. La usa el modal de verificación de
+// identidad al cerrarse: en vez de seguir interrumpiendo al reclutador cada
+// 10 segundos, la alerta baja a la campana y ahí espera. Se evita duplicar:
+// si ya hay una notificación sin leer para ese candidato, no se inserta otra.
+export async function POST(request: Request) {
+  try {
+    const payload = await getSession(request);
+    if (!payload) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+    }
+    const reclutador_id = (payload.reclutador_id as string | null) ?? null;
+
+    const body = await request.json().catch(() => ({}));
+    const mensaje = typeof body?.mensaje === 'string' ? body.mensaje.trim().slice(0, 2000) : '';
+    const clave = typeof body?.clave === 'string' ? body.clave.trim().slice(0, 100) : '';
+
+    if (!mensaje) {
+      return NextResponse.json({ error: 'Falta el mensaje' }, { status: 400 });
+    }
+
+    if (clave) {
+      const yaExiste = await pool.query(
+        `SELECT 1 FROM notificaciones
+         WHERE leida = false AND mensaje LIKE $1
+           AND (reclutador_id = $2 OR (reclutador_id IS NULL AND $2::varchar IS NULL))
+         LIMIT 1`,
+        [`%${clave}%`, reclutador_id]
+      );
+      if (yaExiste.rowCount) {
+        return NextResponse.json({ success: true, duplicada: true });
+      }
+    }
+
+    await pool.query('INSERT INTO notificaciones (reclutador_id, mensaje) VALUES ($1, $2)', [reclutador_id, mensaje]);
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error('Error creando notificación:', err);
+    return NextResponse.json({ error: 'Error creando notificación' }, { status: 500 });
+  }
+}
+
 export async function PATCH(request: Request) {
   try {
     const payload = await getSession(request);

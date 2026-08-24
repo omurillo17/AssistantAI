@@ -86,7 +86,14 @@ export function TopNavbar() {
     const cargar = async () => { await fetchNotifs(); };
     cargar();
     const interval = setInterval(cargar, 10000); // Check every 10 seconds
-    return () => clearInterval(interval);
+    // El modal de identidad emite este evento al cerrarse: la alerta que dejó
+    // de interrumpir tiene que aparecer en la campana en ese momento, no hasta
+    // el siguiente poll de 10s (si no, parece que se perdió).
+    window.addEventListener("refrescar-notificaciones", cargar);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("refrescar-notificaciones", cargar);
+    };
   }, [fetchNotifs]);
 
   const markAllAsRead = async () => {
@@ -185,6 +192,7 @@ export function TopNavbar() {
     if (pathname.startsWith("/calendario")) return "Calendario de Entrevistas";
     if (pathname.startsWith("/expedientes")) return "Expediente de Candidato";
     if (pathname.startsWith("/usuarios")) return "Gestión de Usuarios";
+    if (pathname.startsWith("/capacitacion")) return "Centro de Capacitación";
     if (pathname.startsWith("/empresa")) return "Perfil de Empresa";
     if (pathname.startsWith("/reclutadores")) return "Reclutadores";
     return "Panel Principal";

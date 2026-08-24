@@ -230,6 +230,12 @@ CREATE TABLE IF NOT EXISTS candidatos (
     edad VARCHAR(50),
     correo VARCHAR(255),
 
+    -- Municipio/ciudad que declara el candidato. Sofia la usa para decidir si
+    -- esta dentro de la cobertura (ZMG) antes de ofrecerle vacantes; si no lo
+    -- esta, el expediente se cierra con estado OTRA_CIUDAD conservando aqui la
+    -- ciudad, para saber por que se descarto.
+    lugar_residencia VARCHAR(255),
+
     estado VARCHAR(50) DEFAULT 'NUEVO',
     vacante_interes VARCHAR(100),
     nave_interes VARCHAR(100),
@@ -289,7 +295,7 @@ CREATE TABLE IF NOT EXISTS candidatos (
         'CITA_AGENDADA', 'CITA_CANCELADA', 'RECORDATORIO_ENVIADO',
         'ESCALADO', 'DOCUMENTOS_NO_COINCIDEN',
         'ENTREVISTADO', 'CONTRATADO',
-        'RECHAZADO', 'CARTERA_GENERAL', 'INACTIVO'
+        'RECHAZADO', 'CARTERA_GENERAL', 'INACTIVO', 'OTRA_CIUDAD'
     )),
 
     CONSTRAINT valid_veredicto CHECK (veredicto IS NULL OR veredicto IN (
@@ -784,6 +790,23 @@ ALTER TABLE vacantes_def ADD COLUMN IF NOT EXISTS funciones TEXT DEFAULT '';
 -- Sinonimos con los que el candidato puede referirse a la vacante.
 ALTER TABLE vacantes_def ADD COLUMN IF NOT EXISTS palabras_clave TEXT DEFAULT '';
 
+-- Ciudad/municipio declarado por el candidato (filtro de cobertura de Sofia).
+ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS lugar_residencia VARCHAR(255);
+
+-- Candidatos fuera de la zona de cobertura: analizador.py y parser.py escriben
+-- estado = 'OTRA_CIUDAD', asi que la CHECK tiene que aceptarlo o el UPDATE
+-- truena y el expediente se queda a medias. En una base ya creada la CHECK
+-- vieja sigue viva, hay que reemplazarla.
+ALTER TABLE candidatos DROP CONSTRAINT IF EXISTS valid_estado;
+ALTER TABLE candidatos ADD CONSTRAINT valid_estado CHECK (estado IN (
+    'NUEVO', 'INTERESADO', 'CV_RECIBIDO', 'CV_MANUAL',
+    'FILTROS_COMPLETADOS', 'INE_VALIDADA',
+    'CITA_AGENDADA', 'CITA_CANCELADA', 'RECORDATORIO_ENVIADO',
+    'ESCALADO', 'DOCUMENTOS_NO_COINCIDEN',
+    'ENTREVISTADO', 'CONTRATADO',
+    'RECHAZADO', 'CARTERA_GENERAL', 'INACTIVO', 'OTRA_CIUDAD'
+));
+
 -- Notificaciones en tiempo real (LISTEN/NOTIFY) para el modulo de Mensajes del
 -- frontend: reemplaza el polling de 4s por un push cuando de verdad se
 -- inserta un mensaje o cambia la bandeja, sin importar que servicio escribio
@@ -824,5 +847,5 @@ CREATE TRIGGER trg_mensajes_bandeja_notify
 -- ============================================
 DO $$
 BEGIN
-    RAISE NOTICE 'Database setup completado - 18 tablas, 3 vistas, 4 funciones';
+    RAISE NOTICE 'Database setup completado - 21 tablas, 3 vistas, 8 funciones';
 END $$;

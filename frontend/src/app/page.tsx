@@ -122,6 +122,19 @@ export default function Home() {
             Ir al módulo <span className="ml-1">→</span>
           </div>
         </Link>
+        {/* Capacitación */}
+        <Link href="/capacitacion" className="bg-slate-700 rounded-lg relative overflow-hidden text-white shadow-sm hover:shadow-md transition-shadow block">
+          <div className="p-5 relative z-10">
+            <h3 className="text-3xl font-bold mb-1">Capacitación</h3>
+            <p className="text-white/80 text-sm">Guías y videos de uso</p>
+          </div>
+          <div className="absolute top-4 right-4 text-black/10 text-6xl font-black">
+            🎓
+          </div>
+          <div className="bg-black/10 py-1.5 text-center text-sm font-semibold hover:bg-black/20 transition-colors">
+            Ir al módulo <span className="ml-1">→</span>
+          </div>
+        </Link>
       </div>
 
       {(role === "ADMIN" || role === "ROOT") && (

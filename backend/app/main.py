@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 
 from app.db import close_pool, init_pool
 from app.oauth_store import CredencialesNoEncontradas
-from app.routers import citas, eventos_calendario, whatsapp
+from app.routers import citas, documentos, eventos_calendario, whatsapp
 from app.scheduler import start_scheduler, stop_scheduler
 
 # uvicorn no configura el logging raíz por defecto; sin esto, logger.info()
@@ -27,6 +27,7 @@ app = FastAPI(title="Virgo Backend", lifespan=lifespan)
 
 app.include_router(eventos_calendario.router)
 app.include_router(citas.router)
+app.include_router(documentos.router)
 app.include_router(whatsapp.router)
 
 
