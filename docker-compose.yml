@@ -114,6 +114,13 @@ services:
     volumes:
       - waha_data_final:/app/.waha
       - waha_files_final:/app/.waha/files
+      # Credenciales de la sesión de WhatsApp (motor NOWEB: .sessions/noweb/
+      # waha.sqlite3). NO están dentro de /app/.waha -- ese directorio solo
+      # guarda los archivos multimedia. Sin este volumen la sesión vive en la
+      # capa efímera del contenedor y `docker compose up --force-recreate` la
+      # borra: WAHA arranca con "Session not found" y hay que volver a
+      # escanear el QR (pasó el 24/08/2026).
+      - waha_sessions_final:/app/.sessions
     depends_on:
       - backend
       - postgres
@@ -187,3 +194,4 @@ volumes:
   postgres_data_final:
   waha_data_final:
   waha_files_final:
+  waha_sessions_final:
