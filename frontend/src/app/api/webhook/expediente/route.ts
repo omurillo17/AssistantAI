@@ -7,6 +7,7 @@ import { WAHA_BASE, WAHA_API_KEY, WAHA_SESSION } from '@/lib/waha';
 import { resolveEmpresaYGrupo } from '@/lib/empresaResolution';
 import { asignarReclutadorPorVacante } from '@/lib/asignacionReclutador';
 import { esPlaceholderVacante, limpiarVacante } from '@/lib/vacantes';
+import type { CandidatoEvent, CandidatoContext } from "@/lib/stateMachine";
 
 export async function POST(request: Request) {
   if (!verifyInternalApiKey(request)) {
@@ -78,9 +79,39 @@ export async function POST(request: Request) {
     }
 
     // 1. Obtener estado actual
-    const res = await pool.query('SELECT estado, tiene_cv, cv_manual as db_cv_manual, fecha_entrevista as db_fecha, privacidad_aceptada, escalado, datos_ine, datos_rfc, nombre_constancia, curp_ine, curp_rfc, alerta_identidad_estado, alerta_identidad_motivo, asignado_a_id FROM candidatos WHERE telefono = $1', [telefono]);
+    const res = await pool.query('SELECT estado, tiene_cv, cv_manual as db_cv_manual, fecha_entrevista as db_fecha, privacidad_aceptada, escalado, datos_ine, datos_rfc, nombre_ine, nombre_constancia, curp_ine, curp_rfc, alerta_identidad_estado, alerta_identidad_motivo, asignado_a_id, vacante_interes FROM candidatos WHERE telefono = $1', [telefono]);
     let currentState = 'NUEVO';
-    let dbCandidato: any = {};
+    // La fila que trae el SELECT de arriba: lo que la máquina de estados
+    // necesita como contexto, más las columnas que se leen luego aquí.
+    let dbCandidato: CandidatoContext & {
+      resumen_ia?: string | null;
+      datos_ine?: unknown;
+      datos_rfc?: unknown;
+      nombre_constancia?: string | null;
+      curp_ine?: string | null;
+      curp_rfc?: string | null;
+      alerta_identidad_estado?: string | null;
+      alerta_identidad_motivo?: string | null;
+      asignado_a_id?: string | null;
+      db_cv_manual?: boolean;
+      db_fecha?: string | null;
+      // nombre_ine y vacante_interes se leían más abajo pero faltaban en el
+      // SELECT, así que llegaban siempre en undefined: tieneIne perdía uno de
+      // sus tres criterios y la rama que conserva la vacante ya guardada nunca
+      // se ejecutaba (esPlaceholderVacante(undefined) es true), de modo que la
+      // vacante se vaciaba en vez de mantenerse.
+      nombre_ine?: string | null;
+      vacante_interes?: string | null;
+    } = {
+      // Sin fila en la BD el contexto iba vacío y la máquina leía undefined en
+      // cada guarda; estos valores dicen lo mismo, pero explícitamente.
+      telefono,
+      tiene_cv: false,
+      cv_manual: false,
+      fecha_entrevista: null,
+      privacidad_aceptada: false,
+      escalado: false,
+    };
 
     if (res.rowCount && res.rowCount > 0) {
       currentState = res.rows[0].estado;
@@ -88,7 +119,7 @@ export async function POST(request: Request) {
     }
 
     // 2. Determinar evento para la máquina de estados
-    let event: any = null;
+    let event: CandidatoEvent | null = null;
     const esBloqueado = identidad_bloqueada === 'true';
     // Discrepancia MENOR de CURP (1-2 caracteres, típico de OCR): a diferencia de
     // esBloqueado, NO detiene el agendamiento -- solo deja la alerta pendiente en
@@ -217,7 +248,9 @@ export async function POST(request: Request) {
     }
 
     // Parseo seguro
-    let parsedDatos: any = {};
+    // El JSON del documento: la IA decide qué campos trae, así que solo se
+    // nombran los que este handler lee.
+    let parsedDatos: { nombre_completo?: string; nombre?: string; url?: string; [k: string]: unknown } = {};
     if (typeof datos_documento === 'string') {
       try { parsedDatos = JSON.parse(datos_documento); } catch { parsedDatos = {}; }
     } else if (datos_documento && typeof datos_documento === 'object') {
