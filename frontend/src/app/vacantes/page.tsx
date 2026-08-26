@@ -100,7 +100,7 @@ export default function VacantesPage() {
                         <Edit size={16} /> Editar
                       </button>
                       <button onClick={() => router.push(`/vacantes/${vac.id}`)} className="text-sm bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-4 py-2 rounded font-semibold transition-colors flex items-center gap-2">
-                        <Filter size={16} /> Filtros{(vac as any).filtros?.filter((f: any) => f.activo).length > 0 ? ` (${(vac as any).filtros?.filter((f: any) => f.activo).length})` : ''}
+                        <Filter size={16} /> Filtros{(vac.filtros?.filter((f) => f.activo).length ?? 0) > 0 ? ` (${vac.filtros?.filter((f) => f.activo).length})` : ''}
                       </button>
                       <button onClick={() => v.removeVacancy(recIndex, vacIndex)} className="text-sm bg-danger hover:bg-danger/90 text-white px-4 py-2 rounded font-semibold transition-colors flex items-center gap-2">
                         <Trash2 size={16} /> Eliminar

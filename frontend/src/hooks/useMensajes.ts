@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, type RefObject } from "react";
 import { useRealtime } from "@/lib/realtimeClient";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { Conversacion, Mensaje, Candidato, GrupoReclutadores, Recruiter, Vacante } from "@/types";
@@ -12,7 +12,12 @@ const normalize = (str?: string | null) => str ? str.trim().toUpperCase() : "";
 /** "todos" sólo se ofrece a ROOT/ADMIN (ver `puedeVerTodo`). */
 export type TabBandeja = "todos" | "mis_chats" | "compartida" | "descartados";
 
-export function useMensajes() {
+// La ref del contenedor de scroll la crea la pantalla y se pasa aquí, en vez
+// de crearla dentro y devolverla en el objeto de retorno. Leer una ref desde
+// ese objeto durante el render (`const r = m.chatScrollRef`) es lo que React
+// desaconseja, y bastaba ese único acceso para que el compilador diera por
+// contaminado el render entero de la pantalla de Mensajes.
+export function useMensajes({ chatScrollRef }: { chatScrollRef: RefObject<HTMLDivElement | null> }) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -40,7 +45,7 @@ export function useMensajes() {
   const [filterVacante, setFilterVacante] = useState("");
   const [filterNave, setFilterNave] = useState("");
   const [toast, setToast] = useState<{ msg: string; isError: boolean } | null>(null);
-  const [reclutadores, setReclutadores] = useState<any[]>([]);
+  const [reclutadores, setReclutadores] = useState<GrupoReclutadores[]>([]);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showPhoneModal, setShowPhoneModal] = useState(false);
   const [selectedReclutador, setSelectedReclutador] = useState("");
@@ -49,7 +54,6 @@ export function useMensajes() {
   const [todasNaves, setTodasNaves] = useState<string[]>([]);
 
   // ─── Refs ───────────────────────────────────────────────
-  const chatScrollRef = useRef<HTMLDivElement>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const prevMessagesLength = useRef(0);
   const isNearBottom = useRef(true);
@@ -76,7 +80,7 @@ export function useMensajes() {
       if (resVac.ok) {
         const data = await resVac.json();
         if (Array.isArray(data)) {
-          const allVacs = data.flatMap((r: any) => r.vacantes || []).map((v: any) => normalize(v.nombre)).filter(Boolean);
+          const allVacs = data.flatMap((r: Recruiter) => r.vacantes || []).map((v: Vacante) => normalize(v.nombre)).filter(Boolean);
           setTodasVacantes(Array.from(new Set(allVacs)) as string[]);
         }
       }
@@ -110,7 +114,7 @@ export function useMensajes() {
         const data = await res.json();
         if (data.grupos && Array.isArray(data.grupos)) {
           setReclutadores(data.grupos);
-          const allRecs = data.grupos.flatMap((g: any) => g.reclutadores || []);
+          const allRecs = data.grupos.flatMap((g: GrupoReclutadores) => g.reclutadores || []);
           if (allRecs.length > 0) {
             setSelectedReclutador(allRecs[0].id);
           }
@@ -279,7 +283,7 @@ export function useMensajes() {
       }
     }
     prevMessagesLength.current = mensajes.length;
-  }, [mensajes]);
+  }, [mensajes, chatScrollRef]);
 
   const handleScroll = () => {
     if (!chatScrollRef.current) return;
@@ -468,7 +472,7 @@ export function useMensajes() {
     let targetNombre: string = selectedReclutador;
     if (reclutadores && reclutadores.length > 0) {
       for (const grupo of reclutadores) {
-        const found = grupo.reclutadores?.find((r: any) => r.id === selectedReclutador);
+        const found = grupo.reclutadores?.find((r) => r.id === selectedReclutador);
         if (found) {
           targetNombre = found.nombre || targetNombre;
           if (grupo.empresa_id) targetEmpresaId = grupo.empresa_id;
@@ -485,7 +489,14 @@ export function useMensajes() {
       if (storedEmpresaId) query += `?empresa_id=${storedEmpresaId}`;
       if (storedNaveId) query += (query ? `&` : `?`) + `nave_id=${storedNaveId}`;
 
-      const bodyData: any = {
+      const bodyData: {
+        telefono: string | null;
+        escalado: boolean;
+        estado: string;
+        escalation_reason: string;
+        asignado_a_id: string;
+        empresa_id?: string;
+      } = {
         telefono: activePhone,
         escalado: true,
         estado: "ESCALADO",
@@ -639,9 +650,6 @@ export function useMensajes() {
     showPhoneModal, setShowPhoneModal,
     selectedReclutador, setSelectedReclutador,
     actionLoading,
-
-    // Refs
-    chatScrollRef,
 
     // Derived
     uniqueVacantes,

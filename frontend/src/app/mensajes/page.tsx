@@ -73,6 +73,10 @@ function MediaContent({ msg, isUser }: { msg: Mensaje; isUser: boolean }) {
     return (
       <div className="mb-1">
         {mediaUrl ? (
+          // next/image no aplica: la URL sale de WhatsApp en tiempo de
+          // ejecución y ya viaja por nuestro proxy (/api/waha-media), que es
+          // quien controla caché y acceso.
+          // eslint-disable-next-line @next/next/no-img-element
           <img src={mediaUrl} alt="Imagen" className="rounded-xl max-w-[280px] max-h-[300px] object-cover cursor-pointer hover:opacity-90 transition-opacity" onClick={() => window.open(mediaUrl, "_blank")} loading="lazy" />
         ) : (
           <div className={`text-xs italic ${isUser ? "text-slate-400" : "text-indigo-200"}`}>🖼️ Imagen (archivo no disponible)</div>
@@ -168,8 +172,10 @@ function MensajesInner() {
   const router = useRouter();
   const imageInputRef = useRef<HTMLInputElement>(null);
   
-  const m = useMensajes();
-  const chatScrollRef = m.chatScrollRef;
+  // La ref es de esta pantalla (es su <div> el que scrollea) y se le presta al
+  // hook; así el render nunca lee una ref desde el objeto que devuelve.
+  const chatScrollRef = useRef<HTMLDivElement>(null);
+  const m = useMensajes({ chatScrollRef });
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -244,7 +250,7 @@ function MensajesInner() {
               m.filtradas.map((conv, idx) => (
                 <TarjetaConversacion
                   key={conv.candidato_id || `${conv.telefono}_${idx}`}
-                  conv={conv as any}
+                  conv={conv}
                   isActive={conv.telefono === m.activePhone}
                   onClick={() => { m.setActivePhone(conv.telefono); m.loadChat(conv.telefono, true, false); }}
                 />
@@ -346,7 +352,7 @@ function MensajesInner() {
                 </div>
               </div>
               <div ref={chatScrollRef} onScroll={m.handleScroll} className="flex-1 overflow-y-auto px-[5%] md:px-[10%] py-6" style={{ backgroundImage: `url('https://static.whatsapp.net/rsrc.php/v3/yl/r/r_QZ352iVXR.png')`, backgroundRepeat: 'repeat', backgroundSize: '400px' }}>
-                {m.loadingChat ? <div className="flex justify-center mt-10"><div className="flex items-center gap-2 text-sm text-slate-600 bg-white/90 shadow-sm px-4 py-2 rounded-full font-medium"><Loader2 size={16} className="animate-spin text-primary" /> Cargando mensajes...</div></div> : m.mensajes.map((msg: any) => <BurbujaMensaje key={msg.id} msg={msg} />)}
+                {m.loadingChat ? <div className="flex justify-center mt-10"><div className="flex items-center gap-2 text-sm text-slate-600 bg-white/90 shadow-sm px-4 py-2 rounded-full font-medium"><Loader2 size={16} className="animate-spin text-primary" /> Cargando mensajes...</div></div> : m.mensajes.map((msg) => <BurbujaMensaje key={msg.id} msg={msg} />)}
               </div>
               <div className="flex-shrink-0 bg-[#f0f2f5] px-4 py-3 relative z-10 border-t border-slate-200">
                 {!m.candidatoActivo?.escalado && !m.estaAtendidoPorOtro && (
@@ -409,7 +415,7 @@ function MensajesInner() {
               <select id="mensajes-transfer-target" name="transfer_target" className="w-full border border-slate-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" value={m.selectedReclutador} onChange={e => m.setSelectedReclutador(e.target.value)}>
                 {m.reclutadores.map((grupo, idx) => (
                   <optgroup key={idx} label={grupo.grupo_nombre ? `${grupo.grupo_nombre} (${grupo.empresa_nombre || 'Local'})` : 'Reclutadores'}>
-                    {grupo.reclutadores?.map((rec: any) => (
+                    {grupo.reclutadores?.map((rec) => (
                       <option key={rec.id} value={rec.id}>{rec.nombre} ({rec.rol})</option>
                     ))}
                   </optgroup>

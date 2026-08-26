@@ -3,6 +3,7 @@
 import { useCallback, useState, useEffect } from "react";
 import type { Recruiter, Vacante } from "@/types";
 import { COUNTRY_CODES } from "@/types";
+import type { Empresa, Nave } from "@/types";
 import { useTenant, useTenantChange } from "./useTenant";
 import { useIsHydrated, useLocalStorageValue } from "./useLocalStorageValue";
 
@@ -67,15 +68,15 @@ export function useVacantes() {
           if (navesAsignadasStr && role !== "ROOT" && role !== "ADMIN") {
             const allowedNaves = JSON.parse(navesAsignadasStr);
             if (Array.isArray(allowedNaves) && allowedNaves.length > 0) {
-              fetchedEmpresas = fetchedEmpresas.map((emp: any) => ({
+              fetchedEmpresas = fetchedEmpresas.map((emp: Empresa) => ({
                 ...emp,
-                naves: emp.naves ? emp.naves.filter((n: any) => allowedNaves.includes(n.id)) : []
-              })).filter((emp: any) => emp.naves.length > 0);
+                naves: emp.naves ? emp.naves.filter((n: Nave) => allowedNaves.includes(n.id)) : []
+              })).filter((emp: Empresa) => (emp.naves?.length ?? 0) > 0);
             }
           }
         } catch {}
 
-        const allNaves = fetchedEmpresas.flatMap((e: any) => e.naves || []);
+        const allNaves = fetchedEmpresas.flatMap((e: Empresa) => e.naves || []);
         setAvailableNaves(allNaves);
       }
     } catch (e) {
@@ -97,18 +98,24 @@ export function useVacantes() {
       const data = await res.json();
       const raw = Array.isArray(data) ? data : data.data || [];
 
-      const normalized = raw.map((rec: any, i: number) => ({
+      // La API puede devolver la fila incompleta; aquí se le ponen los valores
+      // por defecto que faltan, así que entra como Partial y sale como Recruiter.
+      const normalized: Recruiter[] = raw.map((rec: Partial<Recruiter>, i: number) => ({
         ...rec,
         reclutador_id: rec.reclutador_id || `rec_${i}_${Date.now()}`,
+        nombre: rec.nombre || '',
         activo: rec.activo !== false,
         telefono: rec.telefono || '',
         calendar_id: rec.calendar_id || '',
         color: rec.color || '#6366f1',
         usuario: rec.usuario || '',
         password: '',
-        vacantes: (rec.vacantes || []).map((vac: any, j: number) => ({
+        vacantes: (rec.vacantes || []).map((vac: Partial<Vacante>, j: number) => ({
           ...vac,
           id: vac.id || `vac_${i}_${j}_${Date.now()}`,
+          nombre: vac.nombre || '',
+          naves: vac.naves || [],
+          detalles: vac.detalles || '',
           activa: vac.activa !== false
         }))
       }));

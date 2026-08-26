@@ -21,7 +21,7 @@ const localizer = dateFnsLocalizer({
 
 const BACKEND_BASE_URL = "/api/backend";
 
-import type { Candidato } from "@/types";
+import type { Candidato, Recruiter } from "@/types";
 
 interface CalendarEvent {
   id: string;
@@ -31,8 +31,31 @@ interface CalendarEvent {
   resource: Candidato;
 }
 
+// Forma de un evento tal y como lo devuelve /api/calendario (Google Calendar).
+// Todo opcional a propósito: la API los reenvía tal cual llegan y no garantiza
+// ningún campo salvo el id.
+type GoogleEvent = {
+  id?: string;
+  title?: string;
+  summary?: string;
+  description?: string;
+  // Google los manda como objeto; algunos caminos de nuestra API los aplanan
+  // a string, y el código de abajo contempla las dos formas.
+  start?: string | { dateTime?: string; date?: string };
+  end?: string | { dateTime?: string; date?: string };
+  calendarId?: string;
+  creator?: { email?: string };
+  organizer?: { email?: string };
+};
+
 // ─── Custom Toolbar ──────────────────────────────────────────────────────────
-function CustomToolbar({ date, view, onNavigate, onView }: any) {
+function CustomToolbar({ date, view, onNavigate, onView }: ToolbarProps<CalendarEvent, object>) {
+  // "DATE" es la acción con la que react-big-calendar acepta una fecha ya
+  // calculada y la usa tal cual (ver utils/move.js). Antes se mandaba "prev" /
+  // "next", que la librería no reconoce: funcionaba de rebote porque su
+  // `switch` cae en `default` y devuelve la fecha sin tocarla. Con "PREV" sí
+  // habría aplicado su propio salto encima del nuestro y el calendario habría
+  // avanzado el doble; con "DATE" el camino es el previsto.
   const views: { key: View; label: string }[] = [
     { key: Views.MONTH, label: "Mes" },
     { key: Views.WEEK, label: "Semana" },
@@ -114,7 +137,7 @@ function CustomToolbar({ date, view, onNavigate, onView }: any) {
 export default function CalendarioPage() {
   const router = useRouter();
   const [candidatos, setCandidatos] = useState<Candidato[]>([]);
-  const [googleEvents, setGoogleEvents] = useState<any[]>([]);
+  const [googleEvents, setGoogleEvents] = useState<GoogleEvent[]>([]);
   const [gcalRange, setGcalRange] = useState<{ start: Date; end: Date } | null>(null);
   const reconciledRef = useRef<Set<string>>(new Set());
   const [recruiterColors, setRecruiterColors] = useState<Record<string, string>>({});
@@ -202,7 +225,7 @@ export default function CalendarioPage() {
         const resRec = await fetch(`/api/db/vacantes${tenantQuery}`);
         if (resRec.ok) {
           const recData = await resRec.json();
-          const recs: any[] = Array.isArray(recData) ? recData : recData.data || [];
+          const recs: Recruiter[] = Array.isArray(recData) ? recData : recData.data || [];
           const colorMap: Record<string, string> = {};
           const nameMap: Record<string, string> = {};
           const phoneMap: Record<string, string> = {};
@@ -211,11 +234,12 @@ export default function CalendarioPage() {
           let myCalIdLocal = "";
           const myRecruiterId = localStorage.getItem("tci_reclutador_id");
 
-          recs.forEach((r: any, i: number) => {
+          recs.forEach((r: Recruiter, i: number) => {
             const calId = (r.calendar_id || "").toLowerCase();
             if (calId) {
               colorMap[calId] = r.color || palette[i % palette.length];
-              nameMap[calId] = r.nombre || r.name || calId;
+              // Algunas respuestas traen `name` en vez de `nombre`.
+              nameMap[calId] = r.nombre || (r as Recruiter & { name?: string }).name || calId;
               if (r.telefono) phoneMap[calId] = r.telefono;
               if (r.reclutador_id) {
                 idToEmailMap[r.reclutador_id] = calId;
@@ -330,7 +354,7 @@ export default function CalendarioPage() {
     const representedPhones = new Set<string>();
 
     // Deduplicate raw GCal events by id first
-    const uniqueGcalMap = new Map<string, any>();
+    const uniqueGcalMap = new Map<string, GoogleEvent>();
     for (const ge of googleEvents) {
       if (ge && ge.id && !uniqueGcalMap.has(ge.id)) {
         uniqueGcalMap.set(ge.id, ge);
@@ -375,8 +399,10 @@ export default function CalendarioPage() {
       const gePhoneClean = cleanPhone(telefono);
       const matchedCandidate = candByEventId.get(gcalId) || (gePhoneClean ? candByPhone.get(gePhoneClean) : null);
 
-      const startDate = new Date(ge.start?.dateTime || ge.start?.date || ge.start || new Date());
-      const endDate = new Date(ge.end?.dateTime || ge.end?.date || ge.end || new Date());
+      const fechaDe = (v: GoogleEvent["start"]) =>
+        typeof v === "string" ? v : v?.dateTime || v?.date;
+      const startDate = new Date(fechaDe(ge.start) || new Date());
+      const endDate = new Date(fechaDe(ge.end) || new Date());
 
       if (matchedCandidate) {
         if (matchedCandidate.id) representedCandidateIds.add(matchedCandidate.id);
@@ -414,6 +440,10 @@ export default function CalendarioPage() {
           end: endDate,
           resource: {
             ...ge,
+            // El evento no tiene candidato detrás: `nombre` y `escalado` son
+            // obligatorios en Candidato y antes viajaban en undefined.
+            nombre,
+            escalado: false,
             es_google_calendar: true,
             resumen_ia: desc,
             creator_email: creatorEmail,
@@ -422,7 +452,7 @@ export default function CalendarioPage() {
             telefono,
             nave_interes: nave,
             estado: "Agendado (GCal)",
-          },
+          } as Candidato,
         });
       }
     }

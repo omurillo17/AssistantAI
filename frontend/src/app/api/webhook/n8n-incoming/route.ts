@@ -6,6 +6,7 @@ import { verifyInternalApiKey } from '@/lib/auth';
 import { resolveEmpresaYGrupo } from '@/lib/empresaResolution';
 import { asignarReclutadorPorVacante } from '@/lib/asignacionReclutador';
 import { esPlaceholderVacante, limpiarVacante } from '@/lib/vacantes';
+import type { CandidatoEvent } from "@/lib/stateMachine";
 
 /**
  * Estas banderas llegaban de n8n como el STRING 'true' (todo en n8n viaja como
@@ -95,7 +96,7 @@ export async function POST(request: Request) {
     }
 
     // 2. Determinar el evento basado en la información entrante (emulando lo que hacía el CASE WHEN)
-    let event: any = { type: 'INTERES' }; // default fallback
+    let event: CandidatoEvent = { type: 'INTERES' }; // default fallback
 
     if (esVerdadero(privacidad) && currentState === 'NUEVO') {
       event = { type: 'INTERES' };

@@ -12,6 +12,7 @@ import type { Candidato } from "@/types";
 import { CandidateModal } from "@/components/CandidateModal";
 import { getCandidateDisplayName as getNombre, formatNaveName } from "@/lib/formatters";
 import { useTenantChange } from "@/hooks/useTenant";
+import type { Conversacion, Recruiter, Vacante, Empresa, Nave } from "@/types";
 
 // ─── COMPONENTE: TARJETA KANBAN ────────────────────────────────
 function KanbanCard({ cand, onClick, onStatusChange }: { cand: Candidato, onClick: () => void, onStatusChange: (t: string, s: string) => void }) {
@@ -111,7 +112,7 @@ function ExpedientesPageInner() {
   const appliedTelRef = useRef(false);
   const [vista, setVista] = useState<"kanban" | "tabla">("kanban");
   const [candidatos, setCandidatos] = useState<Candidato[]>([]);
-  const [mensajes, setMensajes] = useState<any[]>([]);
+  const [mensajes, setMensajes] = useState<Conversacion[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Filtros
@@ -131,7 +132,7 @@ function ExpedientesPageInner() {
   // Lista de Naves y Vacantes desde BD para filtros
   const [dbNaves, setDbNaves] = useState<{ id: string; nombre: string }[]>([]);
   const [dbVacantes, setDbVacantes] = useState<string[]>([]);
-  const [rawVacantesData, setRawVacantesData] = useState<any[]>([]);
+  const [rawVacantesData, setRawVacantesData] = useState<Recruiter[]>([]);
 
   const loadData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -184,11 +185,11 @@ function ExpedientesPageInner() {
         const empData = await empRes.json();
         const empList = empData.empresas || [];
         const scopedEmpresas = storedEmpresaId
-          ? empList.filter((e: any) => e.id === storedEmpresaId)
+          ? empList.filter((e: Empresa) => e.id === storedEmpresaId)
           : empList;
         const naves: { id: string; nombre: string }[] = [];
-        scopedEmpresas.forEach((e: any) => {
-          (e.naves || []).forEach((n: any) => {
+        scopedEmpresas.forEach((e: Empresa) => {
+          (e.naves || []).forEach((n: Nave) => {
             if (n.nombre) naves.push({ id: n.id, nombre: n.nombre });
           });
         });
@@ -199,7 +200,7 @@ function ExpedientesPageInner() {
         const vacData = await vacRes.json();
         const vacList = Array.isArray(vacData) ? vacData : vacData.data || [];
         setRawVacantesData(vacList);
-        const vacNames = vacList.flatMap((r: any) => (r.vacantes || []).map((v: any) => v.nombre || v.name)).filter(Boolean);
+        const vacNames = vacList.flatMap((r: Recruiter) => (r.vacantes || []).map((v: Vacante) => v.nombre)).filter(Boolean);
         setDbVacantes(vacNames);
       }
     } catch (err) {
@@ -315,12 +316,12 @@ function ExpedientesPageInner() {
     if (userRole === "ADMIN" || userRole === "ROOT") return dbVacantes;
 
     return rawVacantesData
-      .filter((r: any) => {
+      .filter((r: Recruiter) => {
         const isMyRecruiter = myRecruiterId && r.reclutador_id === myRecruiterId;
-        const isMyNave = allowedNaveIds && (r.vacantes || []).some((v: any) => (v.naves || []).some((navId: string) => allowedNaveIds.has(navId)));
+        const isMyNave = allowedNaveIds && (r.vacantes || []).some((v: Vacante) => (v.naves || []).some((navId: string) => allowedNaveIds.has(navId)));
         return isMyRecruiter || isMyNave;
       })
-      .flatMap((r: any) => (r.vacantes || []).map((v: any) => v.nombre || v.name))
+      .flatMap((r: Recruiter) => (r.vacantes || []).map((v: Vacante) => v.nombre))
       .filter(Boolean);
   }, [dbVacantes, rawVacantesData, allowedNaveIds, myRecruiterId, userRole]);
 
@@ -407,7 +408,8 @@ function ExpedientesPageInner() {
 
         // Control de permisos por Grupo/Reclutador
         if (allowedNaveIds && allowedNaveIds.size > 0 && userRole !== "ADMIN" && userRole !== "ROOT") {
-          const candNaveId = (c as any).nave_id || "";
+          // Candidato ya declara nave_id; el cast que había aquí no hacía falta.
+    const candNaveId = c.nave_id || "";
           const isUnassigned = !candNaveId && isNaveSinSeleccionar && isVacanteSinSeleccionar;
           const isMyNaveId = candNaveId && allowedNaveIds.has(candNaveId);
           const isMyNaveName =
@@ -442,7 +444,7 @@ function ExpedientesPageInner() {
 
   // ─── ALERTS ───────────────────────────────────────────────
   const pendingChats = useMemo(() => {
-    return mensajes.filter(m => m.mensajes_no_leidos > 0);
+    return mensajes.filter(m => (m.mensajes_no_leidos ?? 0) > 0);
   }, [mensajes]);
 
   const todayInterviews = useMemo(() => {

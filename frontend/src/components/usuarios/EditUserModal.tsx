@@ -1,15 +1,18 @@
 import React, { useState } from "react";
 import { useBackdropClose } from "@/hooks/useBackdropClose";
+import type { Empresa, Grupo, Nave, Usuario } from "@/types";
 
 interface EditUserModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  user: any;
-  usuarios: any[];
-  empresas: any[];
-  grupos: any[];
-  naves: any[];
+  // El componente ya se cierra solo con `!props.user` (línea de abajo), así
+  // que el null es parte del contrato, no un descuido.
+  user: Usuario | null;
+  usuarios: Usuario[];
+  empresas: Empresa[];
+  grupos: Grupo[];
+  naves: Nave[];
   showToast: (msg: string, isError?: boolean) => void;
 }
 
@@ -35,9 +38,16 @@ function separarTelefono(fullPhone: string): { prefix: string; num: string } {
 // useEffect, lo que provoca un render en cascada
 // (react-hooks/set-state-in-effect).
 export default function EditUserModal(props: EditUserModalProps) {
-  if (!props.isOpen || !props.user) return null;
-  return <EditUserModalContent key={props.user.id} {...props} />;
+  const { user } = props;
+  if (!props.isOpen || !user) return null;
+  // Se pasa `user` aparte para que TypeScript conserve el estrechamiento que
+  // acaba de hacer la guarda de arriba (el spread lo perdería).
+  return <EditUserModalContent key={user.id} {...props} user={user} />;
 }
+
+// El wrapper de arriba ya descartó el caso `user === null`, así que el
+// contenido lo exige de verdad en lugar de comprobarlo otra vez en cada uso.
+type EditUserModalContentProps = Omit<EditUserModalProps, "user"> & { user: Usuario };
 
 function EditUserModalContent({
   onClose,
@@ -48,7 +58,7 @@ function EditUserModalContent({
   grupos,
   naves,
   showToast,
-}: EditUserModalProps) {
+}: EditUserModalContentProps) {
   const creatorRole = typeof window !== 'undefined' ? localStorage.getItem("tci_role") : "USER";
   const creatorEmpresaId = typeof window !== 'undefined' ? localStorage.getItem("tci_empresa_id") : null;
 
@@ -215,7 +225,7 @@ function EditUserModalContent({
               >
                 <option value="">No transferir (Perder chats)</option>
                 {usuarios.filter(u => u.id !== user.id && u.reclutador_id && (u.rol === 'RECLUTADOR' || u.rol === 'ENCARGADO')).map(u => (
-                  <option key={u.id} value={u.reclutador_id}>{u.usuario}</option>
+                  <option key={u.id} value={u.reclutador_id ?? ""}>{u.usuario}</option>
                 ))}
               </select>
             </div>
@@ -234,12 +244,12 @@ function EditUserModalContent({
               >
                 <option value="">(Ninguno - Sin Acceso)</option>
                 {empresas
-                  .filter((emp: any) => creatorRole !== "ENCARGADO" || emp.id === creatorEmpresaId)
-                  .map((empresa: any) => (
+                  .filter((emp: Empresa) => creatorRole !== "ENCARGADO" || emp.id === creatorEmpresaId)
+                  .map((empresa: Empresa) => (
                     <optgroup key={empresa.id} label={empresa.nombre}>
                       {grupos.filter(g => g.empresa_id === empresa.id).map(g => (
                         <option key={g.id} value={g.id}>
-                          {g.nombre} ({naves.filter((n:any) => g.naves_asignadas?.includes(n.id)).map((n:any)=>n.nombre).join(", ")})
+                          {g.nombre} ({naves.filter((n: Nave) => g.naves_asignadas?.includes(n.id)).map((n: Nave) => n.nombre).join(", ")})
                         </option>
                       ))}
                     </optgroup>
@@ -248,7 +258,7 @@ function EditUserModalContent({
                   <optgroup label="Sin Empresa Asignada (Legacy)">
                     {grupos.filter(g => !g.empresa_id).map(g => (
                       <option key={g.id} value={g.id}>
-                        {g.nombre} ({naves.filter((n:any) => g.naves_asignadas?.includes(n.id)).map((n:any)=>n.nombre).join(", ")})
+                        {g.nombre} ({naves.filter((n: Nave) => g.naves_asignadas?.includes(n.id)).map((n: Nave) => n.nombre).join(", ")})
                       </option>
                     ))}
                   </optgroup>

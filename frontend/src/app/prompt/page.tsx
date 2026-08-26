@@ -96,7 +96,7 @@ export default function PromptEditorPage() {
     } finally {
       setSaving(false);
     }
-  }, [empresaId, empresaNombre, promptText]);
+  }, [empresaId, promptText]);
 
   const handleRevert = () => {
     if (confirm("¿Descartar todos los cambios y volver a la versión guardada?")) {

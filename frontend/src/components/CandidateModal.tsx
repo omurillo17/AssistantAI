@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Candidato, ChatMessage } from "@/types";
+import { Candidato, ChatMessage, Mensaje } from "@/types";
 import { getEstado, ESTADOS_CRM, ESTADOS, EstadoKey } from "@/lib/estados";
 import { getCandidateDisplayName, formatNaveName, proxyMediaUrl } from "@/lib/formatters";
 import { agruparDocumentos, parseDatosDocumento } from "@/lib/documentosCandidato";
@@ -145,7 +145,12 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
   const csfData = parseDatosDocumento(cand.datos_rfc);
 
   const chatMediaUrls = (mensajes || [])
-    .map(m => proxyMediaUrl((m as any).media_url || (m as any).url || (m as any).mediaUrl))
+    // Según de dónde venga el mensaje el campo llega con uno u otro nombre;
+    // se contemplan los tres en vez de apagar el tipado con `any`.
+    .map((m) => {
+      const alt = m as Mensaje & { url?: string | null; mediaUrl?: string | null };
+      return proxyMediaUrl(alt.media_url || alt.url || alt.mediaUrl);
+    })
     .filter((url): url is string => !!url);
 
   // Cada archivo va a su casilla según la clasificación por archivo que dejó la
@@ -173,7 +178,7 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
   const ineCurp = String(ineData?.curp || cand.curp_ine || "").trim();
   const rfcCurp = String(csfData?.curp || cand.curp_rfc || "").trim();
 
-  const getLevenshtein = (s1: any, s2: any) => {
+  const getLevenshtein = (s1: unknown, s2: unknown) => {
     if (!s1 || !s2 || typeof s1 !== "string" || typeof s2 !== "string") return 0;
     const a = s1.toUpperCase();
     const b = s2.toUpperCase();
@@ -195,7 +200,6 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
   };
 
   const charDiff = (ineName && rfcName) ? getLevenshtein(ineName, rfcName) : 0;
-  const allAvailableUrls = Array.from(new Set([cvLink, ineUrl, csfUrl, ...cvUrls, ...ineUrls, ...csfUrls, ...chatMediaUrls].filter((u): u is string => !!u)));
   const hasCV = cand.tiene_cv || !!cvLink || cvUrls.length > 0;
   const backdropHandlers = useBackdropClose(onClose);
 
@@ -334,7 +338,7 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                           const valLower = String(it.value || '').toLowerCase();
                           const isOk = valLower.includes('aceptad') || valLower.includes('verificad') || valLower.includes('recibid') || valLower.includes('agendad') || valLower.includes('sí') || valLower.includes('si');
 
-                          const formatValue = (v: any) => {
+                          const formatValue = (v: unknown) => {
                             if (!v || typeof v !== 'string') return String(v || '');
                             const isoMatch = v.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?/);
                             if (isoMatch) {
@@ -356,12 +360,6 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                             return v;
                           };
 
-                          const labelLower = it.label.toLowerCase();
-                          let badgeLink: string | null = null;
-                          if (labelLower.includes('cv') || labelLower.includes('solicitud')) badgeLink = cvLink;
-                          else if (labelLower.includes('ine')) badgeLink = ineUrl;
-                          else if (labelLower.includes('rfc') || labelLower.includes('csf')) badgeLink = csfUrl;
-
                           return (
                             <div key={idx} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${isOk
                               ? 'bg-emerald-50 text-emerald-800 border-emerald-200/80'
@@ -380,14 +378,14 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
             })()}
 
             {/* EXPERIENCIA EN LAS ACTIVIDADES DEL PUESTO */}
-            {(cand as any).experiencia_actividades && (
+            {cand.experiencia_actividades && (
               <div className="bg-emerald-50/60 border border-emerald-200/70 rounded-2xl p-4">
                 <h3 className="text-sm font-bold text-emerald-900 flex items-center gap-2 mb-2">
                   <Briefcase size={18} className="text-emerald-600" />
                   Experiencia en las actividades del puesto
                 </h3>
                 <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
-                  {(cand as any).experiencia_actividades}
+                  {cand.experiencia_actividades}
                 </p>
                 <p className="text-[11px] text-emerald-700/70 mt-2">
                   Respuesta del candidato cuando se le mostraron las actividades a realizar.

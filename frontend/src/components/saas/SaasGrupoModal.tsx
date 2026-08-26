@@ -1,13 +1,16 @@
 import React, { useState } from "react";
 import { X } from "lucide-react";
 import { useBackdropClose } from "@/hooks/useBackdropClose";
+import type { Empresa, Grupo, Nave } from "@/types";
 
 interface SaasGrupoModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  empresa: any;
-  grupo?: any;
+  // El wrapper de abajo ya se cierra con `!props.empresa`, así que el null
+  // forma parte del contrato.
+  empresa: Empresa | null;
+  grupo?: Grupo | null;
   showToast: (msg: string, isError?: boolean) => void;
 }
 
@@ -17,9 +20,13 @@ interface SaasGrupoModalProps {
 // desde un useEffect, lo que provoca un render en cascada
 // (react-hooks/set-state-in-effect).
 export default function SaasGrupoModal(props: SaasGrupoModalProps) {
-  if (!props.isOpen || !props.empresa) return null;
-  return <SaasGrupoModalContent key={props.grupo?.id ?? "nuevo"} {...props} />;
+  const { empresa } = props;
+  if (!props.isOpen || !empresa) return null;
+  // `empresa` va aparte para conservar el estrechamiento que el spread perdería.
+  return <SaasGrupoModalContent key={props.grupo?.id ?? "nuevo"} {...props} empresa={empresa} />;
 }
+
+type SaasGrupoModalContentProps = Omit<SaasGrupoModalProps, "empresa"> & { empresa: Empresa };
 
 function SaasGrupoModalContent({
   onClose,
@@ -27,7 +34,7 @@ function SaasGrupoModalContent({
   empresa,
   grupo,
   showToast,
-}: SaasGrupoModalProps) {
+}: SaasGrupoModalContentProps) {
   const backdropHandlers = useBackdropClose(onClose);
   const [grupoNombre, setGrupoNombre] = useState(grupo?.nombre || "");
   const [grupoNaves, setGrupoNaves] = useState<string[]>(grupo?.naves_asignadas || []);
@@ -109,7 +116,7 @@ function SaasGrupoModalContent({
             <div>
               <label className="block text-sm font-bold text-slate-700 mb-2">Naves que pertenecen a este grupo</label>
               <div className="flex flex-col gap-2 max-h-52 overflow-y-auto border border-slate-200 rounded-xl p-3 bg-slate-50">
-                {empresa.naves.map((n: any) => (
+                {(empresa.naves || []).map((n: Nave) => (
                   <label key={n.id} className="flex items-center gap-2.5 cursor-pointer p-1.5 hover:bg-white rounded-lg transition-colors">
                     <input
                       id={`saas-grupo-nave-${n.id}`}
