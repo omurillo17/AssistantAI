@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import { useRealtime } from "@/lib/realtimeClient";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { Conversacion, Mensaje, Candidato } from "@/types";
+import type { Conversacion, Mensaje, Candidato, GrupoReclutadores, Recruiter, Vacante } from "@/types";
 import { useLocalStorageValue } from "./useLocalStorageValue";
 import { useTenantChange } from "./useTenant";
 
@@ -228,22 +229,17 @@ export function useMensajes() {
     conversacionesRefreshRef.current = setTimeout(() => loadConversaciones(false), 600);
   }, [loadConversaciones]);
 
-  useEffect(() => {
-    const es = new EventSource("/api/db/mensajes/stream");
-    es.onmessage = (ev) => {
-      try {
-        const data = JSON.parse(ev.data);
-        const phone = activePhoneRef.current;
-        if (data?.telefono && phone && data.telefono === phone) {
-          loadChat(phone, false);
-        }
-        refrescarConversaciones();
-      } catch {
-        // evento no parseable, se ignora
-      }
-    };
-    return () => es.close();
-  }, [loadChat, refrescarConversaciones]);
+  // Se usa el stream compartido (lib/realtimeClient) en vez de abrir un
+  // EventSource propio: la bandeja, la campana, expedientes y las alertas
+  // comparten una sola conexión por pestaña.
+  useRealtime((data) => {
+    if (data.tipo !== "mensaje" && data.tipo !== "bandeja") return;
+    const phone = activePhoneRef.current;
+    if (data.telefono && phone && data.telefono === phone) {
+      loadChat(phone, false);
+    }
+    refrescarConversaciones();
+  });
 
   // Red de seguridad por si el SSE se cae en silencio (proxy, reinicio del
   // servidor, etc.) -- mucho más espaciado que el polling anterior.

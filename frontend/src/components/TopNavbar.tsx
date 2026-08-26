@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
+import { useRealtime } from "@/lib/realtimeClient";
 import { Bell, UserCircle, Building2, ChevronDown, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState, useRef } from "react";
 import { useTenant } from "@/hooks/useTenant";
@@ -82,19 +83,25 @@ export function TopNavbar() {
     } catch {}
   }, []);
 
+  // La campana se actualiza por push (canal notificacion_change). El intervalo
+  // que queda es solo la red de seguridad por si el SSE se cae en silencio
+  // detrás de un proxy: antes sondeaba cada 10s aunque no hubiera nada nuevo.
   useEffect(() => {
     const cargar = async () => { await fetchNotifs(); };
     cargar();
-    const interval = setInterval(cargar, 10000); // Check every 10 seconds
+    const interval = setInterval(cargar, 120000);
     // El modal de identidad emite este evento al cerrarse: la alerta que dejó
-    // de interrumpir tiene que aparecer en la campana en ese momento, no hasta
-    // el siguiente poll de 10s (si no, parece que se perdió).
+    // de interrumpir tiene que aparecer en la campana en ese momento.
     window.addEventListener("refrescar-notificaciones", cargar);
     return () => {
       clearInterval(interval);
       window.removeEventListener("refrescar-notificaciones", cargar);
     };
   }, [fetchNotifs]);
+
+  useRealtime((ev) => {
+    if (ev.tipo === "notificacion") fetchNotifs();
+  });
 
   const markAllAsRead = async () => {
     setUnreadCount(0);

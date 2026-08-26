@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRealtime } from "@/lib/realtimeClient";
 import {
   AlertTriangle,
   ChevronDown,
@@ -140,9 +141,20 @@ export function IdentityAlertModal() {
     }
   }, []);
 
+  // Igual que la campana: las alertas llegan por push cuando cambia
+  // alerta_identidad_estado (canal candidato_change); el intervalo largo es
+  // solo el respaldo si el stream se corta sin avisar.
+  useRealtime((ev) => {
+    if (ev.tipo === "candidato" && ev.alerta) fetchAlertas();
+  });
+
   useEffect(() => {
-    fetchAlertas();
-    const interval = setInterval(fetchAlertas, 10000);
+    // Envuelta en una función async local (igual que en TopNavbar): llamarla
+    // suelta en el cuerpo del efecto hace que el analizador la lea como un
+    // setState síncrono y avise de renders en cascada.
+    const cargar = async () => { await fetchAlertas(); };
+    cargar();
+    const interval = setInterval(cargar, 120000);
 
     const handleOpenEvent = (e: Event) => {
       const telefono = (e as CustomEvent<{ telefono?: string }>).detail?.telefono;

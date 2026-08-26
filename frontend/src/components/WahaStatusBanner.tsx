@@ -6,28 +6,40 @@ import { AlertTriangle, RefreshCw } from "lucide-react";
 export function WahaStatusBanner() {
   const [isOffline, setIsOffline] = useState(false);
 
+  // Devuelve si WAHA está caído, para que quien la llama decida cada cuánto
+  // volver a preguntar.
   const checkStatus = useCallback(async () => {
     try {
       const res = await fetch("/api/waha-status");
       const data = await res.json();
-      if (data.status === "offline") {
-        setIsOffline(true);
-      } else {
-        setIsOffline(false);
-      }
+      const caido = data.status === "offline";
+      setIsOffline(caido);
+      return caido;
     } catch {
       setIsOffline(true);
+      return true;
     }
   }, []);
 
+  // WAHA es un servicio externo: no hay LISTEN/NOTIFY del que colgarse, así que
+  // aquí el sondeo se queda. Lo que cambia es el ritmo — mientras la conexión
+  // está sana basta con mirar cada minuto, y solo cuando se cae se sondea
+  // rápido, que es cuando de verdad importa enterarse de que ya volvió.
   useEffect(() => {
-    // Check immediately on mount
-    const revisar = async () => { await checkStatus(); };
+    let cancelado = false;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const revisar = async () => {
+      const caido = await checkStatus();
+      if (cancelado) return;
+      timer = setTimeout(revisar, caido ? 15000 : 60000);
+    };
     revisar();
 
-    // Then poll every 15 seconds
-    const interval = setInterval(revisar, 15000);
-    return () => clearInterval(interval);
+    return () => {
+      cancelado = true;
+      clearTimeout(timer);
+    };
   }, [checkStatus]);
 
   if (!isOffline) return null;

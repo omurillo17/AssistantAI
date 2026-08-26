@@ -857,6 +857,53 @@ CREATE TRIGGER trg_mensajes_bandeja_notify
     AFTER INSERT OR UPDATE ON mensajes_bandeja
     FOR EACH ROW EXECUTE FUNCTION notify_mensajes_bandeja_change();
 
+-- Mismo puente para la campana de notificaciones del TopNavbar, que sondeaba
+-- cada 10s, y para los cambios de candidato (tablero de Expedientes y las
+-- alertas de identidad, que sondeaban cada 20s y 10s respectivamente).
+CREATE OR REPLACE FUNCTION notify_notificacion_insert() RETURNS trigger AS $$
+BEGIN
+    PERFORM pg_notify('notificacion_change', json_build_object(
+        'reclutador_id', NEW.reclutador_id
+    )::text);
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_notificacion_notify ON notificaciones;
+CREATE TRIGGER trg_notificacion_notify
+    AFTER INSERT OR UPDATE ON notificaciones
+    FOR EACH ROW EXECUTE FUNCTION notify_notificacion_insert();
+
+-- Solo se avisa cuando cambia algo que el CRM pinta. Sin este filtro, cada
+-- UPDATE de candidatos (los hace el pipeline de Python en cada mensaje)
+-- despertaria a todas las pestanas abiertas para nada.
+CREATE OR REPLACE FUNCTION notify_candidato_change() RETURNS trigger AS $$
+BEGIN
+    IF (TG_OP = 'INSERT') OR (
+        NEW.estado IS DISTINCT FROM OLD.estado
+        OR NEW.alerta_identidad_estado IS DISTINCT FROM OLD.alerta_identidad_estado
+        OR NEW.escalado IS DISTINCT FROM OLD.escalado
+        OR NEW.veredicto IS DISTINCT FROM OLD.veredicto
+        OR NEW.asignado_a_id IS DISTINCT FROM OLD.asignado_a_id
+        OR NEW.vacante_interes IS DISTINCT FROM OLD.vacante_interes
+        OR NEW.nave_interes IS DISTINCT FROM OLD.nave_interes
+        OR NEW.fecha_entrevista IS DISTINCT FROM OLD.fecha_entrevista
+    ) THEN
+        PERFORM pg_notify('candidato_change', json_build_object(
+            'telefono', NEW.telefono,
+            'alerta', (NEW.alerta_identidad_estado IS DISTINCT FROM
+                       CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE OLD.alerta_identidad_estado END)
+        )::text);
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_candidato_notify ON candidatos;
+CREATE TRIGGER trg_candidato_notify
+    AFTER INSERT OR UPDATE ON candidatos
+    FOR EACH ROW EXECUTE FUNCTION notify_candidato_change();
+
 -- ============================================
 DO $$
 BEGIN

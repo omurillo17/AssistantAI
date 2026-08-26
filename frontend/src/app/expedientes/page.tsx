@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo, useCallback, useRef, Suspense } from "react";
+import { useRealtime } from "@/lib/realtimeClient";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   CalendarDays, AlertTriangle,
@@ -216,13 +217,25 @@ function ExpedientesPageInner() {
   // Re-cargar (sin recargar la página) cuando el usuario cambia de empresa/nave en el TopNavbar
   useTenantChange(loadData);
 
-  // Actualización automática en segundo plano: refresca candidatos/mensajes
-  // cada 20s sin mostrar el spinner de carga completo (silent=true), para no
-  // perder el scroll ni los filtros que el usuario ya tenía puestos.
+  // Actualización automática en segundo plano, siempre con silent=true para no
+  // perder el scroll ni los filtros que el usuario ya tenía puestos. Antes era
+  // un sondeo cada 20s que recargaba candidatos + mensajes + vacantes aunque no
+  // hubiera cambiado nada; ahora el disparo llega por push y el intervalo solo
+  // cubre el caso de que el stream muera en silencio.
   useEffect(() => {
-    const interval = setInterval(() => loadData(true), 20000);
+    const interval = setInterval(() => loadData(true), 120000);
     return () => clearInterval(interval);
   }, [loadData]);
+
+  // Las ráfagas se agrupan: el pipeline puede tocar varios candidatos seguidos
+  // (o partir una respuesta en varios mensajes) y no hace falta una recarga
+  // completa del tablero por cada evento.
+  const refrescoRef = useRef<NodeJS.Timeout | null>(null);
+  useRealtime((ev) => {
+    if (ev.tipo !== "candidato" && ev.tipo !== "bandeja") return;
+    if (refrescoRef.current) clearTimeout(refrescoRef.current);
+    refrescoRef.current = setTimeout(() => loadData(true), 800);
+  });
 
   // Abrir perfil directamente si llega ?tel=
   useEffect(() => {
