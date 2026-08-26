@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Calendar, dateFnsLocalizer, View, Views } from "react-big-calendar";
+import { Calendar, dateFnsLocalizer, View, Views, type ToolbarProps } from "react-big-calendar";
 import { format, parse, startOfWeek, getDay, addMonths, subMonths, addWeeks, subWeeks, addDays, subDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { MessageSquare, ChevronDown, ChevronRight, XCircle, ChevronLeft, RefreshCw, Calendar as CalendarIcon, LayoutList } from "lucide-react";
@@ -41,14 +41,14 @@ function CustomToolbar({ date, view, onNavigate, onView }: any) {
   ];
 
   const navigatePrev = () => {
-    if (view === Views.MONTH) onNavigate("prev", subMonths(date, 1));
-    else if (view === Views.WEEK) onNavigate("prev", subWeeks(date, 1));
-    else onNavigate("prev", subDays(date, 1));
+    if (view === Views.MONTH) onNavigate("DATE", subMonths(date, 1));
+    else if (view === Views.WEEK) onNavigate("DATE", subWeeks(date, 1));
+    else onNavigate("DATE", subDays(date, 1));
   };
   const navigateNext = () => {
-    if (view === Views.MONTH) onNavigate("next", addMonths(date, 1));
-    else if (view === Views.WEEK) onNavigate("next", addWeeks(date, 1));
-    else onNavigate("next", addDays(date, 1));
+    if (view === Views.MONTH) onNavigate("DATE", addMonths(date, 1));
+    else if (view === Views.WEEK) onNavigate("DATE", addWeeks(date, 1));
+    else onNavigate("DATE", addDays(date, 1));
   };
 
   const getLabel = () => {
@@ -74,7 +74,7 @@ function CustomToolbar({ date, view, onNavigate, onView }: any) {
           <ChevronLeft size={18} className="text-slate-600" />
         </button>
         <button
-          onClick={() => onNavigate("today", new Date())}
+          onClick={() => onNavigate("TODAY")}
           className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-colors"
         >
           Hoy
