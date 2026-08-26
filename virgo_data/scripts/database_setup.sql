@@ -829,12 +829,25 @@ CREATE TRIGGER trg_conversation_history_notify
     AFTER INSERT ON conversation_history
     FOR EACH ROW EXECUTE FUNCTION notify_conversation_history_insert();
 
+-- Solo se notifica si cambio algo que la bandeja pinta. Sin este filtro
+-- cualquier UPDATE que reescribiera la fila con los mismos valores (p.ej.
+-- marcar como leido una conversacion que ya estaba leida) despertaba a todos
+-- los clientes SSE, que recargaban el chat, lo que volvia a marcar como leido:
+-- un lazo de realimentacion que se sostenia a ~20 UPDATE/s.
 CREATE OR REPLACE FUNCTION notify_mensajes_bandeja_change() RETURNS trigger AS $$
 BEGIN
-    PERFORM pg_notify('mensajes_bandeja_change', json_build_object(
-        'telefono', NEW.telefono,
-        'candidato_id', NEW.candidato_id
-    )::text);
+    IF (TG_OP = 'INSERT') OR (
+        NEW.mensajes_no_leidos IS DISTINCT FROM OLD.mensajes_no_leidos
+        OR NEW.ultimo_mensaje IS DISTINCT FROM OLD.ultimo_mensaje
+        OR NEW.ultimo_mensaje_at IS DISTINCT FROM OLD.ultimo_mensaje_at
+        OR NEW.asignado_a_id IS DISTINCT FROM OLD.asignado_a_id
+        OR NEW.activo IS DISTINCT FROM OLD.activo
+    ) THEN
+        PERFORM pg_notify('mensajes_bandeja_change', json_build_object(
+            'telefono', NEW.telefono,
+            'candidato_id', NEW.candidato_id
+        )::text);
+    END IF;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

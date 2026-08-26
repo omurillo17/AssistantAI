@@ -65,8 +65,16 @@ export async function GET(
     const isPreview = searchParams.get('preview') === 'true';
 
     if (!isPreview && candidatoId) {
+      // El "AND mensajes_no_leidos <> 0" no es un ahorro cosmético: sin él
+      // este UPDATE se ejecuta en cada apertura del chat aunque no hubiera
+      // nada que marcar, el trigger trg_mensajes_bandeja_notify dispara igual
+      // (es AFTER UPDATE, no le importa que el valor no cambie), el evento SSE
+      // llega al cliente, useMensajes recarga el chat... y vuelve a entrar
+      // aquí. Ese lazo se realimentaba a ~20 UPDATE/s mientras alguien tuviera
+      // una conversación abierta.
       await pool.query(
-        `UPDATE mensajes_bandeja SET mensajes_no_leidos = 0 WHERE candidato_id = $1`,
+        `UPDATE mensajes_bandeja SET mensajes_no_leidos = 0
+          WHERE candidato_id = $1 AND mensajes_no_leidos <> 0`,
         [candidatoId]
       );
     }
