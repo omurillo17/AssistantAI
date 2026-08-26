@@ -86,6 +86,20 @@ export async function GET(request: Request) {
 
     // Eliminado el filtro por asignado_a para que todos los reclutadores vean todos los mensajes
 
+    // ?count=1 devuelve solo el total de conversaciones activas. Lo usa el
+    // resumen del dashboard, que antes se traía las 1000 filas completas para
+    // hacerles .length (y por el LIMIT de abajo el número se quedaba corto en
+    // cuanto la bandeja pasaba de 1000).
+    if (searchParams.get('count') === '1') {
+      const countRes = await pool.query(`
+        SELECT COUNT(*)::int AS total
+        FROM candidatos c
+        LEFT JOIN mensajes_bandeja mb ON mb.candidato_id = c.id
+        ${filterClause}
+      `, queryParams);
+      return NextResponse.json({ total: countRes.rows[0]?.total ?? 0 });
+    }
+
     const res = await pool.query(`
       SELECT
         c.id AS candidato_id,

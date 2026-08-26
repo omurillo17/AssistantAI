@@ -4,15 +4,15 @@ import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell, Legend, LineChart, Line,
+  ResponsiveContainer, PieChart, Pie, Cell, Legend,
   AreaChart, Area,
   RadialBarChart, RadialBar, PolarAngleAxis,
 } from "recharts";
 import {
   Users, UserCheck, TrendingUp,
   Trophy, MessageSquare, Briefcase, Activity, Building2, Clock, Bot,
-  X, Search, ChevronRight, User, ExternalLink, Calendar, Filter,
-  Maximize2, Minimize2, Sparkles, ArrowUpRight, CalendarDays
+  X, Search, ChevronRight,
+  Maximize2, Minimize2
 } from "lucide-react";
 import { ESTADOS, getEstado, getEstadoColor, type EstadoKey } from "@/lib/estados";
 import type { Candidato } from "@/types";
@@ -45,103 +45,81 @@ const DIAS_SEMANA_COMPLETO = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueve
 const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 const MESES_COMPLETO = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
-function buildCandidatosTimeline(candidatos: Candidato[], range: TimeRange): { points: TimelinePoint[]; metrics: TimelineMetrics } {
+// Recharts entrega estas propiedades en tiempo de ejecución pero no las
+// declara en el tipo del handler, así que se nombran aquí en vez de apagar el
+// tipado con `any`: si un día dejaran de llegar, el fallo sería el mismo, pero
+// al menos queda escrito qué se está asumiendo.
+type EstadoClickGrafica = { activePayload?: { payload?: { key?: string } }[] };
+type PayloadLeyenda = { payload?: { key?: string } };
+
+export interface TimelineBucket {
+  bucket: string;
+  count: number;
+}
+
+export interface ResumenDashboard {
+  total: number;
+  escalados: number;
+  estados: { estado: string; count: number }[];
+  vacantes: { vacante: string; total: number; contratados: number; rechazados: number }[];
+  reclutadores: { nombre: string; asignados: number; contratados: number }[];
+  naves: { nave: string; count: number }[];
+  timeline: TimelineBucket[];
+}
+
+const RESUMEN_VACIO: ResumenDashboard = {
+  total: 0, escalados: 0, estados: [], vacantes: [], reclutadores: [], naves: [], timeline: [],
+};
+
+function buildCandidatosTimeline(
+  buckets: TimelineBucket[],
+  range: TimeRange,
+): { points: TimelinePoint[]; metrics: TimelineMetrics } {
   const now = new Date();
   const points: TimelinePoint[] = [];
   const counts = new Map<string, number>();
 
-  const getCandidateDate = (c: Candidato): Date | null => {
-    const raw = c.created_at || c.ultima_interaccion || c.updated_at;
-    if (!raw) return null;
-    const d = new Date(raw);
-    return isNaN(d.getTime()) ? null : d;
+  // Los buckets llegan ya agrupados por Postgres en hora de México
+  // (/api/db/dashboard/resumen). Aquí solo se arma el esqueleto de puntos —
+  // incluidos los tramos vacíos, que el SQL no devuelve — y se rellena.
+  const porBucket = new Map(buckets.map((b) => [b.bucket, b.count]));
+
+  // Fecha local en formato YYYY-MM-DD. No sirve toISOString(): da la fecha en
+  // UTC, así que por la tarde en México (UTC-6) adelanta un día y las barras
+  // se desalinearían respecto a los buckets que agrupó Postgres.
+  const isoLocal = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+  const addPoint = (key: string, label: string, fullDate: string) => {
+    counts.set(key, porBucket.get(key) || 0);
+    points.push({ key, label, fullDate, count: 0 });
   };
 
   if (range === "1d") {
     for (let h = 0; h < 24; h++) {
-      
       const key = String(h).padStart(2, "0") + ":00";
-      counts.set(key, 0);
-      points.push({ key, label: key, fullDate: `${key} hrs`, count: 0 });
+      addPoint(key, key, `${key} hrs`);
     }
-    const cutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    candidatos.forEach((c) => {
-      const d = getCandidateDate(c);
-      if (d && d >= cutoff) {
-        const key = String(d.getHours()).padStart(2, "0") + ":00";
-        counts.set(key, (counts.get(key) || 0) + 1);
-      }
-    });
-  } else if (range === "7d") {
-    for (let i = 6; i >= 0; i--) {
+  } else if (range === "7d" || range === "1m") {
+    const dias = range === "7d" ? 7 : 30;
+    for (let i = dias - 1; i >= 0; i--) {
       const d = new Date(now);
       d.setDate(now.getDate() - i);
-      const iso = d.toISOString().split("T")[0];
-      const label = `${DIAS_SEMANA[d.getDay()]} ${d.getDate()}`;
-      counts.set(iso, 0);
-      points.push({ key: iso, label, fullDate: `${DIAS_SEMANA_COMPLETO[d.getDay()]} ${d.getDate()} de ${MESES_COMPLETO[d.getMonth()]}`, count: 0 });
+      const label = range === "7d"
+        ? `${DIAS_SEMANA[d.getDay()]} ${d.getDate()}`
+        : `${d.getDate()} ${MESES[d.getMonth()]}`;
+      const fullDate = range === "7d"
+        ? `${DIAS_SEMANA_COMPLETO[d.getDay()]} ${d.getDate()} de ${MESES_COMPLETO[d.getMonth()]}`
+        : `${d.getDate()} de ${MESES_COMPLETO[d.getMonth()]} ${d.getFullYear()}`;
+      addPoint(isoLocal(d), label, fullDate);
     }
-    const cutoff = new Date(now);
-    cutoff.setDate(now.getDate() - 6);
-    cutoff.setHours(0, 0, 0, 0);
-    candidatos.forEach((c) => {
-      const d = getCandidateDate(c);
-      if (d && d >= cutoff) {
-        const iso = d.toISOString().split("T")[0];
-        if (counts.has(iso)) counts.set(iso, (counts.get(iso) || 0) + 1);
-      }
-    });
-  } else if (range === "1m") {
-    for (let i = 29; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(now.getDate() - i);
-      const iso = d.toISOString().split("T")[0];
-      const label = `${d.getDate()} ${MESES[d.getMonth()]}`;
-      counts.set(iso, 0);
-      points.push({ key: iso, label, fullDate: `${d.getDate()} de ${MESES_COMPLETO[d.getMonth()]} ${d.getFullYear()}`, count: 0 });
-    }
-    const cutoff = new Date(now);
-    cutoff.setDate(now.getDate() - 29);
-    cutoff.setHours(0, 0, 0, 0);
-    candidatos.forEach((c) => {
-      const d = getCandidateDate(c);
-      if (d && d >= cutoff) {
-        const iso = d.toISOString().split("T")[0];
-        if (counts.has(iso)) counts.set(iso, (counts.get(iso) || 0) + 1);
-      }
-    });
-  } else if (range === "6m") {
-    for (let i = 5; i >= 0; i--) {
+  } else {
+    const meses = range === "6m" ? 6 : 12;
+    for (let i = meses - 1; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const label = `${MESES[d.getMonth()]} ${String(d.getFullYear()).slice(-2)}`;
-      counts.set(key, 0);
-      points.push({ key, label, fullDate: `${MESES_COMPLETO[d.getMonth()]} ${d.getFullYear()}`, count: 0 });
+      addPoint(key, `${MESES[d.getMonth()]} ${String(d.getFullYear()).slice(-2)}`, `${MESES_COMPLETO[d.getMonth()]} ${d.getFullYear()}`);
     }
-    const cutoff = new Date(now.getFullYear(), now.getMonth() - 5, 1);
-    candidatos.forEach((c) => {
-      const d = getCandidateDate(c);
-      if (d && d >= cutoff) {
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-        if (counts.has(key)) counts.set(key, (counts.get(key) || 0) + 1);
-      }
-    });
-  } else if (range === "1y") {
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const label = `${MESES[d.getMonth()]} ${String(d.getFullYear()).slice(-2)}`;
-      counts.set(key, 0);
-      points.push({ key, label, fullDate: `${MESES_COMPLETO[d.getMonth()]} ${d.getFullYear()}`, count: 0 });
-    }
-    const cutoff = new Date(now.getFullYear(), now.getMonth() - 11, 1);
-    candidatos.forEach((c) => {
-      const d = getCandidateDate(c);
-      if (d && d >= cutoff) {
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-        if (counts.has(key)) counts.set(key, (counts.get(key) || 0) + 1);
-      }
-    });
   }
 
   points.forEach((p) => { p.count = counts.get(p.key) || 0; });
@@ -155,8 +133,8 @@ function buildCandidatosTimeline(candidatos: Candidato[], range: TimeRange): { p
 export default function DashboardsPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"ejecutivo" | "ia">("ejecutivo");
-  const [candidatos, setCandidatos] = useState<Candidato[]>([]);
-  const [mensajes, setMensajes] = useState<any[]>([]);
+  const [resumen, setResumen] = useState<ResumenDashboard>(RESUMEN_VACIO);
+  const [chatsActivos, setChatsActivos] = useState(0);
   const [naveNombrePorNumero, setNaveNombrePorNumero] = useState<Record<string, string>>({});
   const [actividadHoraria, setActividadHoraria] = useState<HoraActividad[]>([]);
   const [loading, setLoading] = useState(true);
@@ -169,6 +147,13 @@ export default function DashboardsPage() {
   const [selectedEstadoModal, setSelectedEstadoModal] = useState<string | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<Candidato | null>(null);
   const [modalSearch, setModalSearch] = useState<string>("");
+  // Las filas del drill-down ya no salen de una lista precargada de 2000
+  // candidatos: se piden al abrir el modal, filtradas por estado en SQL.
+  // Se guarda junto al estado al que pertenecen: así al saltar de una etapa a
+  // otra no hace falta limpiar la lista en un efecto (lo que además haría
+  // parpadear los candidatos de la etapa anterior).
+  const [modalData, setModalData] = useState<{ estado: string; rows: Candidato[] } | null>(null);
+  const [modalLoading, setModalLoading] = useState(false);
 
 
   const loadData = useCallback(async () => {
@@ -190,19 +175,25 @@ export default function DashboardsPage() {
 
       let queryActividad = storedEmpresaId ? `?empresa_id=${storedEmpresaId}` : "";
       if (storedGrupoId) queryActividad += (queryActividad ? `&` : `?`) + `grupo_id=${storedGrupoId}`;
+      queryActividad += (queryActividad ? `&` : `?`) + `time_range=${timeRange}`;
 
-      const [candRes, msgsRes, empresasRes, actividadRes] = await Promise.all([
-        fetch(`/api/db/candidatos?limit=2000${queryCand}`),
-        fetch(`/api/db/mensajes${queryMensajes}`),
+      // El resumen respeta el mismo filtro de empresa/grupo/nave que pedía
+      // /api/db/candidatos, pero devuelve los conteos ya hechos en Postgres.
+      const queryResumen = `?time_range=${timeRange}` + queryCand;
+      const countSep = queryMensajes ? "&" : "?";
+
+      const [resumenRes, msgsRes, empresasRes, actividadRes] = await Promise.all([
+        fetch(`/api/db/dashboard/resumen${queryResumen}`),
+        fetch(`/api/db/mensajes${queryMensajes}${countSep}count=1`),
         fetch(`/api/db/empresas`),
         fetch(`/api/db/actividad-horaria${queryActividad}`),
       ]);
-      const candData = await candRes.json();
+      const resumenData = await resumenRes.json();
       const msgsData = await msgsRes.json();
       const empresasData = await empresasRes.json();
       const actividadData = await actividadRes.json();
-      setCandidatos(Array.isArray(candData) ? candData : []);
-      setMensajes(Array.isArray(msgsData) ? msgsData : []);
+      setResumen(resumenRes.ok && resumenData && !resumenData.error ? resumenData : RESUMEN_VACIO);
+      setChatsActivos(typeof msgsData?.total === "number" ? msgsData.total : 0);
       setActividadHoraria(Array.isArray(actividadData) ? actividadData : []);
 
       // candidatos.nave_interes guarda el numero secuencial de la sucursal (por
@@ -221,7 +212,7 @@ export default function DashboardsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [timeRange]);
 
   useEffect(() => {
     document.title = "Dashboards | Grupo Virgo";
@@ -229,57 +220,25 @@ export default function DashboardsPage() {
     cargar();
   }, [loadData]);
 
-  // Re-cargar actividad horaria cuando cambia el filtro de tiempo
-  useEffect(() => {
-    const fetchActividad = async () => {
-      try {
-        const storedEmpresaId = localStorage.getItem("tci_empresa_id");
-        const storedGrupoId = localStorage.getItem("tci_grupo_id");
-        let queryActividad = storedEmpresaId ? `?empresa_id=${storedEmpresaId}` : "";
-        if (storedGrupoId) queryActividad += (queryActividad ? `&` : `?`) + `grupo_id=${storedGrupoId}`;
-        queryActividad += (queryActividad ? `&` : `?`) + `time_range=${timeRange}`;
-        const res = await fetch(`/api/db/actividad-horaria${queryActividad}`);
-        const data = await res.json();
-        setActividadHoraria(Array.isArray(data) ? data : []);
-      } catch (e) {
-        console.error(e);
-      }
-    };
-    fetchActividad();
-  }, [timeRange]);
-
   // Re-cargar (sin recargar la página) cuando el usuario cambia de empresa/nave en el TopNavbar
   useTenantChange(loadData);
 
 
   // ─── EJECUTIVO KPI CALCS ─────────────────────────────────────
+  // Los conteos vienen ya agregados de /api/db/dashboard/resumen; aquí solo
+  // se les pone etiqueta y color para las gráficas.
   const kpis = useMemo(() => {
-    const total = candidatos.length;
-    let contratados = 0;
-    let nuevos = 0;
-    const chatsActivos = mensajes.length;
-
-    const vacanteCounts: Record<string, number> = {};
     const estadosCounts: Record<string, number> = {};
+    resumen.estados.forEach(({ estado, count }) => { estadosCounts[estado] = count; });
 
-    candidatos.forEach(c => {
-      const st = (c.estado || "NUEVO") as EstadoKey;
-      if (st === "NUEVO") nuevos++;
-      if (st === "CONTRATADO") contratados++;
+    const total = resumen.total;
+    const nuevos = estadosCounts["NUEVO"] || 0;
+    const contratados = estadosCounts["CONTRATADO"] || 0;
 
-      // Vacantes
-      if (st === "CONTRATADO") {
-        const v = c.vacante_interes || "General";
-        vacanteCounts[v] = (vacanteCounts[v] || 0) + 1;
-      }
-
-      // Conteo de todos los estados existentes
-      estadosCounts[st] = (estadosCounts[st] || 0) + 1;
-    });
-
-    // Barras Contratacion
-    const barrasVacante = Object.entries(vacanteCounts)
-      .map(([name, count]) => ({ name, count }))
+    // Barras de contratación: contratados por vacante, top 10.
+    const barrasVacante = resumen.vacantes
+      .filter((v) => v.contratados > 0)
+      .map((v) => ({ name: v.vacante, count: v.contratados }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 10);
 
@@ -316,7 +275,7 @@ export default function DashboardsPage() {
     }));
 
     return { total, contratados, nuevos, chatsActivos, barrasVacante, donutEstados, funnel };
-  }, [candidatos, mensajes]);
+  }, [resumen, chatsActivos]);
 
   // ─── ACCIONES DE CANDIDATO Y MODAL ───────────────────────────
   const updateStatus = async (telefono: string, newStatus: string) => {
@@ -333,10 +292,14 @@ export default function DashboardsPage() {
         body: JSON.stringify({ telefono, estado: newStatus }),
       });
       if (res.ok) {
-        setCandidatos((prev) => prev.map((c) => (c.telefono === telefono ? { ...c, estado: newStatus } : c)));
+        // Al cambiar de estado el candidato sale de la lista del modal (que es
+        // justamente "los de este estado") y los conteos del dashboard dejan de
+        // cuadrar, así que se refresca el resumen desde el servidor.
+        setModalData((prev) => (prev ? { ...prev, rows: prev.rows.filter((c) => c.telefono !== telefono) } : prev));
         if (selectedCandidate?.telefono === telefono) {
           setSelectedCandidate((prev) => (prev ? { ...prev, estado: newStatus } : null));
         }
+        loadData();
       }
     } catch (e) {
       console.error("Error updating status", e);
@@ -347,9 +310,41 @@ export default function DashboardsPage() {
     router.push(`/mensajes?tel=${telefono}`);
   };
 
+  // Carga las filas del estado seleccionado al abrir el modal. El filtro por
+  // estado lo hace Postgres, así que ya no hace falta tener los 2000
+  // candidatos en memoria "por si acaso" el usuario hace clic en una etapa.
+  useEffect(() => {
+    if (!selectedEstadoModal) return;
+    let cancelado = false;
+    const cargar = async () => {
+      setModalLoading(true);
+      try {
+        const storedEmpresaId = localStorage.getItem("tci_empresa_id");
+        const storedNaveId = localStorage.getItem("tci_nave_id");
+        const storedGrupoId = localStorage.getItem("tci_grupo_id");
+        let query = `?estado=${encodeURIComponent(selectedEstadoModal)}&limit=2000`;
+        if (storedEmpresaId) query += `&empresa_id=${storedEmpresaId}`;
+        if (storedGrupoId) query += `&grupo_id=${storedGrupoId}`;
+        else if (storedNaveId) query += `&nave_id=${storedNaveId}`;
+
+        const res = await fetch(`/api/db/candidatos${query}`);
+        const data = await res.json();
+        if (!cancelado) setModalData({ estado: selectedEstadoModal, rows: Array.isArray(data) ? data : [] });
+      } catch (err) {
+        console.error(err);
+        if (!cancelado) setModalData({ estado: selectedEstadoModal, rows: [] });
+      } finally {
+        if (!cancelado) setModalLoading(false);
+      }
+    };
+    cargar();
+    return () => { cancelado = true; };
+  }, [selectedEstadoModal]);
+
   const filteredModalCandidatos = useMemo(() => {
     if (!selectedEstadoModal) return [];
-    let list = candidatos.filter(c => (c.estado || "NUEVO") === selectedEstadoModal);
+    // Si lo cargado es de otra etapa, aún no han llegado las filas de esta.
+    let list = modalData?.estado === selectedEstadoModal ? modalData.rows : [];
     if (modalSearch.trim()) {
       const q = modalSearch.toLowerCase().trim();
       list = list.filter(c => {
@@ -361,76 +356,59 @@ export default function DashboardsPage() {
       });
     }
     return list;
-  }, [candidatos, selectedEstadoModal, modalSearch]);
+  }, [modalData, selectedEstadoModal, modalSearch]);
 
   // ─── RENDIMIENTO POR RECLUTADOR ───────────────────────────────
   // Candidatos asignados/contratados por reclutador (no volumen de chats):
   // mide a quién se le está asignando trabajo y quién efectivamente contrata.
   const reclutadorPerf = useMemo(() => {
-    const counts: Record<string, { asignados: number; contratados: number }> = {};
-    candidatos.forEach(c => {
-      const nombre = c.asignado_a_nombre;
-      if (!nombre) return;
-      if (!counts[nombre]) counts[nombre] = { asignados: 0, contratados: 0 };
-      counts[nombre].asignados++;
-      if (c.estado === "CONTRATADO") counts[nombre].contratados++;
-    });
-    return Object.entries(counts)
-      .map(([nombre, v]) => ({
-        nombre,
-        asignados: v.asignados,
-        contratados: v.contratados,
-        tasaConversion: v.asignados > 0 ? Math.round((v.contratados / v.asignados) * 100) : 0,
-      }))
-      .sort((a, b) => b.contratados - a.contratados || b.asignados - a.asignados);
-  }, [candidatos]);
+    return resumen.reclutadores.map((r) => ({
+      nombre: r.nombre,
+      asignados: r.asignados,
+      contratados: r.contratados,
+      tasaConversion: r.asignados > 0 ? Math.round((r.contratados / r.asignados) * 100) : 0,
+    }));
+  }, [resumen]);
 
   // ─── DISTRIBUCIÓN POR NAVE ─────────────────────────────────────
   const naveDist = useMemo(() => {
+    // Postgres agrupa por el valor crudo de nave_interes; el nombre legible
+    // depende del mapa "número secuencial -> sucursal" que solo existe aquí,
+    // así que los grupos se consolidan al resolverlos.
     const counts: Record<string, number> = {};
-    candidatos.forEach(c => {
-      const raw = (c.nave_interes || "").trim();
+    resumen.naves.forEach(({ nave, count }) => {
+      const raw = (nave || "").trim();
       let nombre = "Sin sucursal";
       if (raw && raw !== "Pendiente") {
         const resolved = naveNombrePorNumero[raw] || raw;
         nombre = formatNaveName(resolved);
       }
-      counts[nombre] = (counts[nombre] || 0) + 1;
+      counts[nombre] = (counts[nombre] || 0) + count;
     });
     return Object.entries(counts)
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count);
-  }, [candidatos, naveNombrePorNumero]);
+  }, [resumen, naveNombrePorNumero]);
 
   // ─── AUTOMATIZACIÓN DE SOFÍA ────────────────────────────────────
   // % de candidatos que Sofía atendió de principio a fin sin escalar a un humano.
   const automatizacion = useMemo(() => {
-    const total = candidatos.length;
-    const escalados = candidatos.filter(c => c.escalado).length;
+    const total = resumen.total;
+    const escalados = resumen.escalados;
     const pct = total > 0 ? Math.round(((total - escalados) / total) * 100) : 0;
     return { pct, total, escalados, sinEscalar: total - escalados };
-  }, [candidatos]);
+  }, [resumen]);
 
   // ─── CONVERSIÓN POR VACANTE ─────────────────────────────────────
   const conversionPorVacante = useMemo(() => {
-    const counts: Record<string, { total: number; contratados: number; rechazados: number }> = {};
-    candidatos.forEach(c => {
-      const v = c.vacante_interes || "General";
-      if (!counts[v]) counts[v] = { total: 0, contratados: 0, rechazados: 0 };
-      counts[v].total++;
-      if (c.estado === "CONTRATADO") counts[v].contratados++;
-      if (c.estado === "RECHAZADO") counts[v].rechazados++;
-    });
-    return Object.entries(counts)
-      .map(([vacante, v]) => ({
-        vacante,
-        total: v.total,
-        contratados: v.contratados,
-        rechazados: v.rechazados,
-        tasaConversion: v.total > 0 ? Math.round((v.contratados / v.total) * 100) : 0,
-      }))
-      .sort((a, b) => b.total - a.total);
-  }, [candidatos]);
+    return resumen.vacantes.map((v) => ({
+      vacante: v.vacante,
+      total: v.total,
+      contratados: v.contratados,
+      rechazados: v.rechazados,
+      tasaConversion: v.total > 0 ? Math.round((v.contratados / v.total) * 100) : 0,
+    }));
+  }, [resumen]);
 
   // ─── HORAS CON MAYOR ACTIVIDAD (heatmap) ────────────────────────
   const heatmap = useMemo(() => {
@@ -457,8 +435,8 @@ export default function DashboardsPage() {
 
   // ─── LÍNEA DE TIEMPO INTERACTIVA Y ESCALABLE ────────────────────
   const { points: timelineData, metrics: timelineMetrics } = useMemo(() => {
-    return buildCandidatosTimeline(candidatos, timeRange);
-  }, [candidatos, timeRange]);
+    return buildCandidatosTimeline(resumen.timeline, timeRange);
+  }, [resumen, timeRange]);
 
   return (
     <div className="flex flex-col h-full bg-[#f8fafc] text-slate-800">
@@ -544,8 +522,8 @@ export default function DashboardsPage() {
                           data={kpis.funnel}
                           layout="vertical"
                           margin={{ top: 0, right: 35, left: 35, bottom: 0 }}
-                          onClick={(state: any) => {
-                            const k = state?.activePayload?.[0]?.payload?.key;
+                          onClick={(state) => {
+                            const k = (state as EstadoClickGrafica)?.activePayload?.[0]?.payload?.key;
                             if (k) {
                               setSelectedEstadoModal(String(k));
                               setModalSearch("");
@@ -558,7 +536,7 @@ export default function DashboardsPage() {
                           <Tooltip
                             contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }}
                             cursor={{ fill: '#f8fafc' }}
-                            formatter={(value: any) => [`${value} candidatos (clic para ver)`, "Candidatos"]}
+                            formatter={(value) => [`${value} candidatos (clic para ver)`, "Candidatos"]}
                           />
                           <Bar dataKey="count" radius={[0, 6, 6, 0]} barSize={18} label={{ position: 'right', fill: '#64748b', fontWeight: 'bold', fontSize: 11 }}>
                             {kpis.funnel.map((entry, i) => (
@@ -603,7 +581,7 @@ export default function DashboardsPage() {
                             dataKey="value"
                             stroke="none"
                             cursor="pointer"
-                            onClick={(data: any) => {
+                            onClick={(data) => {
                               if (data && data.key) {
                                 setSelectedEstadoModal(String(data.key));
                                 setModalSearch("");
@@ -625,13 +603,13 @@ export default function DashboardsPage() {
                           </Pie>
                           <Tooltip
                             contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }}
-                            formatter={(value: any, name: any) => [`${value} candidatos (clic para ver)`, name]}
+                            formatter={(value, name) => [`${value} candidatos (clic para ver)`, name]}
                           />
                           <Legend
                             iconType="circle"
                             wrapperStyle={{ fontSize: "11px", paddingTop: "8px", cursor: "pointer" }}
-                            onClick={(data: any) => {
-                              const payloadKey = data?.payload?.key;
+                            onClick={(data) => {
+                              const payloadKey = (data as PayloadLeyenda)?.payload?.key;
                               if (payloadKey) {
                                 setSelectedEstadoModal(String(payloadKey));
                                 setModalSearch("");
@@ -731,8 +709,8 @@ export default function DashboardsPage() {
                           <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
                           <Tooltip
                             contentStyle={{ borderRadius: "12px", border: "1px solid #e2e8f0", boxShadow: "0 10px 25px -5px rgba(0,0,0,0.1)", backgroundColor: "#ffffff" }}
-                            formatter={(value: any) => [`${value} candidatos`, "Registros"]}
-                            labelFormatter={(label: any, items: any) => {
+                            formatter={(value) => [`${value} candidatos`, "Registros"]}
+                            labelFormatter={(label, items) => {
                               const item = items?.[0]?.payload;
                               return item?.fullDate || label;
                             }}
@@ -1143,8 +1121,8 @@ export default function DashboardsPage() {
                         backgroundColor: "#ffffff",
                         padding: "12px 16px",
                       }}
-                      formatter={(value: any) => [`${value} candidatos`, "Registros"]}
-                      labelFormatter={(label: any, items: any) => {
+                      formatter={(value) => [`${value} candidatos`, "Registros"]}
+                      labelFormatter={(label, items) => {
                         const item = items?.[0]?.payload;
                         return item?.fullDate || label;
                       }}
@@ -1240,7 +1218,12 @@ export default function DashboardsPage() {
 
             {/* LIST */}
             <div className="flex-1 overflow-y-auto p-4 space-y-2.5 bg-slate-50/40 custom-scrollbar">
-              {filteredModalCandidatos.length === 0 ? (
+              {modalLoading ? (
+                <div className="py-12 text-center text-slate-400">
+                  <Users size={36} className="mx-auto mb-2 opacity-40 text-slate-400 animate-pulse" />
+                  <p className="text-sm font-semibold">Cargando candidatos...</p>
+                </div>
+              ) : filteredModalCandidatos.length === 0 ? (
                 <div className="py-12 text-center text-slate-400">
                   <Users size={36} className="mx-auto mb-2 opacity-40 text-slate-400" />
                   <p className="text-sm font-semibold">No se encontraron candidatos en este estado</p>
