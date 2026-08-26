@@ -1,7 +1,14 @@
+# Techo de memoria por servicio (mem_limit). Los valores salen del pico real
+# medido en cada contenedor (cgroup memory.peak) con holgura de ~2,5x:
+#   postgres 166M · backend 130M · waha 761M · frontend 414M · cloudflared 63M
+# La CPU no se limita a propósito: el host tiene 28 nucleos y ninguno de estos
+# servicios compite por ellos. El fallo que sí puede tumbar la máquina entera es
+# una fuga de memoria -- WAHA arrastra un Chromium -- y para eso está el límite.
 services:
   postgres:
     image: postgres:16-alpine
     restart: always
+    mem_limit: 1g
     networks:
       - virgo_network
     environment:
@@ -28,6 +35,7 @@ services:
     build:
       context: ./backend
     restart: always
+    mem_limit: 512m
     networks:
       - virgo_network
     ports:
@@ -75,6 +83,7 @@ services:
   waha:
     image: devlikeapro/waha:latest
     restart: always
+    mem_limit: 2g
     networks:
       - virgo_network
     ports:
@@ -114,6 +123,13 @@ services:
     volumes:
       - waha_data_final:/app/.waha
       - waha_files_final:/app/.waha/files
+      # Credenciales de la sesión de WhatsApp (motor NOWEB: .sessions/noweb/
+      # waha.sqlite3). NO están dentro de /app/.waha -- ese directorio solo
+      # guarda los archivos multimedia. Sin este volumen la sesión vive en la
+      # capa efímera del contenedor y `docker compose up --force-recreate` la
+      # borra: WAHA arranca con "Session not found" y hay que volver a
+      # escanear el QR (pasó el 24/08/2026).
+      - waha_sessions_final:/app/.sessions
     depends_on:
       - backend
       - postgres
@@ -122,6 +138,7 @@ services:
     build:
       context: ./frontend
     restart: always
+    mem_limit: 1g
     networks:
       - virgo_network
     ports:
@@ -171,6 +188,7 @@ services:
   cloudflared:
     image: cloudflare/cloudflared:latest
     restart: always
+    mem_limit: 256m
     networks:
       - virgo_network
     command: tunnel run
@@ -187,3 +205,4 @@ volumes:
   postgres_data_final:
   waha_data_final:
   waha_files_final:
+  waha_sessions_final:

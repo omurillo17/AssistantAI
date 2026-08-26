@@ -8,7 +8,12 @@ import { pool } from "@/lib/db";
 // EventEmitter en memoria. Así, sin importar cuántas pestañas del CRM estén
 // abiertas, solo se gasta UNA conexión extra al pool -- no una por pestaña,
 // que era el riesgo real de dejar el LISTEN suelto en cada request SSE.
-export type ConversationEvent = { tipo: "mensaje" | "bandeja"; telefono: string };
+export type ConversationEvent = {
+  tipo: "mensaje" | "bandeja" | "candidato" | "notificacion";
+  telefono?: string;
+  /** Solo en tipo "candidato": el cambio tocó alerta_identidad_estado. */
+  alerta?: boolean;
+};
 
 const globalForRealtime = globalThis as unknown as {
   realtimeEmitter: EventEmitter | undefined;
@@ -34,6 +39,14 @@ async function iniciarListener() {
           conversationEvents.emit("event", { tipo: "mensaje", telefono: String(data.telefono) } as ConversationEvent);
         } else if (msg.channel === "mensajes_bandeja_change" && data.telefono) {
           conversationEvents.emit("event", { tipo: "bandeja", telefono: String(data.telefono) } as ConversationEvent);
+        } else if (msg.channel === "candidato_change") {
+          conversationEvents.emit("event", {
+            tipo: "candidato",
+            telefono: data.telefono ? String(data.telefono) : undefined,
+            alerta: Boolean(data.alerta),
+          } as ConversationEvent);
+        } else if (msg.channel === "notificacion_change") {
+          conversationEvents.emit("event", { tipo: "notificacion" } as ConversationEvent);
         }
       } catch {
         // payload inesperado, se ignora
@@ -48,6 +61,12 @@ async function iniciarListener() {
     });
     await client.query("LISTEN conversation_history_insert");
     await client.query("LISTEN mensajes_bandeja_change");
+    // Estos dos canales sustituyen el sondeo de la campana de notificaciones,
+    // del tablero de Expedientes y de las alertas de identidad. Si los
+    // triggers todavía no están aplicados en la BD, el LISTEN simplemente no
+    // recibe nada y cada pantalla sigue viva por su refresco de respaldo.
+    await client.query("LISTEN candidato_change");
+    await client.query("LISTEN notificacion_change");
   };
 
   try {

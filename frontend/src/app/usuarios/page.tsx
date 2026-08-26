@@ -7,20 +7,21 @@ import EditUserModal from "@/components/usuarios/EditUserModal";
 import GroupsModal from "@/components/usuarios/GroupsModal";
 import DeleteUserModal from "@/components/usuarios/DeleteUserModal";
 import { useLocalStorageValue } from "@/hooks/useLocalStorageValue";
+import type { Usuario, Nave, Grupo, Empresa } from "@/types";
 
 export default function UsuariosPage() {
-  const [usuarios, setUsuarios] = useState<any[]>([]);
-  const [naves, setNaves] = useState<any[]>([]);
-  const [grupos, setGrupos] = useState<any[]>([]);
-  const [empresas, setEmpresas] = useState<any[]>([]);
+  const [usuarios, setUsuarios] = useState<Usuario[]>([]);
+  const [naves, setNaves] = useState<Nave[]>([]);
+  const [grupos, setGrupos] = useState<Grupo[]>([]);
+  const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [loading, setLoading] = useState(true);
   const role = useLocalStorageValue("tci_role") || "USER";
   const myGrupoId = useLocalStorageValue("tci_grupo_id");
 
   const [showNewUserModal, setShowNewUserModal] = useState(false);
   const [showGruposModal, setShowGruposModal] = useState(false);
-  const [editingUser, setEditingUser] = useState<any | null>(null);
-  const [deleteTargetUser, setDeleteTargetUser] = useState<any | null>(null);
+  const [editingUser, setEditingUser] = useState<Usuario | null>(null);
+  const [deleteTargetUser, setDeleteTargetUser] = useState<Usuario | null>(null);
 
   const [toast, setToast] = useState<{ msg: string; isError: boolean } | null>(null);
 
@@ -54,7 +55,7 @@ export default function UsuariosPage() {
       const res = await fetch("/api/db/empresas");
       if (res.ok) {
         const data = await res.json();
-        const allNaves = data.empresas?.flatMap((e: any) => (e.naves || []).map((n: any) => ({ ...n, empresa_id: e.id }))) || [];
+        const allNaves = data.empresas?.flatMap((e: Empresa) => (e.naves || []).map((n: Nave) => ({ ...n, empresa_id: e.id }))) || [];
         setNaves(allNaves);
         setEmpresas(data.empresas || []);
       }
@@ -140,7 +141,7 @@ export default function UsuariosPage() {
                 </td>
                 <td className="px-6 py-4">
                   {u.grupo_id ? (() => {
-                    const g = grupos.find((gr: any) => gr.id === u.grupo_id);
+                    const g = grupos.find((gr: Grupo) => gr.id === u.grupo_id);
                     return g ? (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-violet-50 text-violet-700 text-xs font-bold rounded-full">
                         {g.nombre}

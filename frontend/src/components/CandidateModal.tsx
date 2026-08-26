@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Candidato, ChatMessage } from "@/types";
+import { Candidato, ChatMessage, Mensaje } from "@/types";
 import { getEstado, ESTADOS_CRM, ESTADOS, EstadoKey } from "@/lib/estados";
 import { getCandidateDisplayName, formatNaveName, proxyMediaUrl } from "@/lib/formatters";
+import { agruparDocumentos, parseDatosDocumento } from "@/lib/documentosCandidato";
 import { useBackdropClose } from "@/hooks/useBackdropClose";
 import { X, ExternalLink, Calendar, Briefcase, FileText, CheckCircle, AlertCircle, Bot, User, MessageSquare, Sparkles } from "lucide-react";
 
@@ -17,6 +18,7 @@ interface CandidateModalProps {
 export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat }: CandidateModalProps) {
   const [cand, setCand] = useState<Candidato>(candidato);
   const [validating, setValidating] = useState(false);
+  const [clasificando, setClasificando] = useState(false);
   const [mensajes, setMensajes] = useState<ChatMessage[]>([]);
   const [loadingChat, setLoadingChat] = useState(true);
   const [justUpdated, setJustUpdated] = useState(false);
@@ -43,6 +45,41 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
   }, [justUpdated]);
 
   const nombre = getCandidateDisplayName(cand);
+
+  // Reclasificación con IA de los archivos ya guardados. Solo hace falta en
+  // expedientes anteriores a la clasificación por archivo del analizador: el
+  // backend vuelve a pasarlos por Gemini, guarda qué es cada uno y de paso
+  // borra las capturas del anuncio que nunca debieron archivarse.
+  const handleClasificarArchivos = async () => {
+    if (!cand.telefono || clasificando) return;
+    setClasificando(true);
+    try {
+      const res = await fetch("/api/db/candidato/clasificar-archivos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ telefono: cand.telefono }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.ok) {
+        setSuppressNextUpdate(true);
+        setCand(prev => {
+          const ine = parseDatosDocumento(prev.datos_ine);
+          const rfc = parseDatosDocumento(prev.datos_rfc);
+          const cv = parseDatosDocumento(prev.cv_manual);
+          return {
+            ...prev,
+            datos_ine: ine ? { ...ine, archivos: data.archivos } : prev.datos_ine,
+            datos_rfc: rfc ? JSON.stringify({ ...rfc, archivos: data.archivos }) : prev.datos_rfc,
+            cv_manual: cv ? { ...cv, archivos: data.archivos } : prev.cv_manual,
+          };
+        });
+      }
+    } catch (e) {
+      console.error("Error clasificando archivos con IA:", e);
+    } finally {
+      setClasificando(false);
+    }
+  };
 
   const handleValidarIdentidad = async (decision: "validar" | "no_validar") => {
     if (!cand.telefono || validating) return;
@@ -104,47 +141,28 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
     }
   }, [mensajes]);
 
-  const ineData = typeof cand.datos_ine === 'string' ? (() => { try { return JSON.parse(cand.datos_ine); } catch { return null; } })() : cand.datos_ine;
-  const csfData = typeof cand.datos_rfc === 'string' ? (() => { try { return JSON.parse(cand.datos_rfc); } catch { return null; } })() : cand.datos_rfc;
-  const cvData = typeof cand.cv_manual === 'string' ? (() => { try { return JSON.parse(cand.cv_manual); } catch { return null; } })() : cand.cv_manual;
+  const ineData = parseDatosDocumento(cand.datos_ine);
+  const csfData = parseDatosDocumento(cand.datos_rfc);
 
   const chatMediaUrls = (mensajes || [])
-    .map(m => proxyMediaUrl((m as any).media_url || (m as any).url || (m as any).mediaUrl))
+    // Según de dónde venga el mensaje el campo llega con uno u otro nombre;
+    // se contemplan los tres en vez de apagar el tipado con `any`.
+    .map((m) => {
+      const alt = m as Mensaje & { url?: string | null; mediaUrl?: string | null };
+      return proxyMediaUrl(alt.media_url || alt.url || alt.mediaUrl);
+    })
     .filter((url): url is string => !!url);
 
-  const ineUrls: string[] = [];
-  if (Array.isArray(ineData?.urls)) {
-    ineData.urls.forEach((u: string) => {
-      const p = proxyMediaUrl(u);
-      if (p && !ineUrls.includes(p)) ineUrls.push(p);
-    });
-  }
-  const defaultIne = proxyMediaUrl(ineData?.url || ineData?.link || (cand as any).link_ine);
-  if (defaultIne && !ineUrls.includes(defaultIne)) ineUrls.unshift(defaultIne);
-  if (ineData?.url_reverso) {
-    const rev = proxyMediaUrl(ineData.url_reverso);
-    if (rev && !ineUrls.includes(rev)) ineUrls.push(rev);
-  }
-
-  const csfUrls: string[] = [];
-  if (Array.isArray(csfData?.urls)) {
-    csfData.urls.forEach((u: string) => {
-      const p = proxyMediaUrl(u);
-      if (p && !csfUrls.includes(p)) csfUrls.push(p);
-    });
-  }
-  const defaultCsf = proxyMediaUrl(csfData?.url || csfData?.link || (cand as any).link_csf || (cand as any).link_rfc);
-  if (defaultCsf && !csfUrls.includes(defaultCsf)) csfUrls.unshift(defaultCsf);
-
-  const cvUrls: string[] = [];
-  if (Array.isArray(cvData?.urls)) {
-    cvData.urls.forEach((u: string) => {
-      const p = proxyMediaUrl(u);
-      if (p && !cvUrls.includes(p)) cvUrls.push(p);
-    });
-  }
-  const defaultCv = proxyMediaUrl(cand.link_cv || cvData?.url || cvData?.link);
-  if (defaultCv && !cvUrls.includes(defaultCv)) cvUrls.unshift(defaultCv);
+  // Cada archivo va a su casilla según la clasificación por archivo que dejó la
+  // IA al recibirlo (backend/app/chat/analizador.py). Lo que no se puede
+  // identificar cae en "Más archivos" en vez de repetirse idéntico bajo INE y
+  // bajo Constancia, que es lo que pasaba con los expedientes AMBOS_DOCS.
+  const documentos = agruparDocumentos(cand);
+  const esCV = (tipo: string) => tipo === 'CV' || tipo === 'SOLICITUD';
+  const ineUrls = documentos.ine.map(a => a.url);
+  const csfUrls = documentos.csf.map(a => a.url);
+  const cvUrls = documentos.otros.filter(a => esCV(a.tipo)).map(a => a.url);
+  const otrosArchivos = documentos.otros.filter(a => !esCV(a.tipo));
 
   let cvLink = cvUrls[0] || null;
   let ineUrl = ineUrls[0] || null;
@@ -160,7 +178,7 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
   const ineCurp = String(ineData?.curp || cand.curp_ine || "").trim();
   const rfcCurp = String(csfData?.curp || cand.curp_rfc || "").trim();
 
-  const getLevenshtein = (s1: any, s2: any) => {
+  const getLevenshtein = (s1: unknown, s2: unknown) => {
     if (!s1 || !s2 || typeof s1 !== "string" || typeof s2 !== "string") return 0;
     const a = s1.toUpperCase();
     const b = s2.toUpperCase();
@@ -182,7 +200,6 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
   };
 
   const charDiff = (ineName && rfcName) ? getLevenshtein(ineName, rfcName) : 0;
-  const allAvailableUrls = Array.from(new Set([cvLink, ineUrl, csfUrl, ...cvUrls, ...ineUrls, ...csfUrls, ...chatMediaUrls].filter((u): u is string => !!u)));
   const hasCV = cand.tiene_cv || !!cvLink || cvUrls.length > 0;
   const backdropHandlers = useBackdropClose(onClose);
 
@@ -321,7 +338,7 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                           const valLower = String(it.value || '').toLowerCase();
                           const isOk = valLower.includes('aceptad') || valLower.includes('verificad') || valLower.includes('recibid') || valLower.includes('agendad') || valLower.includes('sí') || valLower.includes('si');
 
-                          const formatValue = (v: any) => {
+                          const formatValue = (v: unknown) => {
                             if (!v || typeof v !== 'string') return String(v || '');
                             const isoMatch = v.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?/);
                             if (isoMatch) {
@@ -343,12 +360,6 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                             return v;
                           };
 
-                          const labelLower = it.label.toLowerCase();
-                          let badgeLink: string | null = null;
-                          if (labelLower.includes('cv') || labelLower.includes('solicitud')) badgeLink = cvLink;
-                          else if (labelLower.includes('ine')) badgeLink = ineUrl;
-                          else if (labelLower.includes('rfc') || labelLower.includes('csf')) badgeLink = csfUrl;
-
                           return (
                             <div key={idx} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${isOk
                               ? 'bg-emerald-50 text-emerald-800 border-emerald-200/80'
@@ -367,14 +378,14 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
             })()}
 
             {/* EXPERIENCIA EN LAS ACTIVIDADES DEL PUESTO */}
-            {(cand as any).experiencia_actividades && (
+            {cand.experiencia_actividades && (
               <div className="bg-emerald-50/60 border border-emerald-200/70 rounded-2xl p-4">
                 <h3 className="text-sm font-bold text-emerald-900 flex items-center gap-2 mb-2">
                   <Briefcase size={18} className="text-emerald-600" />
                   Experiencia en las actividades del puesto
                 </h3>
                 <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">
-                  {(cand as any).experiencia_actividades}
+                  {cand.experiencia_actividades}
                 </p>
                 <p className="text-[11px] text-emerald-700/70 mt-2">
                   Respuesta del candidato cuando se le mostraron las actividades a realizar.
@@ -440,7 +451,7 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                         <div className="text-xs text-violet-900 space-y-1.5 w-full bg-white/70 p-2.5 rounded-lg border border-violet-100">
                           <div><span className="font-bold text-slate-500 block text-[10px] uppercase">Nombre en INE:</span> <span className="font-extrabold">{ineName || '—'}</span></div>
                           <div><span className="font-bold text-slate-500 block text-[10px] uppercase">CURP:</span> <span className="font-mono">{ineCurp || '—'}</span></div>
-                          {ineData?.clave_elector && <div><span className="font-bold text-slate-500 block text-[10px] uppercase">Clave Elector:</span> <span className="font-mono">{ineData.clave_elector}</span></div>}
+                          {ineData?.clave_elector ? <div><span className="font-bold text-slate-500 block text-[10px] uppercase">Clave Elector:</span> <span className="font-mono">{String(ineData.clave_elector)}</span></div> : null}
                         </div>
                       ) : (
                         <span className="text-xs text-slate-400">No entregado aún</span>
@@ -469,7 +480,7 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                         <div className="text-xs text-emerald-900 space-y-1.5 w-full bg-white/70 p-2.5 rounded-lg border border-emerald-100">
                           <div><span className="font-bold text-slate-500 block text-[10px] uppercase">Nombre / Razón Social:</span> <span className="font-extrabold">{rfcName || '—'}</span></div>
                           <div className="grid grid-cols-2 gap-1">
-                            <div><span className="font-bold text-slate-500 block text-[10px] uppercase">RFC:</span> <span className="font-mono">{csfData?.rfc || '—'}</span></div>
+                            <div><span className="font-bold text-slate-500 block text-[10px] uppercase">RFC:</span> <span className="font-mono">{String(csfData?.rfc || '—')}</span></div>
                             <div><span className="font-bold text-slate-500 block text-[10px] uppercase">CURP:</span> <span className="font-mono">{rfcCurp || '—'}</span></div>
                           </div>
                         </div>
@@ -477,6 +488,40 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                         <span className="text-xs text-slate-400">No entregado aún</span>
                       )}
                     </div>
+
+                    {/* MÁS ARCHIVOS: todo lo que el candidato mandó y no es INE,
+                        constancia ni CV (acta, IMSS, comprobantes, etc.). */}
+                    {otrosArchivos.length > 0 && (
+                      <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 flex flex-col items-start gap-2 col-span-1 sm:col-span-2">
+                        <div className="text-xs font-bold text-slate-600">📎 Más archivos ({otrosArchivos.length})</div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {otrosArchivos.map(archivo => (
+                            <a
+                              key={archivo.url}
+                              href={archivo.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[11px] font-bold text-slate-700 hover:underline flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-slate-200 shadow-2xs"
+                            >
+                              {archivo.etiqueta} <ExternalLink size={11} />
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {documentos.sinClasificar && (
+                      <button
+                        onClick={handleClasificarArchivos}
+                        disabled={clasificando}
+                        className="col-span-1 sm:col-span-2 flex items-center justify-center gap-2 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl py-2.5 transition-colors disabled:opacity-60"
+                      >
+                        <Sparkles size={14} className={clasificando ? 'animate-pulse' : ''} />
+                        {clasificando
+                          ? 'Identificando documentos…'
+                          : 'Este expediente llegó sin clasificar · Identificar INE y constancia con IA'}
+                      </button>
+                    )}
 
                   </div>
 

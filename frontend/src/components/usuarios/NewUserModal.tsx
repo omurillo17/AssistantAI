@@ -1,13 +1,14 @@
 import React, { useState } from "react";
 import { useBackdropClose } from "@/hooks/useBackdropClose";
+import type { Empresa, Grupo, Nave } from "@/types";
 
 interface NewUserModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  empresas: any[];
-  grupos: any[];
-  naves: any[];
+  empresas: Empresa[];
+  grupos: Grupo[];
+  naves: Nave[];
   showToast: (msg: string, isError?: boolean) => void;
 }
 
@@ -115,12 +116,12 @@ function NewUserModalContent({
     <>
       <option value="">— Selecciona un grupo —</option>
       {empresas
-        .filter((emp: any) => creatorRole !== "ENCARGADO" || emp.id === creatorEmpresaId)
-        .map((empresa: any) => (
+        .filter((emp: Empresa) => creatorRole !== "ENCARGADO" || emp.id === creatorEmpresaId)
+        .map((empresa: Empresa) => (
           <optgroup key={empresa.id} label={empresa.nombre}>
             {grupos.filter(g => g.empresa_id === empresa.id).map(g => (
               <option key={g.id} value={g.id}>
-                {g.nombre} ({naves.filter((n: any) => g.naves_asignadas?.includes(n.id)).map((n: any) => n.nombre).join(", ")})
+                {g.nombre} ({naves.filter((n: Nave) => g.naves_asignadas?.includes(n.id)).map((n: Nave) => n.nombre).join(", ")})
               </option>
             ))}
           </optgroup>
@@ -129,7 +130,7 @@ function NewUserModalContent({
         <optgroup label="Sin Empresa Asignada (Legacy)">
           {grupos.filter(g => !g.empresa_id).map(g => (
             <option key={g.id} value={g.id}>
-              {g.nombre} ({naves.filter((n: any) => g.naves_asignadas?.includes(n.id)).map((n: any) => n.nombre).join(", ")})
+              {g.nombre} ({naves.filter((n: Nave) => g.naves_asignadas?.includes(n.id)).map((n: Nave) => n.nombre).join(", ")})
             </option>
           ))}
         </optgroup>

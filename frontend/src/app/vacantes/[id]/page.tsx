@@ -5,7 +5,7 @@ import { useRouter, useParams } from "next/navigation";
 import { Plus, Trash2, Save, ChevronLeft, CheckCircle2, Users, Filter, ToggleLeft, ToggleRight, HelpCircle, X } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
-import type { TipoFiltro, Filtro, Vacante, Recruiter } from "@/types";
+import type { TipoFiltro, Filtro, Vacante, Recruiter, Empresa, Nave } from "@/types";
 import { useTenantChange } from "@/hooks/useTenant";
 import { useBackdropClose } from "@/hooks/useBackdropClose";
 
@@ -135,15 +135,15 @@ export default function VacanteFiltrosPage() {
           if (navesAsignadasStr && role !== "ROOT" && role !== "ADMIN") {
             const allowedNaves = JSON.parse(navesAsignadasStr);
             if (Array.isArray(allowedNaves) && allowedNaves.length > 0) {
-              fetchedEmpresas = fetchedEmpresas.map((emp: any) => ({
+              fetchedEmpresas = fetchedEmpresas.map((emp: Empresa) => ({
                 ...emp,
-                naves: emp.naves ? emp.naves.filter((n: any) => allowedNaves.includes(n.id)) : []
-              })).filter((emp: any) => emp.naves.length > 0);
+                naves: emp.naves ? emp.naves.filter((n: Nave) => allowedNaves.includes(n.id)) : []
+              })).filter((emp: Empresa) => (emp.naves?.length ?? 0) > 0);
             }
           }
         } catch {}
 
-        const allNaves = fetchedEmpresas.flatMap((e: any) => e.naves || []);
+        const allNaves = fetchedEmpresas.flatMap((e: Empresa) => e.naves || []);
         setAvailableNaves(allNaves);
       }
     } catch (e) {
@@ -157,18 +157,24 @@ export default function VacanteFiltrosPage() {
       const res = await fetch(`${API_URL}${tenantQuery()}`);
       if (!res.ok) throw new Error();
       const data = await res.json();
-      const raw: any[] = Array.isArray(data) ? data : data.data || [];
+      const raw: Partial<Recruiter>[] = Array.isArray(data) ? data : data.data || [];
 
-      const normalized = raw.map((rec: any, i: number) => ({
+      // La API puede devolver la fila incompleta; aquí se le ponen los valores
+      // por defecto que faltan, así que entra como Partial y sale como Recruiter.
+      const normalized: Recruiter[] = raw.map((rec: Partial<Recruiter>, i: number) => ({
         ...rec,
         reclutador_id: rec.reclutador_id || `rec_${i}`,
+        nombre: rec.nombre || '',
         activo: rec.activo !== false,
         telefono: rec.telefono || '',
         calendar_id: rec.calendar_id || '',
         color: rec.color || '#6366f1',
-        vacantes: (rec.vacantes || []).map((vac: any, j: number) => ({
+        vacantes: (rec.vacantes || []).map((vac: Partial<Vacante>, j: number) => ({
           ...vac,
           id: vac.id || `vac_${i}_${j}`,
+          nombre: vac.nombre || '',
+          naves: vac.naves || [],
+          detalles: vac.detalles || '',
           activa: vac.activa !== false,
           filtros: vac.filtros || [],
         })),

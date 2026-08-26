@@ -13,7 +13,8 @@ import {
   FolderOpen,
   ChevronLeft,
   ChevronRight,
-  Activity
+  Activity,
+  GraduationCap
 } from "lucide-react";
 
 export function Sidebar() {
@@ -31,6 +32,7 @@ export function Sidebar() {
     { name: "Mensajes", path: "/mensajes", icon: <MessageSquare size={18} /> },
     { name: "Vacantes", path: "/vacantes", icon: <Briefcase size={18} /> },
     { name: "Calendario", path: "/calendario", icon: <Calendar size={18} /> },
+    { name: "Capacitación", path: "/capacitacion", icon: <GraduationCap size={18} /> },
   ];
 
   if (userRole === "ROOT" || userRole === "ADMIN" || userRole === "ENCARGADO") {
@@ -68,7 +70,8 @@ export function Sidebar() {
       {/* Navegación */}
       <nav className="flex-1 overflow-y-auto py-4 px-3 flex flex-col gap-1">
         {menu.map((item) => {
-          const isActive = pathname === item.path;
+          const isActive =
+            item.path === "/" ? pathname === "/" : pathname.startsWith(item.path);
           return (
             <Link
               key={item.path}

@@ -6,6 +6,8 @@ import { verifyInternalApiKey } from '@/lib/auth';
 import { WAHA_BASE, WAHA_API_KEY, WAHA_SESSION } from '@/lib/waha';
 import { resolveEmpresaYGrupo } from '@/lib/empresaResolution';
 import { asignarReclutadorPorVacante } from '@/lib/asignacionReclutador';
+import { esPlaceholderVacante, limpiarVacante } from '@/lib/vacantes';
+import type { CandidatoEvent, CandidatoContext } from "@/lib/stateMachine";
 
 export async function POST(request: Request) {
   if (!verifyInternalApiKey(request)) {
@@ -49,10 +51,23 @@ export async function POST(request: Request) {
       return clean || null;
     };
     const CURP_REGEX = /^[A-Z0-9]{18}$/;
+    // RFC de persona física: 4 letras + AAMMDD + 3 de homoclave. Sus primeros 10
+    // caracteres coinciden por construcción con los de la CURP del mismo titular.
+    const RFC_PERSONA_FISICA_REGEX = /^[A-ZÑ&]{4}\d{6}[A-Z0-9]{3}$/;
     const safe_curp_ine = normalizeCurp(curp_ine);
     const safe_curp_rfc = normalizeCurp(curp_rfc);
+    // La Constancia de Situación Fiscal trae RFC y CURP juntos y Gemini a veces
+    // copia el RFC en `curp_rfc`. Un RFC de 13 caracteres cuya raíz es la misma
+    // que la de la CURP del INE es la MISMA persona, no un documento ajeno: no
+    // debe mandar al candidato a DOCUMENTOS_NO_COINCIDEN (que además bloquea
+    // crear_evento en agente.py y lo deja sin poder agendar). Si la raíz NO
+    // coincide sí se sigue mandando a revisión manual.
+    const rfcCoincideConCurpIne = !!safe_curp_rfc && !!safe_curp_ine
+      && RFC_PERSONA_FISICA_REGEX.test(safe_curp_rfc)
+      && CURP_REGEX.test(safe_curp_ine)
+      && safe_curp_rfc.slice(0, 10) === safe_curp_ine.slice(0, 10);
     const curpIneFormatoInvalido = !!safe_curp_ine && !CURP_REGEX.test(safe_curp_ine);
-    const curpRfcFormatoInvalido = !!safe_curp_rfc && !CURP_REGEX.test(safe_curp_rfc);
+    const curpRfcFormatoInvalido = !!safe_curp_rfc && !CURP_REGEX.test(safe_curp_rfc) && !rfcCoincideConCurpIne;
 
     let safe_nombre_chat = (nombre_chat || '').replace(/[\uFE0F\u200B-\u200D\u200E\u200F\uFEFF]/g, '').trim();
     if (!safe_nombre_chat || safe_nombre_chat === telefono || safe_nombre_chat === 'Candidato' || /^\+?\d+$/.test(safe_nombre_chat)) {
@@ -64,9 +79,39 @@ export async function POST(request: Request) {
     }
 
     // 1. Obtener estado actual
-    const res = await pool.query('SELECT estado, tiene_cv, cv_manual as db_cv_manual, fecha_entrevista as db_fecha, privacidad_aceptada, escalado, datos_ine, datos_rfc, nombre_constancia, curp_ine, curp_rfc, alerta_identidad_estado, alerta_identidad_motivo, asignado_a_id FROM candidatos WHERE telefono = $1', [telefono]);
+    const res = await pool.query('SELECT estado, tiene_cv, cv_manual as db_cv_manual, fecha_entrevista as db_fecha, privacidad_aceptada, escalado, datos_ine, datos_rfc, nombre_ine, nombre_constancia, curp_ine, curp_rfc, alerta_identidad_estado, alerta_identidad_motivo, asignado_a_id, vacante_interes FROM candidatos WHERE telefono = $1', [telefono]);
     let currentState = 'NUEVO';
-    let dbCandidato: any = {};
+    // La fila que trae el SELECT de arriba: lo que la máquina de estados
+    // necesita como contexto, más las columnas que se leen luego aquí.
+    let dbCandidato: CandidatoContext & {
+      resumen_ia?: string | null;
+      datos_ine?: unknown;
+      datos_rfc?: unknown;
+      nombre_constancia?: string | null;
+      curp_ine?: string | null;
+      curp_rfc?: string | null;
+      alerta_identidad_estado?: string | null;
+      alerta_identidad_motivo?: string | null;
+      asignado_a_id?: string | null;
+      db_cv_manual?: boolean;
+      db_fecha?: string | null;
+      // nombre_ine y vacante_interes se leían más abajo pero faltaban en el
+      // SELECT, así que llegaban siempre en undefined: tieneIne perdía uno de
+      // sus tres criterios y la rama que conserva la vacante ya guardada nunca
+      // se ejecutaba (esPlaceholderVacante(undefined) es true), de modo que la
+      // vacante se vaciaba en vez de mantenerse.
+      nombre_ine?: string | null;
+      vacante_interes?: string | null;
+    } = {
+      // Sin fila en la BD el contexto iba vacío y la máquina leía undefined en
+      // cada guarda; estos valores dicen lo mismo, pero explícitamente.
+      telefono,
+      tiene_cv: false,
+      cv_manual: false,
+      fecha_entrevista: null,
+      privacidad_aceptada: false,
+      escalado: false,
+    };
 
     if (res.rowCount && res.rowCount > 0) {
       currentState = res.rows[0].estado;
@@ -74,7 +119,7 @@ export async function POST(request: Request) {
     }
 
     // 2. Determinar evento para la máquina de estados
-    let event: any = null;
+    let event: CandidatoEvent | null = null;
     const esBloqueado = identidad_bloqueada === 'true';
     // Discrepancia MENOR de CURP (1-2 caracteres, típico de OCR): a diferencia de
     // esBloqueado, NO detiene el agendamiento -- solo deja la alerta pendiente en
@@ -187,21 +232,25 @@ export async function POST(request: Request) {
     // desconocida" y manda la cita al reclutador de respaldo (pasó en
     // producción: se agendó "vacante de General" con el Equipo de Reclutamiento
     // en vez de con la reclutadora dueña de la vacante).
-    const esPlaceholderVacante = (v: string) => ['GENERAL', 'NINGUNA'].includes(v.trim().toUpperCase());
-    let safe_vacante = (vacante || '').trim();
-    if (!safe_vacante || esPlaceholderVacante(safe_vacante)) {
+    // esPlaceholderVacante vive en @/lib/vacantes: la copia local comparaba
+    // el string crudo, así que '{NINGUNA}' (con las llaves que dejaba el
+    // prompt) no coincidía con 'NINGUNA' y pasaba como vacante real.
+    let safe_vacante = limpiarVacante(vacante);
+    if (esPlaceholderVacante(safe_vacante)) {
       const matchVacanteResumen = (resumen_ia_final || '').match(/Vacante:\s*([^.\n]+)/i);
       if (matchVacanteResumen && !esPlaceholderVacante(matchVacanteResumen[1])) {
-        safe_vacante = matchVacanteResumen[1].trim();
-      } else if (dbCandidato.vacante_interes && !esPlaceholderVacante(dbCandidato.vacante_interes)) {
-        safe_vacante = dbCandidato.vacante_interes;
+        safe_vacante = limpiarVacante(matchVacanteResumen[1]);
+      } else if (!esPlaceholderVacante(dbCandidato.vacante_interes)) {
+        safe_vacante = limpiarVacante(dbCandidato.vacante_interes);
       } else {
         safe_vacante = '';
       }
     }
 
     // Parseo seguro
-    let parsedDatos: any = {};
+    // El JSON del documento: la IA decide qué campos trae, así que solo se
+    // nombran los que este handler lee.
+    let parsedDatos: { nombre_completo?: string; nombre?: string; url?: string; [k: string]: unknown } = {};
     if (typeof datos_documento === 'string') {
       try { parsedDatos = JSON.parse(datos_documento); } catch { parsedDatos = {}; }
     } else if (datos_documento && typeof datos_documento === 'object') {

@@ -127,3 +127,31 @@ def test_no_guarda_un_lid_sin_telefono_ni_al_reves():
 
 def test_no_guarda_si_el_telefono_tiene_pinta_de_lid():
     assert not ingesta._debe_guardar_lid("151226570248433", "259312979075083")
+
+
+# --- Lista negra manual (`numeros_ignorados`) -------------------------------
+# Reclutadoras, jefes y demás gente interna que le escribe al WhatsApp del bot
+# y a la que Sofía no debe contestarle. La comparación es por los últimos 10
+# dígitos porque el mismo número llega como 5213312345678, 523312345678 o
+# 3312345678 según el dispositivo y la versión de WAHA.
+
+def test_lista_negra_normaliza_todos_los_formatos_al_mismo_numero():
+    assert ingesta._clave_lista_negra("5213312345678") == ["3312345678"]
+    assert ingesta._clave_lista_negra("523312345678") == ["3312345678"]
+    assert ingesta._clave_lista_negra("3312345678") == ["3312345678"]
+    assert ingesta._clave_lista_negra("+52 1 33 1234 5678") == ["3312345678"]
+    assert ingesta._clave_lista_negra("5213312345678@c.us") == ["3312345678"]
+
+
+def test_lista_negra_descarta_identificadores_que_no_son_telefono():
+    """Sin esto, 'status' o un chat_id de grupo consultarían la tabla en balde."""
+    assert ingesta._clave_lista_negra(None, "", "status@broadcast", "123") == []
+
+
+def test_lista_negra_deduplica_las_variantes_del_mismo_remitente():
+    """procesar_webhook pasa number, id y from, que suelen ser el mismo número
+    escrito de tres formas: la consulta debe llevar una sola clave."""
+    claves = ingesta._clave_lista_negra(
+        "5213312345678", "5213312345678@c.us", "5213312345678"
+    )
+    assert claves == ["3312345678"]

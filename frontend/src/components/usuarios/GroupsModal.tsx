@@ -1,14 +1,15 @@
 import React, { useState } from "react";
 import { Trash2 } from "lucide-react";
 import { useBackdropClose } from "@/hooks/useBackdropClose";
+import type { Empresa, Grupo, Nave } from "@/types";
 
 interface GroupsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  empresas: any[];
-  grupos: any[];
-  naves: any[];
+  empresas: Empresa[];
+  grupos: Grupo[];
+  naves: Nave[];
   showToast: (msg: string, isError?: boolean) => void;
 }
 

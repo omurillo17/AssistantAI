@@ -1,4 +1,5 @@
 import { pool } from '@/lib/db';
+import { firmarRutaUpload } from '@/lib/uploadToken';
 
 // Configuración única de WAHA para todo el backend.
 // La API key SIEMPRE debe venir del entorno; no hay valor de respaldo.
@@ -91,8 +92,20 @@ export async function enviarImagenCandidato(telefono: string, mediaUrl: string, 
     throw new Error('Candidato no encontrado en la base de datos');
   }
 
-  // Si la URL es relativa (/uploads/...), la convertimos a absoluta accesible internamente por WAHA o frontend
-  const fullMediaUrl = mediaUrl.startsWith('/') ? `http://frontend:3001${mediaUrl}` : mediaUrl;
+  // Si la URL es relativa (/uploads/...), la convertimos a absoluta accesible
+  // internamente por WAHA o frontend. Se le añade un token firmado de vida
+  // corta porque /uploads ya no es público: WAHA descarga el archivo sin
+  // cookie, y sin el token proxy.ts lo mandaría a /login (ver uploadToken.ts).
+  let fullMediaUrl = mediaUrl;
+  if (mediaUrl.startsWith('/')) {
+    const token = await firmarRutaUpload(mediaUrl);
+    if (!token) {
+      throw new Error(
+        'No se puede firmar la URL del adjunto: falta INTERNAL_API_KEY (o JWT_SECRET) en el entorno del frontend.'
+      );
+    }
+    fullMediaUrl = `http://frontend:3001${mediaUrl}?t=${encodeURIComponent(token)}`;
+  }
 
   const savedMsg = await pool.query(
     `INSERT INTO conversation_history (telefono, candidato_id, role, content, message_type, media_url, timestamp)

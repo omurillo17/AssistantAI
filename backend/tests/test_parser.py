@@ -6,6 +6,10 @@ con comillas y llaves pegadas, o la vacante quedaba atorada en el placeholder
 'GENERAL' y su cita terminaba con el reclutador equivocado.
 """
 
+import json
+
+import pytest
+
 from app.chat import parser
 
 CANDIDATO = {"nombre_chat": "Oscar", "mensajes_bot_enviados": 1}
@@ -103,6 +107,37 @@ def test_ninguna_tampoco_se_toma_como_vacante():
     items = parser.procesar_respuesta_ia(respuesta, CANDIDATO)
 
     assert not items[0].get("vacante_detectada")
+
+
+@pytest.mark.parametrize("valor", ["{Ninguna}", "{NINGUNA}", "{General}", '"Ninguna"', "*Ninguna*"])
+def test_placeholder_con_adornos_tampoco_se_toma_como_vacante(valor):
+    """El prompt vivo escribe los placeholders con llave doble, así que la
+    ficha del candidato le llegaba al modelo como `{Ninguna}` y él lo copiaba
+    literal. Comparando el string crudo, `{NINGUNA}` no coincidía con
+    "NINGUNA" y el placeholder se guardaba como si fuera vacante elegida."""
+    respuesta = json.dumps({
+        "mensaje_al_usuario": "Hola",
+        "etiquetas_internas": {"actualizar_vacante": valor},
+    })
+    items = parser.procesar_respuesta_ia(respuesta, CANDIDATO)
+
+    assert not items[0].get("vacante_detectada")
+    assert "vacante_interes" not in items[0]["database_updates"]
+
+
+def test_vacante_real_con_adornos_se_guarda_limpia():
+    respuesta = '{"mensaje_al_usuario": "Va", "etiquetas_internas": {"actualizar_vacante": "*CAJERO/A*"}}'
+    items = parser.procesar_respuesta_ia(respuesta, CANDIDATO)
+
+    assert items[0]["vacante_detectada"] == "CAJERO/A"
+
+
+def test_formato_pipe_tampoco_guarda_placeholders():
+    """VACANTE_UPDATE|General| no pasaba por ningún filtro."""
+    items = parser.procesar_respuesta_ia("Listo VACANTE_UPDATE|General| ya", CANDIDATO)
+
+    assert not items[0].get("vacante_detectada")
+    assert "vacante_interes" not in items[0]["database_updates"]
 
 
 def test_una_vacante_real_si_se_registra():

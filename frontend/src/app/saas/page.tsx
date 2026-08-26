@@ -8,6 +8,7 @@ import AdminModal from "@/components/saas/AdminModal";
 import EmpresaModal from "@/components/saas/EmpresaModal";
 import NaveModal from "@/components/saas/NaveModal";
 import { useIsHydrated, useLocalStorageValue } from "@/hooks/useLocalStorageValue";
+import type { Grupo } from "@/types";
 
 type Nave = {
   id: string;
@@ -33,7 +34,7 @@ export default function SaasAdminPage() {
   // muestra "cargando" mientras tanto y solo después decide si hay permiso.
   const isRoot = hidratado ? rolGuardado === "ROOT" : null;
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
-  const [grupos, setGrupos] = useState<any[]>([]);
+  const [grupos, setGrupos] = useState<Grupo[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Modals state
@@ -48,7 +49,7 @@ export default function SaasAdminPage() {
   const [selectedEmpresaForNave, setSelectedEmpresaForNave] = useState<string>("");
   const [selectedEmpresaForAdmin, setSelectedEmpresaForAdmin] = useState<Empresa | null>(null);
   const [selectedEmpresaForGrupo, setSelectedEmpresaForGrupo] = useState<Empresa | null>(null);
-  const [editingGrupo, setEditingGrupo] = useState<any>(null);
+  const [editingGrupo, setEditingGrupo] = useState<Grupo | null>(null);
 
   // UI State
   const [expandedEmpresa, setExpandedEmpresa] = useState<string | null>(null);
@@ -275,7 +276,7 @@ export default function SaasAdminPage() {
               {/* Naves (Expanded View) */}
               {isExpanded && (() => {
                 const empGrupos = grupos.filter(g => g.empresa_id === emp.id);
-                const navesEnGrupo = new Set(empGrupos.flatMap((g: any) => g.naves_asignadas || []));
+                const navesEnGrupo = new Set(empGrupos.flatMap((g: Grupo) => g.naves_asignadas || []));
                 const navesSinGrupo = (emp.naves || []).filter(n => !navesEnGrupo.has(n.id));
 
                 const NaveCard = ({ nave, grupoActualId }: { nave: Nave; grupoActualId: string }) => (
@@ -307,7 +308,7 @@ export default function SaasAdminPage() {
                         className="w-full text-xs font-semibold p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-violet-500 text-slate-600 cursor-pointer"
                       >
                         <option value="">Sin grupo asignado</option>
-                        {empGrupos.map((g: any) => <option key={g.id} value={g.id}>{g.nombre}</option>)}
+                        {empGrupos.map((g: Grupo) => <option key={g.id} value={g.id}>{g.nombre}</option>)}
                       </select>
                     )}
                   </div>
@@ -335,7 +336,7 @@ export default function SaasAdminPage() {
                     ) : (
                       <div className="flex flex-col gap-6">
                         {/* Grupos con naves */}
-                        {empGrupos.map((grupo: any) => {
+                        {empGrupos.map((grupo: Grupo) => {
                           const navesDelGrupo = (emp.naves || []).filter(n => (grupo.naves_asignadas || []).includes(n.id));
                           return (
                             <div key={grupo.id}>

@@ -1,22 +1,38 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, type RefObject } from "react";
+import { useRealtime } from "@/lib/realtimeClient";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { Conversacion, Mensaje, Candidato } from "@/types";
+import type { Conversacion, Mensaje, Candidato, GrupoReclutadores, Recruiter, Vacante } from "@/types";
 import { useLocalStorageValue } from "./useLocalStorageValue";
 import { useTenantChange } from "./useTenant";
 
 const normalize = (str?: string | null) => str ? str.trim().toUpperCase() : "";
 
-export function useMensajes() {
+/** "todos" sólo se ofrece a ROOT/ADMIN (ver `puedeVerTodo`). */
+export type TabBandeja = "todos" | "mis_chats" | "compartida" | "descartados";
+
+// La ref del contenedor de scroll la crea la pantalla y se pasa aquí, en vez
+// de crearla dentro y devolverla en el objeto de retorno. Leer una ref desde
+// ese objeto durante el render (`const r = m.chatScrollRef`) es lo que React
+// desaconseja, y bastaba ese único acceso para que el compilador diera por
+// contaminado el render entero de la pantalla de Mensajes.
+export function useMensajes({ chatScrollRef }: { chatScrollRef: RefObject<HTMLDivElement | null> }) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
   // ─── State ──────────────────────────────────────────────
   const nombre = useLocalStorageValue("tci_username") || "Reclutador";
   const reclutadorId = useLocalStorageValue("tci_reclutador_id");
+  // ROOT y ADMIN supervisan a todos los reclutadores. Además NO tienen
+  // `reclutador_id` (en la tabla `usuarios` va NULL), así que para ellos
+  // "mis_chats" siempre sale vacío y "compartida" sólo trae las conversaciones
+  // sin dueño: sin esta pestaña, todas las asignadas a un reclutador les
+  // quedaban invisibles aunque el API sí se las devuelve.
+  const role = useLocalStorageValue("tci_role") || "";
+  const puedeVerTodo = role === "ROOT" || role === "ADMIN";
 
-  const [activeTab, setActiveTab] = useState<"mis_chats" | "compartida" | "descartados">("mis_chats");
+  const [activeTab, setActiveTab] = useState<TabBandeja>("mis_chats");
   const [conversaciones, setConversaciones] = useState<Conversacion[]>([]);
   const [loading, setLoading] = useState(true);
   const [activePhone, setActivePhone] = useState<string | null>(null);
@@ -29,7 +45,7 @@ export function useMensajes() {
   const [filterVacante, setFilterVacante] = useState("");
   const [filterNave, setFilterNave] = useState("");
   const [toast, setToast] = useState<{ msg: string; isError: boolean } | null>(null);
-  const [reclutadores, setReclutadores] = useState<any[]>([]);
+  const [reclutadores, setReclutadores] = useState<GrupoReclutadores[]>([]);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [showPhoneModal, setShowPhoneModal] = useState(false);
   const [selectedReclutador, setSelectedReclutador] = useState("");
@@ -38,7 +54,6 @@ export function useMensajes() {
   const [todasNaves, setTodasNaves] = useState<string[]>([]);
 
   // ─── Refs ───────────────────────────────────────────────
-  const chatScrollRef = useRef<HTMLDivElement>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
   const prevMessagesLength = useRef(0);
   const isNearBottom = useRef(true);
@@ -65,7 +80,7 @@ export function useMensajes() {
       if (resVac.ok) {
         const data = await resVac.json();
         if (Array.isArray(data)) {
-          const allVacs = data.flatMap((r: any) => r.vacantes || []).map((v: any) => normalize(v.nombre)).filter(Boolean);
+          const allVacs = data.flatMap((r: Recruiter) => r.vacantes || []).map((v: Vacante) => normalize(v.nombre)).filter(Boolean);
           setTodasVacantes(Array.from(new Set(allVacs)) as string[]);
         }
       }
@@ -99,7 +114,7 @@ export function useMensajes() {
         const data = await res.json();
         if (data.grupos && Array.isArray(data.grupos)) {
           setReclutadores(data.grupos);
-          const allRecs = data.grupos.flatMap((g: any) => g.reclutadores || []);
+          const allRecs = data.grupos.flatMap((g: GrupoReclutadores) => g.reclutadores || []);
           if (allRecs.length > 0) {
             setSelectedReclutador(allRecs[0].id);
           }
@@ -141,10 +156,17 @@ export function useMensajes() {
       });
       setConversaciones(safeData);
       if (showLoad && safeData.length > 0) {
-        const rId = localStorage.getItem("tci_reclutador_id");
-        const hasMine = rId ? safeData.some(c => c.asignado_a_id === rId) : false;
-        if (!hasMine) {
-          setActiveTab("compartida");
+        // Se lee de localStorage y no del hook: esto corre dentro de un
+        // callback estable (deps vacías) que no se recrea al hidratar.
+        const rol = localStorage.getItem("tci_role") || "";
+        if (rol === "ROOT" || rol === "ADMIN") {
+          setActiveTab("todos");
+        } else {
+          const rId = localStorage.getItem("tci_reclutador_id");
+          const hasMine = rId ? safeData.some(c => c.asignado_a_id === rId) : false;
+          if (!hasMine) {
+            setActiveTab("compartida");
+          }
         }
       }
     } catch {
@@ -211,22 +233,17 @@ export function useMensajes() {
     conversacionesRefreshRef.current = setTimeout(() => loadConversaciones(false), 600);
   }, [loadConversaciones]);
 
-  useEffect(() => {
-    const es = new EventSource("/api/db/mensajes/stream");
-    es.onmessage = (ev) => {
-      try {
-        const data = JSON.parse(ev.data);
-        const phone = activePhoneRef.current;
-        if (data?.telefono && phone && data.telefono === phone) {
-          loadChat(phone, false);
-        }
-        refrescarConversaciones();
-      } catch {
-        // evento no parseable, se ignora
-      }
-    };
-    return () => es.close();
-  }, [loadChat, refrescarConversaciones]);
+  // Se usa el stream compartido (lib/realtimeClient) en vez de abrir un
+  // EventSource propio: la bandeja, la campana, expedientes y las alertas
+  // comparten una sola conexión por pestaña.
+  useRealtime((data) => {
+    if (data.tipo !== "mensaje" && data.tipo !== "bandeja") return;
+    const phone = activePhoneRef.current;
+    if (data.telefono && phone && data.telefono === phone) {
+      loadChat(phone, false);
+    }
+    refrescarConversaciones();
+  });
 
   // Red de seguridad por si el SSE se cae en silencio (proxy, reinicio del
   // servidor, etc.) -- mucho más espaciado que el polling anterior.
@@ -266,7 +283,7 @@ export function useMensajes() {
       }
     }
     prevMessagesLength.current = mensajes.length;
-  }, [mensajes]);
+  }, [mensajes, chatScrollRef]);
 
   const handleScroll = () => {
     if (!chatScrollRef.current) return;
@@ -455,7 +472,7 @@ export function useMensajes() {
     let targetNombre: string = selectedReclutador;
     if (reclutadores && reclutadores.length > 0) {
       for (const grupo of reclutadores) {
-        const found = grupo.reclutadores?.find((r: any) => r.id === selectedReclutador);
+        const found = grupo.reclutadores?.find((r) => r.id === selectedReclutador);
         if (found) {
           targetNombre = found.nombre || targetNombre;
           if (grupo.empresa_id) targetEmpresaId = grupo.empresa_id;
@@ -472,7 +489,14 @@ export function useMensajes() {
       if (storedEmpresaId) query += `?empresa_id=${storedEmpresaId}`;
       if (storedNaveId) query += (query ? `&` : `?`) + `nave_id=${storedNaveId}`;
 
-      const bodyData: any = {
+      const bodyData: {
+        telefono: string | null;
+        escalado: boolean;
+        estado: string;
+        escalation_reason: string;
+        asignado_a_id: string;
+        empresa_id?: string;
+      } = {
         telefono: activePhone,
         escalado: true,
         estado: "ESCALADO",
@@ -571,6 +595,9 @@ export function useMensajes() {
     let matchesTab = false;
     if (activeTab === "descartados") {
       matchesTab = isDescartado;
+    } else if (activeTab === "todos") {
+      // Sin filtro de dueño: incluye las asignadas a otros reclutadores.
+      matchesTab = !isDescartado;
     } else if (activeTab === "mis_chats") {
       matchesTab = !isDescartado && isAsignadoAMi;
     } else {
@@ -582,8 +609,20 @@ export function useMensajes() {
   });
 
   const convActiva = conversaciones.find(c => c.telefono === activePhone);
+  // ROOT/ADMIN quedan fuera: como no tienen `reclutador_id`, cualquier chat con
+  // dueño les salía como "atendido por otro" y con el input bloqueado. Siguen
+  // viendo el aviso de quién lo atiende (lo pinta la propia pantalla).
   const estaAtendidoPorOtro = Boolean(
+    !puedeVerTodo &&
     candidatoActivo?.escalado &&
+    convActiva?.asignado_a_id &&
+    convActiva.asignado_a_id !== reclutadorId
+  );
+
+  // Contraparte informativa de lo anterior: ROOT/ADMIN sí pueden escribir en un
+  // chat ajeno, pero deben ver de quién es antes de intervenir.
+  const supervisandoChatDeOtro = Boolean(
+    puedeVerTodo &&
     convActiva?.asignado_a_id &&
     convActiva.asignado_a_id !== reclutadorId
   );
@@ -591,6 +630,8 @@ export function useMensajes() {
   return {
     // State
     activeTab, setActiveTab,
+    puedeVerTodo,
+    supervisandoChatDeOtro,
     loading,
     activePhone, setActivePhone,
     mensajes,
@@ -609,9 +650,6 @@ export function useMensajes() {
     showPhoneModal, setShowPhoneModal,
     selectedReclutador, setSelectedReclutador,
     actionLoading,
-
-    // Refs
-    chatScrollRef,
 
     // Derived
     uniqueVacantes,

@@ -1,11 +1,13 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
+import { useRealtime } from "@/lib/realtimeClient";
 import { Bell, UserCircle, Building2, ChevronDown, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState, useRef } from "react";
 import { useTenant } from "@/hooks/useTenant";
 import { useLocalStorageValue } from "@/hooks/useLocalStorageValue";
 import ChangePasswordModal from "@/components/usuarios/ChangePasswordModal";
+import type { Empresa, Nave, Grupo, Notificacion } from "@/types";
 
 export function TopNavbar() {
   const pathname = usePathname();
@@ -16,7 +18,7 @@ export function TopNavbar() {
   const username = useLocalStorageValue("tci_username") || "Usuario";
   const role = useLocalStorageValue("tci_role") || "USER";
   
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<Notificacion[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
@@ -24,7 +26,7 @@ export function TopNavbar() {
   const empresaMenuRef = useRef<HTMLDivElement>(null);
 
   const { empresaId, naveId, grupoId, setTenant } = useTenant();
-  const [empresas, setEmpresas] = useState<any[]>([]);
+  const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [isEmpresaMenuOpen, setIsEmpresaMenuOpen] = useState(false);
   // Solo para ADMIN: alterna entre filtrar por Nave o por Grupo de reclutamiento.
   const [filterMode, setFilterMode] = useState<"nave" | "grupo">("nave");
@@ -58,10 +60,10 @@ export function TopNavbar() {
             const navesAsignadasStr = localStorage.getItem("tci_naves_asignadas");
             if (role !== "ROOT" && role !== "ADMIN") {
               const allowedNaves = JSON.parse(navesAsignadasStr || "[]");
-              fetchedEmpresas = fetchedEmpresas.map((emp: any) => ({
+              fetchedEmpresas = fetchedEmpresas.map((emp: Empresa) => ({
                 ...emp,
-                naves: emp.naves ? emp.naves.filter((n: any) => allowedNaves.includes(n.id)) : []
-              })).filter((emp: any) => emp.naves.length > 0);
+                naves: emp.naves ? emp.naves.filter((n: Nave) => allowedNaves.includes(n.id)) : []
+              })).filter((emp: Empresa) => (emp.naves?.length ?? 0) > 0);
             }
           } catch {}
 
@@ -82,12 +84,25 @@ export function TopNavbar() {
     } catch {}
   }, []);
 
+  // La campana se actualiza por push (canal notificacion_change). El intervalo
+  // que queda es solo la red de seguridad por si el SSE se cae en silencio
+  // detrás de un proxy: antes sondeaba cada 10s aunque no hubiera nada nuevo.
   useEffect(() => {
     const cargar = async () => { await fetchNotifs(); };
     cargar();
-    const interval = setInterval(cargar, 10000); // Check every 10 seconds
-    return () => clearInterval(interval);
+    const interval = setInterval(cargar, 120000);
+    // El modal de identidad emite este evento al cerrarse: la alerta que dejó
+    // de interrumpir tiene que aparecer en la campana en ese momento.
+    window.addEventListener("refrescar-notificaciones", cargar);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("refrescar-notificaciones", cargar);
+    };
   }, [fetchNotifs]);
+
+  useRealtime((ev) => {
+    if (ev.tipo === "notificacion") fetchNotifs();
+  });
 
   const markAllAsRead = async () => {
     setUnreadCount(0);
@@ -97,7 +112,7 @@ export function TopNavbar() {
     } catch {}
   };
 
-  const deleteNotif = async (id: string, e: React.MouseEvent) => {
+  const deleteNotif = async (id: string | number, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
       await fetch(`/api/db/notificaciones?id=${id}`, { method: "DELETE" });
@@ -122,7 +137,7 @@ export function TopNavbar() {
     }
   };
 
-  const handleNotifClick = (n: any) => {
+  const handleNotifClick = (n: Notificacion) => {
     setIsNotifOpen(false);
     
     // Mark single notification as read immediately
@@ -185,6 +200,7 @@ export function TopNavbar() {
     if (pathname.startsWith("/calendario")) return "Calendario de Entrevistas";
     if (pathname.startsWith("/expedientes")) return "Expediente de Candidato";
     if (pathname.startsWith("/usuarios")) return "Gestión de Usuarios";
+    if (pathname.startsWith("/capacitacion")) return "Centro de Capacitación";
     if (pathname.startsWith("/empresa")) return "Perfil de Empresa";
     if (pathname.startsWith("/reclutadores")) return "Reclutadores";
     return "Panel Principal";
@@ -224,7 +240,7 @@ export function TopNavbar() {
               <Building2 size={18} className={!empresaId ? 'text-amber-400' : ''} />
               <div className="text-sm font-semibold hidden md:block max-w-[150px] truncate">
                 {grupoId
-                  ? (empresas.flatMap(e => e.grupos || []).find((g: any) => g.id === grupoId)?.nombre || "Grupo Desconocido")
+                  ? (empresas.flatMap(e => e.grupos || []).find((g: Grupo) => g.id === grupoId)?.nombre || "Grupo Desconocido")
                   : naveId
                     ? (empresas.flatMap(e => e.naves || []).find(n => n.id === naveId)?.nombre || "Nave Desconocida")
                     : empresaId
@@ -282,7 +298,7 @@ export function TopNavbar() {
                       </div>
                     </button>
                     {role === "ADMIN" && filterMode === "grupo"
-                      ? (emp.grupos || []).map((grupo: any) => (
+                      ? (emp.grupos || []).map((grupo: Grupo) => (
                         <button
                           key={grupo.id}
                           onClick={() => { setTenant(emp.id, null, grupo.id); setIsEmpresaMenuOpen(false); }}
@@ -294,7 +310,7 @@ export function TopNavbar() {
                           </div>
                         </button>
                       ))
-                      : (emp.naves || []).map((nave: any) => (
+                      : (emp.naves || []).map((nave: Nave) => (
                         <button
                           key={nave.id}
                           onClick={() => { setTenant(emp.id, nave.id, role === "ADMIN" ? null : undefined); setIsEmpresaMenuOpen(false); }}
@@ -353,7 +369,7 @@ export function TopNavbar() {
                     <div className="flex-1">
                       <p className="text-slate-700 leading-snug">{n.mensaje}</p>
                       <span className="text-[10px] text-slate-400 block mt-1.5 font-mono">
-                        {new Date(n.created_at).toLocaleString('es-MX')}
+                        {n.created_at ? new Date(n.created_at).toLocaleString('es-MX') : ""}
                       </span>
                     </div>
                     <button

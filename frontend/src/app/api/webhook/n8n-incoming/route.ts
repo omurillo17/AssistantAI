@@ -5,6 +5,8 @@ import { createActor } from 'xstate';
 import { verifyInternalApiKey } from '@/lib/auth';
 import { resolveEmpresaYGrupo } from '@/lib/empresaResolution';
 import { asignarReclutadorPorVacante } from '@/lib/asignacionReclutador';
+import { esPlaceholderVacante, limpiarVacante } from '@/lib/vacantes';
+import type { CandidatoEvent } from "@/lib/stateMachine";
 
 /**
  * Estas banderas llegaban de n8n como el STRING 'true' (todo en n8n viaja como
@@ -94,7 +96,7 @@ export async function POST(request: Request) {
     }
 
     // 2. Determinar el evento basado en la información entrante (emulando lo que hacía el CASE WHEN)
-    let event: any = { type: 'INTERES' }; // default fallback
+    let event: CandidatoEvent = { type: 'INTERES' }; // default fallback
 
     if (esVerdadero(privacidad) && currentState === 'NUEVO') {
       event = { type: 'INTERES' };
@@ -185,16 +187,15 @@ export async function POST(request: Request) {
     // 'General') nunca lo atrapaba -- el placeholder se guardaba como si fuera una
     // vacante real y, por el COALESCE del UPSERT de abajo, quedaba atorado ahí para
     // siempre (rompiendo el match de vacante->reclutador en definir_agenda).
-    const esPlaceholderVacante = (v: string) => ['GENERAL', 'NINGUNA'].includes(v.trim().toUpperCase());
-    let finalVacante = (vacante && !esPlaceholderVacante(vacante)) ? vacante.trim() : '';
+    // esPlaceholderVacante vive en @/lib/vacantes: la copia local comparaba
+    // el string crudo, así que '{Ninguna}' (con las llaves que dejaba el
+    // prompt) no coincidía con 'NINGUNA' y pasaba como vacante real.
+    let finalVacante = esPlaceholderVacante(vacante) ? '' : limpiarVacante(vacante);
     if (!finalVacante) {
       if (resumen && typeof resumen === 'string') {
         const vacMatch = resumen.match(/Vacante:\s*([^.\n|]+)/i);
-        if (vacMatch && vacMatch[1]) {
-          const extractedVac = vacMatch[1].trim();
-          if (extractedVac && !['Pendiente', 'Desconocida', 'X'].includes(extractedVac) && !esPlaceholderVacante(extractedVac)) {
-            finalVacante = extractedVac;
-          }
+        if (vacMatch && vacMatch[1] && !esPlaceholderVacante(vacMatch[1])) {
+          finalVacante = limpiarVacante(vacMatch[1]);
         }
       }
     }

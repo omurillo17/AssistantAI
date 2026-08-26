@@ -62,13 +62,12 @@ jobs:
       - name: Tests
         run: npm test
 
-      # ESLint arrastra ~230 errores previos (casi todos no-explicit-any en
-      # hooks y páginas grandes). Se reporta sin bloquear para que el CI sea
-      # útil desde hoy; cuando la deuda llegue a cero, quitar el
-      # continue-on-error para que empiece a bloquear de verdad.
-      - name: Lint (informativo, no bloquea)
+      # La deuda de eslint (los ~230 no-explicit-any de hooks y páginas
+      # grandes) está saldada, así que el lint pasa a bloquear como pedía el
+      # comentario que había aquí. Si vuelve a acumularse, la respuesta es
+      # arreglarla, no devolver el continue-on-error.
+      - name: Lint
         run: npm run lint
-        continue-on-error: true
 
       # El build recolecta page data importando cada route module, y lib/db.ts
       # evalúa ENV.DATABASE_URL al importarse (no dentro de una función), así

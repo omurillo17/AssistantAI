@@ -230,6 +230,12 @@ CREATE TABLE IF NOT EXISTS candidatos (
     edad VARCHAR(50),
     correo VARCHAR(255),
 
+    -- Municipio/ciudad que declara el candidato. Sofia la usa para decidir si
+    -- esta dentro de la cobertura (ZMG) antes de ofrecerle vacantes; si no lo
+    -- esta, el expediente se cierra con estado OTRA_CIUDAD conservando aqui la
+    -- ciudad, para saber por que se descarto.
+    lugar_residencia VARCHAR(255),
+
     estado VARCHAR(50) DEFAULT 'NUEVO',
     vacante_interes VARCHAR(100),
     nave_interes VARCHAR(100),
@@ -289,7 +295,7 @@ CREATE TABLE IF NOT EXISTS candidatos (
         'CITA_AGENDADA', 'CITA_CANCELADA', 'RECORDATORIO_ENVIADO',
         'ESCALADO', 'DOCUMENTOS_NO_COINCIDEN',
         'ENTREVISTADO', 'CONTRATADO',
-        'RECHAZADO', 'CARTERA_GENERAL', 'INACTIVO'
+        'RECHAZADO', 'CARTERA_GENERAL', 'INACTIVO', 'OTRA_CIUDAD'
     )),
 
     CONSTRAINT valid_veredicto CHECK (veredicto IS NULL OR veredicto IN (
@@ -549,6 +555,61 @@ CREATE TABLE IF NOT EXISTS processed_webhooks (
 );
 
 -- ============================================
+-- TABLA: numeros_ignorados
+-- Lista negra: numeros a los que Sofia NO debe contestar
+-- ============================================
+-- Reclutadoras, jefes, proveedores y demas gente interna que le escribe al
+-- WhatsApp del bot. Sin esta lista el pipeline los trata como un candidato
+-- mas: les crea expediente, gasta llamadas a Gemini y les manda el aviso de
+-- privacidad. `_es_reclutador()` en ingesta.py ya cubre al equipo dado de
+-- alta en `reclutadores`, pero no a nadie mas -- esta tabla es la manija
+-- manual para el resto.
+--
+-- `telefono` se guarda normalizado a los ULTIMOS 10 DIGITOS a proposito: el
+-- mismo numero llega de WhatsApp como 5213312345678, 523312345678 o
+-- 3312345678 segun el dispositivo y la version de WAHA, asi que comparar la
+-- cadena completa fallaria justo con quien se quiere silenciar.
+--
+-- `activo` en vez de borrar el renglon: quitar a alguien de la lista es
+-- reversible y queda el motivo por el que se puso.
+
+CREATE TABLE IF NOT EXISTS numeros_ignorados (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    telefono VARCHAR(20) NOT NULL UNIQUE,
+    nombre VARCHAR(255),
+    motivo TEXT,
+    activo BOOLEAN DEFAULT TRUE,
+    creado_por VARCHAR(100),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+
+    CONSTRAINT telefono_normalizado_10_digitos CHECK (telefono ~ '^[0-9]{10}$')
+);
+
+CREATE INDEX IF NOT EXISTS idx_numeros_ignorados_activos
+    ON numeros_ignorados(telefono) WHERE activo = TRUE;
+
+-- La normalizacion vive en la BD y no en quien inserta: esta tabla se
+-- administra a mano con psql, y pegar el numero como viene de WhatsApp
+-- (+52 1 33 1234 5678, 5213312345678, 3312345678@c.us) es justo lo que se va
+-- a hacer. El trigger lo recorta a los ultimos 10 digitos; la CHECK de arriba
+-- sigue rechazando lo que ni asi queda como telefono (un numero incompleto,
+-- texto suelto), para que un renglon invalido truene al insertarse en vez de
+-- quedarse callado sin silenciar a nadie.
+CREATE OR REPLACE FUNCTION normalizar_numero_ignorado() RETURNS trigger AS $$
+BEGIN
+    NEW.telefono := RIGHT(regexp_replace(COALESCE(NEW.telefono, ''), '[^0-9]', '', 'g'), 10);
+    NEW.updated_at := NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_normalizar_numero_ignorado ON numeros_ignorados;
+CREATE TRIGGER trg_normalizar_numero_ignorado
+    BEFORE INSERT OR UPDATE ON numeros_ignorados
+    FOR EACH ROW EXECUTE FUNCTION normalizar_numero_ignorado();
+
+-- ============================================
 -- TABLA: lid_telefono
 -- Mapeo del LID de WhatsApp al telefono real
 -- ============================================
@@ -729,6 +790,23 @@ ALTER TABLE vacantes_def ADD COLUMN IF NOT EXISTS funciones TEXT DEFAULT '';
 -- Sinonimos con los que el candidato puede referirse a la vacante.
 ALTER TABLE vacantes_def ADD COLUMN IF NOT EXISTS palabras_clave TEXT DEFAULT '';
 
+-- Ciudad/municipio declarado por el candidato (filtro de cobertura de Sofia).
+ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS lugar_residencia VARCHAR(255);
+
+-- Candidatos fuera de la zona de cobertura: analizador.py y parser.py escriben
+-- estado = 'OTRA_CIUDAD', asi que la CHECK tiene que aceptarlo o el UPDATE
+-- truena y el expediente se queda a medias. En una base ya creada la CHECK
+-- vieja sigue viva, hay que reemplazarla.
+ALTER TABLE candidatos DROP CONSTRAINT IF EXISTS valid_estado;
+ALTER TABLE candidatos ADD CONSTRAINT valid_estado CHECK (estado IN (
+    'NUEVO', 'INTERESADO', 'CV_RECIBIDO', 'CV_MANUAL',
+    'FILTROS_COMPLETADOS', 'INE_VALIDADA',
+    'CITA_AGENDADA', 'CITA_CANCELADA', 'RECORDATORIO_ENVIADO',
+    'ESCALADO', 'DOCUMENTOS_NO_COINCIDEN',
+    'ENTREVISTADO', 'CONTRATADO',
+    'RECHAZADO', 'CARTERA_GENERAL', 'INACTIVO', 'OTRA_CIUDAD'
+));
+
 -- Notificaciones en tiempo real (LISTEN/NOTIFY) para el modulo de Mensajes del
 -- frontend: reemplaza el polling de 4s por un push cuando de verdad se
 -- inserta un mensaje o cambia la bandeja, sin importar que servicio escribio
@@ -751,12 +829,25 @@ CREATE TRIGGER trg_conversation_history_notify
     AFTER INSERT ON conversation_history
     FOR EACH ROW EXECUTE FUNCTION notify_conversation_history_insert();
 
+-- Solo se notifica si cambio algo que la bandeja pinta. Sin este filtro
+-- cualquier UPDATE que reescribiera la fila con los mismos valores (p.ej.
+-- marcar como leido una conversacion que ya estaba leida) despertaba a todos
+-- los clientes SSE, que recargaban el chat, lo que volvia a marcar como leido:
+-- un lazo de realimentacion que se sostenia a ~20 UPDATE/s.
 CREATE OR REPLACE FUNCTION notify_mensajes_bandeja_change() RETURNS trigger AS $$
 BEGIN
-    PERFORM pg_notify('mensajes_bandeja_change', json_build_object(
-        'telefono', NEW.telefono,
-        'candidato_id', NEW.candidato_id
-    )::text);
+    IF (TG_OP = 'INSERT') OR (
+        NEW.mensajes_no_leidos IS DISTINCT FROM OLD.mensajes_no_leidos
+        OR NEW.ultimo_mensaje IS DISTINCT FROM OLD.ultimo_mensaje
+        OR NEW.ultimo_mensaje_at IS DISTINCT FROM OLD.ultimo_mensaje_at
+        OR NEW.asignado_a_id IS DISTINCT FROM OLD.asignado_a_id
+        OR NEW.activo IS DISTINCT FROM OLD.activo
+    ) THEN
+        PERFORM pg_notify('mensajes_bandeja_change', json_build_object(
+            'telefono', NEW.telefono,
+            'candidato_id', NEW.candidato_id
+        )::text);
+    END IF;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -766,8 +857,55 @@ CREATE TRIGGER trg_mensajes_bandeja_notify
     AFTER INSERT OR UPDATE ON mensajes_bandeja
     FOR EACH ROW EXECUTE FUNCTION notify_mensajes_bandeja_change();
 
+-- Mismo puente para la campana de notificaciones del TopNavbar, que sondeaba
+-- cada 10s, y para los cambios de candidato (tablero de Expedientes y las
+-- alertas de identidad, que sondeaban cada 20s y 10s respectivamente).
+CREATE OR REPLACE FUNCTION notify_notificacion_insert() RETURNS trigger AS $$
+BEGIN
+    PERFORM pg_notify('notificacion_change', json_build_object(
+        'reclutador_id', NEW.reclutador_id
+    )::text);
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_notificacion_notify ON notificaciones;
+CREATE TRIGGER trg_notificacion_notify
+    AFTER INSERT OR UPDATE ON notificaciones
+    FOR EACH ROW EXECUTE FUNCTION notify_notificacion_insert();
+
+-- Solo se avisa cuando cambia algo que el CRM pinta. Sin este filtro, cada
+-- UPDATE de candidatos (los hace el pipeline de Python en cada mensaje)
+-- despertaria a todas las pestanas abiertas para nada.
+CREATE OR REPLACE FUNCTION notify_candidato_change() RETURNS trigger AS $$
+BEGIN
+    IF (TG_OP = 'INSERT') OR (
+        NEW.estado IS DISTINCT FROM OLD.estado
+        OR NEW.alerta_identidad_estado IS DISTINCT FROM OLD.alerta_identidad_estado
+        OR NEW.escalado IS DISTINCT FROM OLD.escalado
+        OR NEW.veredicto IS DISTINCT FROM OLD.veredicto
+        OR NEW.asignado_a_id IS DISTINCT FROM OLD.asignado_a_id
+        OR NEW.vacante_interes IS DISTINCT FROM OLD.vacante_interes
+        OR NEW.nave_interes IS DISTINCT FROM OLD.nave_interes
+        OR NEW.fecha_entrevista IS DISTINCT FROM OLD.fecha_entrevista
+    ) THEN
+        PERFORM pg_notify('candidato_change', json_build_object(
+            'telefono', NEW.telefono,
+            'alerta', (NEW.alerta_identidad_estado IS DISTINCT FROM
+                       CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE OLD.alerta_identidad_estado END)
+        )::text);
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_candidato_notify ON candidatos;
+CREATE TRIGGER trg_candidato_notify
+    AFTER INSERT OR UPDATE ON candidatos
+    FOR EACH ROW EXECUTE FUNCTION notify_candidato_change();
+
 -- ============================================
 DO $$
 BEGIN
-    RAISE NOTICE 'Database setup completado - 17 tablas, 3 vistas, 3 funciones';
+    RAISE NOTICE 'Database setup completado - 21 tablas, 3 vistas, 8 funciones';
 END $$;

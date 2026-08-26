@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from "zod";
 import { getSession } from '@/lib/auth';
 import { pool } from '@/lib/db';
-import { resolveGrupoNaveIds } from '@/lib/grupos';
+import { buildCandidatosScope } from '@/lib/candidatosScope';
 
 const querySchema = z.object({
   estado: z.string().optional().nullable(),
@@ -18,26 +18,8 @@ export async function GET(request: Request) {
   if (!payload) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
-  const rol = (payload.rol as string) || "USER";
-  const reclutador_id = (payload.reclutador_id as string | null) ?? null;
-  const jwt_empresa_id = (payload.empresa_id as string | null) ?? null;
-  const jwt_grupo_id = (payload.grupo_id as string | null) ?? null;
 
   const { searchParams } = new URL(request.url);
-
-  let filter_empresa_id = searchParams.get("empresa_id");
-  const filter_nave_id = searchParams.get("nave_id");
-  let filter_grupo_id = searchParams.get("grupo_id");
-  if (rol !== "ROOT") {
-    filter_empresa_id = jwt_empresa_id;
-  }
-  // Solo ADMIN/ROOT pueden pedir el grupo de otra persona por query param.
-  // Ojo: esto NO debe inyectar un grupo_id cuando el cliente no mandó uno
-  // (p.ej. Dashboards/Mensajes/Expedientes filtrando solo por nave) — solo
-  // corrige el caso en que alguien mande un grupo_id ajeno al suyo.
-  if (filter_grupo_id && rol !== "ROOT" && rol !== "ADMIN" && filter_grupo_id !== jwt_grupo_id) {
-    filter_grupo_id = jwt_grupo_id;
-  }
 
   const parsedQuery = querySchema.safeParse({
     estado: searchParams.get('estado'),
@@ -55,29 +37,12 @@ export async function GET(request: Request) {
   limit = Math.min(limit, 2000); // Limit pagination
 
   try {
-    const conditions: string[] = [];
-    const values: unknown[] = [];
-    let idx = 1;
-
-    if (filter_empresa_id) {
-      conditions.push(`c.empresa_id = $${idx++}`);
-      values.push(filter_empresa_id);
-    }
-
-    if (filter_grupo_id) {
-      // El filtro por grupo tiene prioridad sobre nave_id (son mutuamente
-      // excluyentes desde el TopNavbar, pero por robustez se prioriza grupo).
-      const grupoNaveIds = await resolveGrupoNaveIds(filter_grupo_id);
-      if (grupoNaveIds && grupoNaveIds.length > 0) {
-        conditions.push(`(c.nave_id = ANY($${idx++}::uuid[]) OR c.nave_id IS NULL OR c.nave_interes IS NULL OR c.nave_interes = '' OR c.nave_interes = 'Pendiente')`);
-        values.push(grupoNaveIds);
-      } else {
-        conditions.push(`FALSE`);
-      }
-    } else if (filter_nave_id) {
-      conditions.push(`(c.nave_id = $${idx++} OR c.nave_id IS NULL OR c.nave_interes IS NULL OR c.nave_interes = '' OR c.nave_interes = 'Pendiente')`);
-      values.push(filter_nave_id);
-    }
+    // Alcance multi-tenant (empresa / grupo / nave / rol) compartido con el
+    // resumen del dashboard — ver lib/candidatosScope.ts.
+    const scope = await buildCandidatosScope(payload, searchParams);
+    const conditions = [...scope.conditions];
+    const values = [...scope.values];
+    let idx = scope.nextIdx;
 
     if (estado && estado !== 'TODOS') {
       conditions.push(`c.estado = $${idx++}`);
@@ -90,20 +55,6 @@ export async function GET(request: Request) {
     if (q) {
       conditions.push(`(c.nombre_chat ILIKE $${idx} OR c.nombre_solicitud ILIKE $${idx} OR c.telefono ILIKE $${idx})`);
       values.push(`%${q}%`);
-      idx++;
-    }
-
-    // Si hay un grupo aplicado (propio del usuario o elegido por ADMIN), el
-    // alcance de grupo ya cubre a todo el equipo — no restringir además a
-    // las vacantes propias del reclutador (ver Calendario: un reclutador de
-    // un grupo debe ver las citas de todo su grupo, no solo las suyas).
-    if (rol === "RECLUTADOR" && reclutador_id && !filter_grupo_id) {
-      conditions.push(`
-        c.vacante_interes IN (
-          SELECT nombre FROM vacantes_def WHERE reclutador_id = $${idx}
-        )
-      `);
-      values.push(reclutador_id);
       idx++;
     }
 
@@ -134,4 +85,3 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Error al conectar con la base de datos' }, { status: 500 });
   }
 }
-

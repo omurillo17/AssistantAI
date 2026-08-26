@@ -3,6 +3,13 @@
 Pasos **manuales** que no se pueden automatizar desde el repo. Hazlos en orden;
 el bloque 1 es el más importante y el que más silenciosamente rompe todo.
 
+> **Para desplegar cambios de código no hace falta nada de esto.** Producción
+> corre en esta misma máquina, así que basta con `./scripts/deploy.sh`: verifica
+> el código, aplica las migraciones pendientes, reconstruye, comprueba que todo
+> arranca y empuja a GitHub. Si el arranque falla, devuelve el frontend a la
+> imagen anterior. Lo de abajo son los ajustes de servicios externos (Google,
+> Cloudflare, WhatsApp) que se hacen una vez.
+
 ---
 
 ## 1. Publicar la app de Google (⚠️ crítico)

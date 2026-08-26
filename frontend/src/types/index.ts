@@ -99,6 +99,8 @@ export type Candidato = {
   link_cv?: string | null;
   filtros_tecnicos?: string | null;
   experiencia?: string | null;
+  /** Resumen que deja el analizador sobre la experiencia concreta del puesto. */
+  experiencia_actividades?: string | null;
   creator_email?: string;
   es_google_calendar?: boolean;
   reclutador_nombre?: string;
@@ -161,6 +163,8 @@ export type Empresa = {
 export type Usuario = {
   id: number;
   usuario: string;
+  /** Nombre para mostrar; la columna existe en `usuarios` y faltaba aquí. */
+  nombre?: string | null;
   rol: string;
   correo?: string | null;
   telefono?: string | null;
@@ -181,7 +185,9 @@ export type Notificacion = {
 
 /** Reclutadores agrupados que devuelve /api/db/reclutadores?grouped=true */
 export type GrupoReclutadores = {
+  grupo_id?: string | null;
   grupo_nombre?: string;
+  empresa_id?: string | null;
   empresa_nombre?: string;
   reclutadores?: { id?: string; nombre: string; rol?: string }[];
 };

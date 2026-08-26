@@ -193,8 +193,8 @@ export default function RecruiterCard({
                 className="text-xs bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-3 py-1.5 rounded font-semibold transition-colors flex items-center justify-center gap-1 flex-1"
               >
                 <Filter size={12} /> Filtros
-                {(vac as any).filtros?.filter((f: any) => f.activo).length > 0
-                  ? ` (${(vac as any).filtros?.filter((f: any) => f.activo).length})`
+                {(vac.filtros?.filter((f) => f.activo).length ?? 0) > 0
+                  ? ` (${vac.filtros?.filter((f) => f.activo).length})`
                   : ""}
               </button>
               {isEditable && (

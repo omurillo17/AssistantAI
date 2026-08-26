@@ -36,6 +36,10 @@ export default function AvatarCandidato({
 
   if (puedeTenerFoto) {
     return (
+      // Igual que la multimedia del chat: el avatar lo sirve nuestro propio
+      // endpoint contra WAHA y se cae a las iniciales con onError, algo que
+      // next/image no haría por nosotros.
+      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={`/api/waha-avatar/${soloDigitos}`}
         alt={nombre || "Candidato"}
