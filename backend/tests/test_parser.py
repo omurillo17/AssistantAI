@@ -143,11 +143,11 @@ def test_formato_pipe_tampoco_guarda_placeholders():
 def test_una_vacante_real_si_se_registra():
     respuesta = (
         '{"mensaje_al_usuario": "Perfecto", '
-        '"etiquetas_internas": {"actualizar_vacante": "CHECADOR DE ALMACÉN"}}'
+        '"etiquetas_internas": {"actualizar_vacante": "OPERADOR DE REPARTO"}}'
     )
     items = parser.procesar_respuesta_ia(respuesta, CANDIDATO)
 
-    assert items[0]["vacante_detectada"] == "CHECADOR DE ALMACÉN"
+    assert items[0]["vacante_detectada"] == "OPERADOR DE REPARTO"
 
 
 def test_rescate_vacante_desde_memoria_update():
@@ -170,8 +170,8 @@ def test_rescate_vacante_desde_frase_conversacional_ia():
     )
     items = parser.procesar_respuesta_ia(respuesta, CANDIDATO)
 
-    assert items[0]["vacante_detectada"] == "OPERADOR DE ALMACÉN"
-    assert items[0]["database_updates"]["vacante_interes"] == "OPERADOR DE ALMACÉN"
+    assert items[0]["vacante_detectada"] == "OPERADOR DE ALMACEN"
+    assert items[0]["database_updates"]["vacante_interes"] == "OPERADOR DE ALMACEN"
 
 
 # --- [SPLIT] ----------------------------------------------------------------

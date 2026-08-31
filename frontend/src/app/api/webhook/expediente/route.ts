@@ -167,46 +167,26 @@ export async function POST(request: Request) {
     let alertaIdentidadMotivoFinal: string | null = dbCandidato.alerta_identidad_motivo ?? null;
     let debeNotificarReclutador = false;
 
-    if (esBloqueado) {
-      estado_final = 'DOCUMENTOS_NO_COINCIDEN';
-      resumen_ia_final = identidad_motivo || 'Discrepancia de identidad detectada entre INE y RFC. Requiere validación de un reclutador.';
-      alertaIdentidadMotivoFinal = identidad_motivo || alertaIdentidadMotivoFinal;
-      if (dbCandidato.alerta_identidad_estado !== 'PENDIENTE') {
-        debeNotificarReclutador = true;
-      }
-      alertaIdentidadEstadoFinal = 'PENDIENTE';
-    } else if (esCV) {
+    if (esCV) {
       estado_final = 'CV_RECIBIDO';
       resumen_ia_final = 'CV Recibido y Analizado por Gemini';
-    } else if (esINE || esConstancia || esAmbos) {
+    } else if (esINE || esConstancia || esAmbos || esBloqueado) {
       const curpMalFormada = (esINE && curpIneFormatoInvalido) || (esConstancia && curpRfcFormatoInvalido) || (esAmbos && (curpIneFormatoInvalido || curpRfcFormatoInvalido));
 
       const tieneIne = esINE || esAmbos || !!dbCandidato.datos_ine || !!dbCandidato.curp_ine || !!dbCandidato.nombre_ine;
       const tieneRfc = esConstancia || esAmbos || !!dbCandidato.datos_rfc || !!dbCandidato.curp_rfc || !!dbCandidato.nombre_constancia;
 
-      if (curpMalFormada) {
-        // La CURP extraída no mide 18 caracteres: no se descarta, se guarda igual
-        // (abajo, en el upsert) y se manda a revisión manual por el mismo camino
-        // que la discrepancia INE/RFC (modal urgente + campana de notificaciones).
-        estado_final = 'DOCUMENTOS_NO_COINCIDEN';
-        resumen_ia_final = `La CURP extraída del documento ${tipo_origen} no tiene el formato esperado (18 caracteres). Requiere revisión manual del reclutador.`;
-        alertaIdentidadMotivoFinal = `CURP con formato inválido en documento ${tipo_origen}: "${esINE ? safe_curp_ine : safe_curp_rfc}". Verifica el documento manualmente.`;
-        if (dbCandidato.alerta_identidad_estado !== 'PENDIENTE') {
-          debeNotificarReclutador = true;
-        }
-        alertaIdentidadEstadoFinal = 'PENDIENTE';
-      } else if (esAlertaIdentidad) {
-        // Discrepancia menor (1-2 caracteres): queda pendiente de revisión para
-        // el reclutador, pero el candidato avanza normalmente -- SIN forzar
-        // DOCUMENTOS_NO_COINCIDEN ni tocar resumen_ia_final con un mensaje de bloqueo.
-        alertaIdentidadMotivoFinal = identidad_motivo || alertaIdentidadMotivoFinal;
+      if (esBloqueado || curpMalFormada || esAlertaIdentidad) {
+        // Discrepancia o formato: queda pendiente de revisión para el reclutador en el AlertModal,
+        // pero el candidato NO se bloquea y avanza normalmente si ya entregó ambos documentos.
+        alertaIdentidadMotivoFinal = identidad_motivo || (curpMalFormada ? `CURP con formato irregular en ${tipo_origen}. Verifica el documento manualmente.` : alertaIdentidadMotivoFinal);
         if (dbCandidato.alerta_identidad_estado !== 'PENDIENTE') {
           debeNotificarReclutador = true;
         }
         alertaIdentidadEstadoFinal = 'PENDIENTE';
         if (tieneIne && tieneRfc) {
           estado_final = 'INE_VALIDADA';
-          resumen_ia_final = 'El candidato completó su INE y RFC (con una discrepancia menor de CURP pendiente de revisión). El siguiente paso es agendar la cita.';
+          resumen_ia_final = 'El candidato completó su INE y RFC (alerta de verificación de identidad pendiente en plataforma). El siguiente paso es agendar la cita.';
         } else {
           resumen_ia_final = `Candidato entregó documento parcial (${tipo_origen}). Esperando el faltante.`;
         }
@@ -426,20 +406,18 @@ export async function POST(request: Request) {
       );
     }
 
-    // Alertar al reclutador (campana en plataforma + WhatsApp) solo cuando se detecta
+    // Alertar al reclutador (campana en plataforma + WhatsApp + Toast) solo cuando se detecta
     // una discrepancia de CURP nueva (no en cada reenvío mientras sigue pendiente).
-    if (debeNotificarReclutador && (nombre_reclutador || telefono_reclutador)) {
-      const mensajeAlerta = `⚠️ *Verificación de identidad requerida*\n\nCandidato: ${safe_nombre}\nTel: wa.me/${telefono}\nVacante: ${safe_vacante}\n\n${alertaIdentidadMotivoFinal || 'La CURP del INE y del RFC no coinciden.'}\n\nRevisa el candidato en la plataforma para validar o rechazar.`;
+    if (debeNotificarReclutador) {
+      const mensajeAlerta = `⚠️ *Verificación de identidad requerida*\n\nCandidato: ${safe_nombre}\nTel: wa.me/${telefono}\nVacante: ${safe_vacante || 'Sin vacante'}\n\n${alertaIdentidadMotivoFinal || 'La CURP del INE y del RFC no coinciden.'}\n\nRevisa el candidato en la plataforma para validar o rechazar.`;
 
-      if (reclutadorAsignadoId) {
-        try {
-          await pool.query(
-            `INSERT INTO notificaciones (reclutador_id, mensaje) VALUES ($1, $2)`,
-            [reclutadorAsignadoId, mensajeAlerta]
-          );
-        } catch (notifyErr) {
-          console.error('Error guardando notificación de identidad:', notifyErr);
-        }
+      try {
+        await pool.query(
+          `INSERT INTO notificaciones (reclutador_id, mensaje) VALUES ($1, $2)`,
+          [reclutadorAsignadoId || null, mensajeAlerta]
+        );
+      } catch (notifyErr) {
+        console.error('Error guardando notificación de identidad:', notifyErr);
       }
 
       if (telefono_reclutador) {

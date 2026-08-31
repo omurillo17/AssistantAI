@@ -108,8 +108,8 @@ function EstadoBadge({ estado }: { estado: string }) {
 function ExpedientesPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const telParam = searchParams.get("tel");
-  const appliedTelRef = useRef(false);
+  const telParam = searchParams.get("tel") || searchParams.get("telefono");
+  const lastOpenedTelRef = useRef<string | null>(null);
   const [vista, setVista] = useState<"kanban" | "tabla">("kanban");
   const [candidatos, setCandidatos] = useState<Candidato[]>([]);
   const [mensajes, setMensajes] = useState<Conversacion[]>([]);
@@ -238,13 +238,15 @@ function ExpedientesPageInner() {
     refrescoRef.current = setTimeout(() => loadData(true), 800);
   });
 
-  // Abrir perfil directamente si llega ?tel=
+  // Abrir perfil directamente si llega ?tel= o ?telefono=
   useEffect(() => {
-    if (telParam && !appliedTelRef.current && candidatos.length > 0) {
-      const match = candidatos.find((c) => c.telefono === telParam);
-      if (match) {
-        setSelectedCandidate(match);
-        appliedTelRef.current = true;
+    if (telParam && candidatos.length > 0) {
+      if (lastOpenedTelRef.current !== telParam) {
+        const match = candidatos.find((c) => c.telefono === telParam);
+        if (match) {
+          setSelectedCandidate(match);
+          lastOpenedTelRef.current = telParam;
+        }
       }
     }
   }, [telParam, candidatos]);

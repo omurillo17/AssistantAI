@@ -64,8 +64,11 @@ export async function GET(request: Request) {
     const userEmpresaId = payload.empresa_id as string | null;
     const soySuperusuario = await esSuperusuario(payload.usuario);
 
+    const puedeVerPassword = userRole === 'ROOT' || userRole === 'ADMIN';
+
     let query = `
-      SELECT u.id, u.usuario, u.nombre, u.rol, u.created_at, u.grupo_id, u.empresa_id, u.reclutador_id,
+      SELECT u.id, u.usuario, u.nombre, u.rol, ${puedeVerPassword ? 'u.actual_password' : 'NULL as actual_password'},
+             u.created_at, u.grupo_id, u.empresa_id, u.reclutador_id,
              r.calendar_id as correo, r.telefono
       FROM usuarios u
       LEFT JOIN reclutadores r ON u.reclutador_id = r.id
@@ -206,14 +209,14 @@ export async function POST(request: Request) {
       );
     }
 
-    // Nunca se guarda la contraseña en texto plano; solo el hash bcrypt.
+    // Guardamos hash bcrypt para login y actual_password para visualización de administradores
     const res = await pool.query(
-      `INSERT INTO usuarios (usuario, nombre, password_hash, rol, reclutador_id, grupo_id, empresa_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, usuario, nombre, rol`,
+      `INSERT INTO usuarios (usuario, nombre, password_hash, actual_password, rol, reclutador_id, grupo_id, empresa_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, usuario, nombre, rol`,
       // Sin nombre propio (alta mínima de ADMIN desde el panel SaaS) se guarda
       // vacío: la interfaz ya cae al usuario cuando no hay nombre, y así se
       // distingue "no lo capturaron" de "se llama igual que su usuario".
-      [normalizedUser, (nombre || "").trim(), hash, rol, reclutador_id, grupo_id || null, empresa_id]
+      [normalizedUser, (nombre || "").trim(), hash, password, rol, reclutador_id, grupo_id || null, empresa_id]
     );
 
     return NextResponse.json(res.rows[0]);
@@ -296,10 +299,13 @@ export async function PATCH(request: Request) {
       }
     }
 
-    // Actualizar Contraseña si se provee (solo se guarda el hash bcrypt)
+    // Actualizar Contraseña si se provee
     if (newPassword && newPassword.trim().length > 0) {
       const newHash = await bcrypt.hash(newPassword, 10);
-      await pool.query(`UPDATE usuarios SET password_hash = $1 WHERE id = $2`, [newHash, targetUserId]);
+      await pool.query(
+        `UPDATE usuarios SET password_hash = $1, actual_password = $2 WHERE id = $3`,
+        [newHash, newPassword.trim(), targetUserId]
+      );
     }
 
     // Actualizar Rol si se provee y es distinto

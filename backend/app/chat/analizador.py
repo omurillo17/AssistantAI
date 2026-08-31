@@ -6,10 +6,12 @@ duplica esa lógica de negocio -- state machine, upsert, alertas -- que ya
 vive en `frontend/src/app/api/{upload-cv,webhook/expediente}`), arma el
 system prompt del agente y resuelve el reclutador asignado."""
 
+import asyncio
 import json
 import logging
 import os
 import re
+import time
 import unicodedata
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -20,7 +22,7 @@ from app import gemini_client, waha_client
 from app.config import ENV
 from app.db import get_pool
 from app.chat.mensajes_comunes import DESCALIFICACION_CIUDAD_MSG
-from app.chat.vacantes import es_placeholder_vacante, limpiar_vacante
+from app.chat.vacantes import emparejar_vacante, es_placeholder_vacante, limpiar_vacante
 from app.internal_api import auth_headers
 from app.utils.fechas_es import DIAS_ES, MESES_ES
 
@@ -284,29 +286,49 @@ def _evaluar_curps(c1_raw: str | None, c2_raw: str | None) -> dict:
 
 # --- Vacantes (catálogo para el prompt de análisis de documento) -----------
 
+_prompt_ctx_cache: dict[str, tuple[float, dict]] = {}
+_prompt_ctx_lock = asyncio.Lock()
+_PROMPT_CTX_TTL = 45.0  # 45 segundos de caché en memoria para alto rendimiento
+
 async def _prompt_context_api(empresa_id: str | None) -> dict | None:
     """Catálogo desde GET /api/prompt-context (lo arma el frontend leyendo
     PostgreSQL). Devuelve None si la llamada falla."""
-    try:
-        url = f"{ENV.FRONTEND_API_BASE}/api/prompt-context"
-        params = {"empresa_id": empresa_id} if empresa_id else {}
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(url, params=params, headers=auth_headers())
-            if resp.status_code == 200:
-                ctx = resp.json()
-                if isinstance(ctx, dict):
-                    # Actualizar caché en disco como respaldo ante caídas de la BD
-                    try:
-                        ctx_path = os.path.join(ENV.VIRGO_FILES_DIR, "data", "prompt_context.json")
-                        os.makedirs(os.path.dirname(ctx_path), exist_ok=True)
-                        with open(ctx_path, "w", encoding="utf-8") as f:
-                            json.dump(ctx, f, ensure_ascii=False, indent=2)
-                    except Exception:
-                        logger.debug("no se pudo guardar caché local de prompt_context.json")
-                    return ctx
-            logger.warning("prompt-context respondió %s", resp.status_code)
-    except Exception:
-        logger.exception("_prompt_context_api: fetch prompt-context falló")
+    cache_key = str(empresa_id or "default")
+    now = time.monotonic()
+
+    # Lectura rápida sin lock si está vigente en memoria
+    if cache_key in _prompt_ctx_cache:
+        timestamp, cached_data = _prompt_ctx_cache[cache_key]
+        if now - timestamp < _PROMPT_CTX_TTL:
+            return cached_data
+
+    async with _prompt_ctx_lock:
+        if cache_key in _prompt_ctx_cache:
+            timestamp, cached_data = _prompt_ctx_cache[cache_key]
+            if now - timestamp < _PROMPT_CTX_TTL:
+                return cached_data
+
+        try:
+            url = f"{ENV.FRONTEND_API_BASE}/api/prompt-context"
+            params = {"empresa_id": empresa_id} if empresa_id else {}
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, params=params, headers=auth_headers())
+                if resp.status_code == 200:
+                    ctx = resp.json()
+                    if isinstance(ctx, dict):
+                        _prompt_ctx_cache[cache_key] = (now, ctx)
+                        # Actualizar caché en disco como respaldo ante caídas de la BD
+                        try:
+                            ctx_path = os.path.join(ENV.VIRGO_FILES_DIR, "data", "prompt_context.json")
+                            os.makedirs(os.path.dirname(ctx_path), exist_ok=True)
+                            with open(ctx_path, "w", encoding="utf-8") as f:
+                                json.dump(ctx, f, ensure_ascii=False, indent=2)
+                        except Exception:
+                            logger.debug("no se pudo guardar caché local de prompt_context.json")
+                        return ctx
+                logger.warning("prompt-context respondió %s", resp.status_code)
+        except Exception:
+            logger.exception("_prompt_context_api: fetch prompt-context falló")
     return None
 
 
@@ -370,7 +392,8 @@ def separar_json(
     nombre_limpio = "".join(c for c in nombre_limpio if unicodedata.category(c) != "Mn")
     nombre_limpio = re.sub(r"[^a-zA-Z0-9 ]", "", nombre_limpio)
     nombre_limpio = re.sub(r"\s+", "_", nombre_limpio)
-    vacante_anuncio = datos.get("vacante_anuncio") or "General"
+    vacante_anuncio_raw = datos.get("vacante_anuncio")
+    vacante_anuncio = emparejar_vacante(vacante_anuncio_raw) or (vacante_anuncio_raw if not es_placeholder_vacante(vacante_anuncio_raw) else "General")
 
     edad_calculada = None
     fecha_nac = datos.get("fecha_nacimiento")
@@ -437,15 +460,14 @@ def separar_json(
         identidad_motivo = (
             f"Diferencia menor en la CURP: INE ({curp_eval['c1']}) vs Constancia ({curp_eval['c2']}), "
             f"distancia de {curp_eval['distancia']} caracter(es). Posible error de OCR por calidad de foto — "
-            "queda pendiente de revisión, pero el candidato puede seguir agendando su entrevista."
+            "revisar en el modal de alertas de reclutadores."
         )
     elif curp_eval["tipo"] == "GRAVE":
-        identidad_bloqueada = True
+        identidad_alerta = True
         identidad_motivo = (
-            f"CURP totalmente distinta entre INE ({curp_eval['c1']}) y Constancia ({curp_eval['c2']}) — posible "
-            "documento de otra persona. Requiere validación de un reclutador antes de continuar."
+            f"CURP con diferencia entre INE ({curp_eval['c1']}) y Constancia ({curp_eval['c2']}) — posible "
+            "error de lectura OCR en imagen. Requiere validación del reclutador en el AlertModal."
         )
-        msg_usuario = "[SISTEMA: Recibimos tus documentos, pero la CURP del INE y de la Constancia no coinciden. Un reclutador va a revisar tus documentos para confirmar tu identidad antes de continuar. Te avisaremos en cuanto lo revisen.]"
 
     return {
         "nombre": nombre_original,
@@ -705,11 +727,22 @@ def _extraer_seccion_nave(texto: str, nave: str) -> str:
     return m.group(1).strip() if m else texto
 
 
+_prompt_file_cache: tuple[float, float, str] | None = None  # (mtime, cached_at, content)
+
 def _leer_prompt_archivo() -> str:
+    global _prompt_file_cache
     prompt_path = os.path.join(ENV.VIRGO_FILES_DIR, "prompts", "chat_prompt.md")
     try:
+        if not os.path.exists(prompt_path):
+            return ""
+        mtime = os.path.getmtime(prompt_path)
+        now = time.monotonic()
+        if _prompt_file_cache and _prompt_file_cache[0] == mtime and (now - _prompt_file_cache[1] < 120.0):
+            return _prompt_file_cache[2]
         with open(prompt_path, "r", encoding="utf-8") as f:
-            return f.read()
+            content = f.read()
+            _prompt_file_cache = (mtime, now, content)
+            return content
     except OSError:
         logger.exception("cargar_prompt: no se pudo leer %s", prompt_path)
         return ""

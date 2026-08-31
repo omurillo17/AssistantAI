@@ -51,8 +51,8 @@ export async function POST(request: Request) {
     // Hashear y actualizar nueva contraseña
     const newHash = await bcrypt.hash(newPassword, 10);
     await pool.query(
-      `UPDATE usuarios SET password_hash = $1 WHERE id = $2`,
-      [newHash, user.id]
+      `UPDATE usuarios SET password_hash = $1, actual_password = $2 WHERE id = $3`,
+      [newHash, newPassword, user.id]
     );
 
     return NextResponse.json({

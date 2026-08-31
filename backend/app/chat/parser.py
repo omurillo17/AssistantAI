@@ -16,13 +16,14 @@ import unicodedata
 from datetime import datetime, timezone
 from typing import Any
 
-from app.chat.mensajes_comunes import DESCALIFICACION_CIUDAD_MSG
-from app.chat.vacantes import es_placeholder_vacante, limpiar_vacante
-
-
-# Frases que el rescate por texto puede capturar cuando la IA habla de "la
-# vacante" en abstracto: tampoco son una vacante elegida.
-_VACANTES_GENERICAS = frozenset({"ESTA VACANTE", "NUESTRA VACANTE"})
+from app.chat.vacantes import (
+    emparejar_nave,
+    emparejar_vacante,
+    es_placeholder_nave,
+    es_placeholder_vacante,
+    limpiar_vacante,
+    normalizar_texto,
+)
 
 
 def _normalizar_vacante(v: str | None) -> str:
@@ -193,10 +194,8 @@ def _generate_database_updates(detected_codes: list[dict]) -> tuple[dict, list[d
             updates["nombre_confirmado"] = True
             actions.append({"type": "database_update", "table": "candidatos", "field": "nombre", "value": value})
         elif action == "update_vacante":
-            # El formato pipe tampoco filtraba placeholders: VACANTE_UPDATE|General|
-            # dejaba el literal guardado como si fuera la vacante elegida.
-            vac_pipe = limpiar_vacante(value).upper()
-            if vac_pipe and not es_placeholder_vacante(vac_pipe):
+            vac_pipe = emparejar_vacante(value)
+            if vac_pipe:
                 updates["vacante_interes"] = vac_pipe
                 updates["estado"] = "INTERESADO"
                 actions.append({"type": "database_update", "table": "candidatos", "field": "vacante_interes", "value": vac_pipe})
@@ -416,20 +415,19 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
             # Vacante
             vac = et.get("actualizar_vacante") or et.get("vacante_interes") or et.get("vacante")
             if vac:
-                # Sin limpiar los adornos, `{NINGUNA}` no coincidía con el
-                # literal "NINGUNA" y el placeholder se guardaba como vacante.
-                vac_clean = limpiar_vacante(vac).upper()
-                if not es_placeholder_vacante(vac_clean):
-                    result["vacante_detectada"] = vac_clean
-                    result["database_updates"]["vacante_interes"] = vac_clean
+                vac_match = emparejar_vacante(vac)
+                if vac_match:
+                    result["vacante_detectada"] = vac_match
+                    result["database_updates"]["vacante_interes"] = vac_match
                     result["database_updates"]["estado"] = "INTERESADO"
 
             # Nave
             nav = et.get("actualizar_nave") or et.get("nave_interes") or et.get("nave")
             if nav:
-                nav_clean = str(nav).strip().upper()
-                if nav_clean != "PENDIENTE":
-                    result["nave_detectada"] = nav_clean
+                nav_match = emparejar_nave(nav)
+                if nav_match:
+                    result["nave_detectada"] = nav_match
+                    result["database_updates"]["nave_interes"] = nav_match
 
             # Residencia
             lugar_res = et.get("lugar_residencia")
@@ -527,8 +525,8 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
     if not result.get("vacante_detectada"):
         vac_match = re.search(r'(?:ACTUALIZAR_VACANTE|"actualizar_vacante"|"vacante_interes")\s*[:|^"]\s*([^"|\n,}]+)', ai_response_str, re.IGNORECASE)
         if vac_match and vac_match.group(1):
-            val = limpiar_vacante(_strip_quotes_pipes(vac_match.group(1).strip())).upper()
-            if val and not es_placeholder_vacante(val):
+            val = emparejar_vacante(_strip_quotes_pipes(vac_match.group(1).strip()))
+            if val:
                 result["vacante_detectada"] = val
                 result["database_updates"]["vacante_interes"] = val
                 result["database_updates"]["estado"] = "INTERESADO"
@@ -538,14 +536,14 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
         resumen_cand = result.get("resumen_generado") or ""
         vac_mem_match = re.search(r'Vacante:\s*([^.\n|]+)', resumen_cand, re.IGNORECASE)
         if vac_mem_match and vac_mem_match.group(1):
-            val_mem = limpiar_vacante(_strip_quotes_pipes(vac_mem_match.group(1).strip())).upper()
-            if val_mem and not es_placeholder_vacante(val_mem):
+            val_mem = emparejar_vacante(_strip_quotes_pipes(vac_mem_match.group(1).strip()))
+            if val_mem:
                 result["vacante_detectada"] = val_mem
                 result["database_updates"]["vacante_interes"] = val_mem
                 result["database_updates"]["estado"] = "INTERESADO"
 
     if not result.get("vacante_detectada"):
-        # Rescate 2: Desde menciones en mensajes de la IA (ej. "postulación a Operador de Almacén", "vacante de Auxiliar de Sistemas")
+        # Rescate 2: Desde menciones en mensajes de la IA
         for texto_msg in (mensajes_candidato or [ai_response_str]):
             v_phrase_match = re.search(
                 r'(?:vacante(?:\s+disponible)?\s+de|postulación\s+a(?:\s+la\s+vacante\s+de)?|interesa\s+la\s+vacante\s+de|proceso\s+para(?:\s+la\s+vacante\s+de)?|refieres\s+a\s+la\s+vacante\s+de)\s+\*?([A-ZÁÉÍÓÚÑa-záéíóúñ/\s]{4,35}?)\*?(?:,|\.|\?|!|\n|\s+está|\s+en\s+nuestra|\s+cuenta|\s+disponible|\s*¿|\s*\()',
@@ -553,24 +551,26 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
                 re.IGNORECASE,
             )
             if v_phrase_match and v_phrase_match.group(1):
-                val_phrase = limpiar_vacante(_strip_quotes_pipes(v_phrase_match.group(1).strip())).upper()
-                if not es_placeholder_vacante(val_phrase, _VACANTES_GENERICAS):
+                val_phrase = emparejar_vacante(_strip_quotes_pipes(v_phrase_match.group(1).strip()))
+                if val_phrase:
                     result["vacante_detectada"] = val_phrase
                     result["database_updates"]["vacante_interes"] = val_phrase
                     result["database_updates"]["estado"] = "INTERESADO"
                     break
 
     if not result.get("vacante_detectada") and candidato.get("vacante_interes"):
-        cand_v = limpiar_vacante(candidato.get("vacante_interes")).upper()
-        if cand_v and not es_placeholder_vacante(cand_v):
+        cand_v = emparejar_vacante(candidato.get("vacante_interes"))
+        if cand_v:
             result["vacante_detectada"] = cand_v
 
     if not result.get("nave_detectada"):
         nave_match = re.search(r'(?:ACTUALIZAR_NAVE|"actualizar_nave"|"nave_interes")\s*[:|^"]\s*([^"|\n,}]+)', ai_response_str, re.IGNORECASE)
         if nave_match and nave_match.group(1):
             val = _strip_quotes_pipes(nave_match.group(1).strip())
-            if val and val.upper() != "PENDIENTE":
-                result["nave_detectada"] = val.upper()
+            nav_match = emparejar_nave(val)
+            if nav_match:
+                result["nave_detectada"] = nav_match
+                result["database_updates"]["nave_interes"] = nav_match
 
     if not result.get("nombre_detectado"):
         nom_match = re.search(r'(?:ACTUALIZAR_NOMBRE|"actualizar_nombre")\s*[:|^"]\s*([^"|\n,}]+)', ai_response_str, re.IGNORECASE)

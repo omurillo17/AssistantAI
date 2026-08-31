@@ -78,11 +78,12 @@ async def _procesar_con_debounce(telefono: str, tarea, al_primero=None) -> None:
     async with _debounce_lock:
         _debounce_deadlines.pop(telefono, None)
 
-    lock = _turno_locks.get(telefono)
-    if lock is None:
-        lock = asyncio.Lock()
-        _turno_locks[telefono] = lock
-    _turno_en_espera[telefono] = _turno_en_espera.get(telefono, 0) + 1
+    async with _debounce_lock:
+        lock = _turno_locks.get(telefono)
+        if lock is None:
+            lock = asyncio.Lock()
+            _turno_locks[telefono] = lock
+        _turno_en_espera[telefono] = _turno_en_espera.get(telefono, 0) + 1
 
     if lock.locked():
         logger.info(
@@ -93,12 +94,13 @@ async def _procesar_con_debounce(telefono: str, tarea, al_primero=None) -> None:
         async with lock:
             await tarea()
     finally:
-        restantes = _turno_en_espera.get(telefono, 1) - 1
-        if restantes <= 0:
-            _turno_en_espera.pop(telefono, None)
-            _turno_locks.pop(telefono, None)
-        else:
-            _turno_en_espera[telefono] = restantes
+        async with _debounce_lock:
+            restantes = _turno_en_espera.get(telefono, 1) - 1
+            if restantes <= 0:
+                _turno_en_espera.pop(telefono, None)
+                _turno_locks.pop(telefono, None)
+            else:
+                _turno_en_espera[telefono] = restantes
 
 _MENSAJE_3_FALTAS = (
     "Hola. 🚨 Hemos notado en nuestros registros que no te has presentado a tus últimas 3 entrevistas "

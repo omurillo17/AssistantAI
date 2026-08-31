@@ -60,6 +60,7 @@ export interface TimelineBucket {
 export interface ResumenDashboard {
   total: number;
   escalados: number;
+  otra_ciudad?: number;
   estados: { estado: string; count: number }[];
   vacantes: { vacante: string; total: number; contratados: number; rechazados: number }[];
   reclutadores: { nombre: string; asignados: number; contratados: number }[];
@@ -68,7 +69,7 @@ export interface ResumenDashboard {
 }
 
 const RESUMEN_VACIO: ResumenDashboard = {
-  total: 0, escalados: 0, estados: [], vacantes: [], reclutadores: [], naves: [], timeline: [],
+  total: 0, escalados: 0, otra_ciudad: 0, estados: [], vacantes: [], reclutadores: [], naves: [], timeline: [],
 };
 
 function buildCandidatosTimeline(
@@ -381,7 +382,8 @@ export default function DashboardsPage() {
       let nombre = "Sin sucursal";
       if (raw && raw !== "Pendiente") {
         const resolved = naveNombrePorNumero[raw] || raw;
-        nombre = formatNaveName(resolved);
+        const formatted = formatNaveName(resolved);
+        if (formatted) nombre = formatted;
       }
       counts[nombre] = (counts[nombre] || 0) + count;
     });
@@ -930,6 +932,15 @@ export default function DashboardsPage() {
                           ))}
                         </tbody>
                       </table>
+                    </div>
+                  )}
+
+                  {Boolean(resumen.otra_ciudad) && (
+                    <div className="mt-4 flex items-center gap-2.5 px-3.5 py-2.5 bg-slate-50 border border-slate-200/80 rounded-xl text-xs text-slate-600 font-medium">
+                      <span className="text-sm">📍</span>
+                      <span>
+                        <strong className="text-slate-800 font-bold">{resumen.otra_ciudad} candidatos</strong> descalificados automáticamente por radicar en otra ciudad / fuera de Jalisco (no contabilizados en vacantes activas).
+                      </span>
                     </div>
                   )}
                 </div>

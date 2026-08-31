@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useRealtime } from "@/lib/realtimeClient";
-import { Bell, UserCircle, Building2, ChevronDown, Trash2 } from "lucide-react";
+import { Bell, UserCircle, Building2, ChevronDown, Trash2, X, Calendar, AlertTriangle, ExternalLink } from "lucide-react";
 import { useCallback, useEffect, useState, useRef } from "react";
 import { useTenant } from "@/hooks/useTenant";
 import { useLocalStorageValue } from "@/hooks/useLocalStorageValue";
@@ -21,6 +21,9 @@ export function TopNavbar() {
   const [notifications, setNotifications] = useState<Notificacion[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [toasts, setToasts] = useState<Notificacion[]>([]);
+  const seenNotifIds = useRef<Set<string | number>>(new Set());
+  const initialLoadDone = useRef(false);
   const notifRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const empresaMenuRef = useRef<HTMLDivElement>(null);
@@ -78,8 +81,21 @@ export function TopNavbar() {
       const res = await fetch("/api/db/notificaciones");
       if (res.ok) {
         const data = await res.json();
+        const items: Notificacion[] = data.items || [];
         setUnreadCount(data.unread || 0);
-        setNotifications(data.items || []);
+        setNotifications(items);
+
+        if (!initialLoadDone.current) {
+          items.forEach(n => seenNotifIds.current.add(n.id));
+          initialLoadDone.current = true;
+        } else {
+          // Detectar nuevas notificaciones sin leer para disparar la tarjeta Toast
+          const nuevas = items.filter(n => !n.leida && !seenNotifIds.current.has(n.id));
+          if (nuevas.length > 0) {
+            nuevas.forEach(n => seenNotifIds.current.add(n.id));
+            setToasts(prev => [...nuevas, ...prev].slice(0, 3));
+          }
+        }
       }
     } catch {}
   }, []);
@@ -103,6 +119,84 @@ export function TopNavbar() {
   useRealtime((ev) => {
     if (ev.tipo === "notificacion") fetchNotifs();
   });
+
+  // Auto-cierre de tarjetas flotantes a los 8 segundos
+  useEffect(() => {
+    if (toasts.length === 0) return;
+    const timer = setTimeout(() => {
+      setToasts(prev => prev.slice(0, prev.length - 1));
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [toasts]);
+
+  const dismissToast = (id: string | number) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
+
+  const getNotifMeta = (msg: string = "") => {
+    const lower = msg.toLowerCase();
+    if (lower.includes("cita") || lower.includes("agendada") || lower.includes("📅")) {
+      return {
+        badge: "📅 Cita Agendada",
+        bg: "bg-emerald-50 text-emerald-700 border-emerald-200",
+        border: "border-l-emerald-500",
+        icon: <Calendar className="w-4 h-4 text-emerald-600" />,
+      };
+    }
+    if (lower.includes("atención humana") || lower.includes("escalado") || lower.includes("🚨")) {
+      return {
+        badge: "🚨 Atención Humana",
+        bg: "bg-rose-50 text-rose-700 border-rose-200",
+        border: "border-l-rose-500",
+        icon: <AlertTriangle className="w-4 h-4 text-rose-600" />,
+      };
+    }
+    if (lower.includes("verificación") || lower.includes("identidad") || lower.includes("ocr") || lower.includes("curp") || lower.includes("⚠️")) {
+      return {
+        badge: "⚠️ Alerta de Identidad",
+        bg: "bg-amber-50 text-amber-700 border-amber-200",
+        border: "border-l-amber-500",
+        icon: <AlertTriangle className="w-4 h-4 text-amber-600" />,
+      };
+    }
+    return {
+      badge: "🔔 Notificación",
+      bg: "bg-indigo-50 text-indigo-700 border-indigo-200",
+      border: "border-l-indigo-500",
+      icon: <Bell className="w-4 h-4 text-indigo-600" />,
+    };
+  };
+
+  const getNotifDisplay = (msg: string = "") => {
+    const lower = msg.toLowerCase();
+    const phoneMatch = msg.match(/(?:wa\.me\/|tel:|phone:)?(\d{10,13})/i);
+    const tel = phoneMatch ? phoneMatch[1] : "";
+    const nameMatch = msg.match(/Candidato:\s*([^\n]+)/i);
+    const nombre = nameMatch ? nameMatch[1].trim() : "";
+
+    if (lower.includes("verificación") || lower.includes("identidad") || lower.includes("ocr") || lower.includes("curp")) {
+      return {
+        titulo: "Alerta de Identidad",
+        subtitulo: nombre ? `${nombre}${tel ? ` (${tel})` : ''}` : (tel ? `Tel: ${tel}` : "Revisión de expediente requerida"),
+      };
+    }
+    if (lower.includes("cita") || lower.includes("agendada") || lower.includes("📅")) {
+      return {
+        titulo: "Cita Agendada",
+        subtitulo: nombre ? `${nombre}${tel ? ` (${tel})` : ''}` : (tel ? `Tel: ${tel}` : "Nueva entrevista programada"),
+      };
+    }
+    if (lower.includes("atención humana") || lower.includes("escalado") || lower.includes("🚨")) {
+      return {
+        titulo: "Atención Humana Requerida",
+        subtitulo: nombre ? `${nombre}${tel ? ` (${tel})` : ''}` : (tel ? `Tel: ${tel}` : "Conversación escalada"),
+      };
+    }
+    return {
+      titulo: "Notificación",
+      subtitulo: msg.length > 60 ? msg.slice(0, 60) + "..." : msg,
+    };
+  };
 
   const markAllAsRead = async () => {
     setUnreadCount(0);
@@ -155,12 +249,10 @@ export function TopNavbar() {
     const phoneMatch = n.mensaje?.match(/(?:wa\.me\/|tel:|phone:)?(\d{10,13})/i);
     const telefono = phoneMatch ? phoneMatch[1] : null;
 
-    if (n.mensaje?.toLowerCase().includes("verificación") || n.mensaje?.toLowerCase().includes("identidad") || n.mensaje?.toLowerCase().includes("ocr")) {
-      window.dispatchEvent(new CustomEvent("open-identity-modal", { detail: { telefono } }));
-    }
-
     if (telefono) {
-      router.push(`/expedientes?telefono=${telefono}`);
+      router.push(`/expedientes?tel=${telefono}`);
+    } else {
+      router.push("/expedientes");
     }
   };
 
@@ -360,27 +452,37 @@ export function TopNavbar() {
               {notifications.length === 0 ? (
                 <div className="px-4 py-6 text-sm text-slate-400 text-center">No tienes notificaciones</div>
               ) : (
-                notifications.map(n => (
-                  <div 
-                    key={n.id} 
-                    onClick={() => handleNotifClick(n)}
-                    className={`px-4 py-3 text-sm border-b last:border-0 hover:bg-slate-50 transition-colors cursor-pointer flex items-start justify-between gap-3 ${!n.leida ? 'bg-indigo-50/60 font-medium' : ''}`}
-                  >
-                    <div className="flex-1">
-                      <p className="text-slate-700 leading-snug">{n.mensaje}</p>
-                      <span className="text-[10px] text-slate-400 block mt-1.5 font-mono">
-                        {n.created_at ? new Date(n.created_at).toLocaleString('es-MX') : ""}
-                      </span>
-                    </div>
-                    <button
-                      onClick={(e) => deleteNotif(n.id, e)}
-                      title="Eliminar notificación"
-                      className="text-slate-300 hover:text-red-500 p-1 rounded transition-colors shrink-0"
+                notifications.map(n => {
+                  const display = getNotifDisplay(n.mensaje);
+                  const meta = getNotifMeta(n.mensaje);
+                  return (
+                    <div 
+                      key={n.id} 
+                      onClick={() => handleNotifClick(n)}
+                      className={`px-4 py-3 text-sm border-b last:border-0 hover:bg-slate-50 transition-colors cursor-pointer flex items-start justify-between gap-3 ${!n.leida ? 'bg-indigo-50/60 font-medium' : ''}`}
                     >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                ))
+                      <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                        <div className="mt-0.5 shrink-0">{meta.icon}</div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-slate-800 font-bold text-xs leading-tight truncate">{display.titulo}</p>
+                          {display.subtitulo && (
+                            <p className="text-slate-500 text-[11px] font-medium leading-tight truncate mt-0.5">{display.subtitulo}</p>
+                          )}
+                          <span className="text-[10px] text-slate-400 block mt-1 font-mono">
+                            {n.created_at ? new Date(n.created_at).toLocaleString('es-MX', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ""}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={(e) => deleteNotif(n.id, e)}
+                        title="Eliminar notificación"
+                        className="text-slate-300 hover:text-red-500 p-1 rounded transition-colors shrink-0"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  );
+                })
               )}
             </div>
           )}
@@ -422,6 +524,57 @@ export function TopNavbar() {
         onClose={() => setIsPasswordModalOpen(false)}
         username={username}
       />
+
+      {/* ─── TOASTS FLOTANTES DE NOTIFICACIÓN EN TIEMPO REAL ─── */}
+      <div className="fixed top-20 right-6 z-[9999] flex flex-col gap-3 max-w-sm w-full pointer-events-none">
+        {toasts.map((t) => {
+          const meta = getNotifMeta(t.mensaje);
+          return (
+            <div
+              key={t.id}
+              className={`pointer-events-auto bg-white/95 backdrop-blur-md border border-slate-200/80 shadow-2xl rounded-2xl p-4 border-l-4 ${meta.border} transition-all duration-300 transform translate-y-0 opacity-100 hover:shadow-indigo-500/15 animate-in fade-in slide-in-from-top-4`}
+            >
+              <div className="flex items-start justify-between gap-3 mb-1.5">
+                <div className="flex items-center gap-1.5">
+                  {meta.icon}
+                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${meta.bg}`}>
+                    {meta.badge}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => dismissToast(t.id)}
+                  className="text-slate-400 hover:text-slate-600 p-0.5 rounded-md transition-colors"
+                  title="Cerrar"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              <div className="mb-3">
+                <div className="text-xs text-slate-800 font-bold leading-tight">{getNotifDisplay(t.mensaje).titulo}</div>
+                {getNotifDisplay(t.mensaje).subtitulo && (
+                  <div className="text-xs text-slate-500 font-medium leading-snug mt-0.5">{getNotifDisplay(t.mensaje).subtitulo}</div>
+                )}
+              </div>
+
+              <div className="flex justify-end items-center gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    dismissToast(t.id);
+                    handleNotifClick(t);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm shadow-indigo-200"
+                >
+                  <span>Ver Detalle</span>
+                  <ExternalLink size={12} />
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </nav>
   );
 }

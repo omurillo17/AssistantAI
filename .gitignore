@@ -1,27 +1,85 @@
+# Entorno y Secretos
+.env
+.env.*
 *.env
 *.env.local
-.env.*
 !.env.example
 sk.txt
-waha_data_final/
-waha_files_final/
-.txt
-*.dump
+*.pem
+*.key
+*.cert
+*.crt
+
+# Node.js / Next.js / Frontend
 node_modules/
-*.vscode/
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Asegurar que next-env.d.ts no sea ignorado por patrones de .env
+!next-env.d.ts
+!frontend/next-env.d.ts
+
+# Python / FastAPI / Backend
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+backend/.pytest_cache/
+backend/backend/
+.coverage
+htmlcov/
+.tox/
+.venv/
+venv/
+ENV/
+env/
+backend/.venv/
+
+# ==============================================================================
+# WAHA / Base de Datos / Archivos y Uploads
+# ==============================================================================
+waha_data*/
+waha_files*/
 uploads/
-# Herramientas de agentes: los worktrees son copias temporales del repo (si se
-# commitean quedan como gitlink roto) y settings.local.json es por máquina.
-# .claude/settings.json sí se versiona: es la config compartida del proyecto.
+virgo_data/uploads/
+virgo_data/data/prompt_context.json
+*.dump
+*.sql.bak
+*.tar.gz
+*.zip
+
+# ==============================================================================
+# Editores, IDEs y Sistema Operativo
+# ==============================================================================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
+.gemini/
+.antigravity/
+
+# Herramientas de agentes (Claude / Antigravity)
 .claude/worktrees/
 .claude/settings.local.json
 
-# Bytecode de Python
-__pycache__/
-*.py[cod]
-
-# Catalogo de vacantes generado por el frontend (syncPromptContext.ts) en cada
-# alta/edicion de vacante. Es una cache: si falta, el backend lo pide a
-# /api/prompt-context. Versionarlo solo genera conflictos.
-virgo_data/data/prompt_context.json
-virgo_data/uploads/
+# ==============================================================================
+# Logs y Temporales
+# ==============================================================================
+*.log
+tmp/
+temp/
+scratch/
+CLAUDE.md
+GEMINI.md
+.docx

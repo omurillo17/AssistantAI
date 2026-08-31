@@ -63,6 +63,7 @@ class CrearBloqueoRequest(BaseModel):
     end: str
     summary: str
     description: str | None = None
+    recurrence: list[str] | None = None
 
 
 @router.get("/google-calendar")
@@ -162,11 +163,12 @@ async def reagendar(payload: ReagendarCitaRequest) -> dict:
 
 @router.post("/bloqueo")
 async def bloqueo(payload: CrearBloqueoRequest) -> dict:
-    await create_event(
+    event_id = await create_event(
         calendar_id=payload.calendar_id,
         summary=payload.summary,
         description=payload.description or "",
         start=payload.start,
         end=payload.end,
+        recurrence=payload.recurrence,
     )
-    return {"success": True}
+    return {"success": True, "event_id": event_id}

@@ -111,21 +111,42 @@ export function getCandidateDisplayName(c: {
   return "Candidato";
 }
 
+const PLACEHOLDERS_NAVE = new Set([
+  "NINGUNA",
+  "GENERAL",
+  "PENDIENTE",
+  "DESCONOCIDA",
+  "X",
+  "NONE",
+  "NULL",
+  "SIN SUCURSAL",
+  "NO DEFINIDA",
+  "SIN ASIGNAR",
+  "TODAS",
+  "CUALQUIERA",
+  "{NINGUNA}",
+  "{GENERAL}",
+  "{PENDIENTE}",
+]);
+
 /**
  * Maps numeric nave IDs or strings (e.g. "1", "2", "3") to human-readable Nave names.
+ * Returns empty string for unrecognized values or placeholders.
  */
 export function formatNaveName(nave?: string | number | null): string {
   if (!nave) return "";
   const clean = String(nave).trim();
   const normalized = clean.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
 
-  if (clean === "1" || normalized === "NAVE 1" || normalized.includes("DULCERIA")) return "DULCERIA";
+  if (PLACEHOLDERS_NAVE.has(normalized)) return "";
+
+  if (clean === "1" || normalized === "NAVE 1" || normalized.includes("DULCERIA") || normalized.includes("MANDARINA")) return "DULCERIA";
   if (clean === "2" || normalized === "NAVE 2" || normalized.includes("CEDIS")) return "CEDIS";
   if (clean === "3" || normalized === "NAVE 3" || normalized.includes("MATERIAS PRIMAS")) return "MATERIAS PRIMAS";
   if (normalized.includes("MATRIZ")) return "MATRIZ";
   if (normalized.includes("SUCURSAL")) return "SUCURSAL";
   if (normalized.includes("VITALI")) return "VITALI";
-  return clean.toUpperCase();
+  return "";
 }
 
 /**

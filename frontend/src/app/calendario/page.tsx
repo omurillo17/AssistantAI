@@ -169,11 +169,15 @@ export default function CalendarioPage() {
   const [rescheduleReason, setRescheduleReason] = useState("");
   const [rescheduling, setRescheduling] = useState(false);
 
-  // Modal de crear bloqueo por rango (días, horas, minutos)
+  // Modal de crear bloqueo por rango o recurrente
   const [blockTarget, setBlockTarget] = useState<{ start: Date; end: Date } | null>(null);
   const [blockStartStr, setBlockStartStr] = useState("");
   const [blockEndStr, setBlockEndStr] = useState("");
   const [blockTitle, setBlockTitle] = useState("Vacaciones / Bloqueo");
+  const [blockMode, setBlockMode] = useState<"continuo" | "recurrente">("continuo");
+  const [blockDays, setBlockDays] = useState<string[]>(["MO", "TU", "WE", "TH", "FR"]);
+  const [blockTimeStart, setBlockTimeStart] = useState("13:30");
+  const [blockTimeEnd, setBlockTimeEnd] = useState("15:30");
   const [blocking, setBlocking] = useState(false);
 
   const cancelBackdrop = useBackdropClose(() => setCancelTarget(null));
@@ -666,6 +670,10 @@ export default function CalendarioPage() {
     setBlockTarget({ start, end });
     setBlockStartStr(format(start, "yyyy-MM-dd'T'HH:mm"));
     setBlockEndStr(format(end, "yyyy-MM-dd'T'HH:mm"));
+    setBlockMode("continuo");
+    setBlockTimeStart(format(start, "HH:mm") || "13:30");
+    setBlockTimeEnd(format(end, "HH:mm") || "15:30");
+    setBlockDays(["MO", "TU", "WE", "TH", "FR"]);
     setBlockTitle("Bloqueo de Horario");
   };
 
@@ -673,23 +681,43 @@ export default function CalendarioPage() {
     if (!blockTarget || !blockTitle) return;
     setBlocking(true);
     try {
-      const startDate = blockStartStr ? new Date(blockStartStr) : blockTarget.start;
-      const endDate = blockEndStr ? new Date(blockEndStr) : blockTarget.end;
+      let payload: Record<string, any>;
+      if (blockMode === "recurrente") {
+        const startDatePart = (blockStartStr || format(blockTarget.start, "yyyy-MM-dd")).split("T")[0];
+        const endDatePart = (blockEndStr || format(blockTarget.end, "yyyy-MM-dd")).split("T")[0];
+        const startIso = `${startDatePart}T${blockTimeStart}:00`;
+        const endIso = `${startDatePart}T${blockTimeEnd}:00`;
+        const untilStr = endDatePart.replace(/-/g, "") + "T235959Z";
+        const daysStr = blockDays.length > 0 ? blockDays.join(",") : "MO,TU,WE,TH,FR";
+        const rrule = `RRULE:FREQ=WEEKLY;BYDAY=${daysStr};UNTIL=${untilStr}`;
 
-      const payload = {
-        calendar_id: myCalId,
-        start: startDate.toISOString(),
-        end: endDate.toISOString(),
-        summary: blockTitle,
-        description: "Bloqueo manual creado desde CRM"
-      };
+        payload = {
+          calendar_id: myCalId,
+          start: startIso,
+          end: endIso,
+          summary: blockTitle,
+          description: `Bloqueo recurrente (${daysStr} de ${blockTimeStart} a ${blockTimeEnd})`,
+          recurrence: [rrule],
+        };
+      } else {
+        const startDate = blockStartStr ? new Date(blockStartStr) : blockTarget.start;
+        const endDate = blockEndStr ? new Date(blockEndStr) : blockTarget.end;
+        payload = {
+          calendar_id: myCalId,
+          start: startDate.toISOString(),
+          end: endDate.toISOString(),
+          summary: blockTitle,
+          description: "Bloqueo manual creado desde CRM",
+        };
+      }
+
       const res = await fetch(`${BACKEND_BASE_URL}/internal/citas/bloqueo`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error();
-      showToast("✅ Bloqueo de horario creado correctamente", false);
+      showToast(blockMode === "recurrente" ? "✅ Bloqueo diario recurrente creado correctamente" : "✅ Bloqueo de horario creado correctamente", false);
       setBlockTarget(null);
       loadData();
     } catch {
@@ -1176,111 +1204,242 @@ export default function CalendarioPage() {
             className="bg-white w-[90%] max-w-md rounded-2xl p-6 shadow-2xl relative"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="font-bold text-slate-800 text-lg mb-1">Bloquear Rango de Horario</h3>
+            <h3 className="font-bold text-slate-800 text-lg mb-1">Bloquear Horario</h3>
             <p className="text-xs text-slate-500 mb-4">
-              Bloquea tu disponibilidad por días, horas o minutos exactos en Google Calendar.
+              Bloquea tu disponibilidad en Google Calendar (continuo o recurrente diario).
             </p>
 
+            {/* TOGGLE TIPO DE BLOQUEO */}
+            <div className="flex bg-slate-100 p-1 rounded-xl mb-4 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => setBlockMode("continuo")}
+                className={`flex-1 py-1.5 rounded-lg transition-all ${
+                  blockMode === "continuo"
+                    ? "bg-white text-indigo-600 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                📌 Continuo (Vacaciones)
+              </button>
+              <button
+                type="button"
+                onClick={() => setBlockMode("recurrente")}
+                className={`flex-1 py-1.5 rounded-lg transition-all ${
+                  blockMode === "recurrente"
+                    ? "bg-white text-indigo-600 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                ⏰ Diario (Comida / Fijo)
+              </button>
+            </div>
+
             <div className="mb-4">
-              <label htmlFor="block-title" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Motivo / Título del Bloqueo</label>
+              <label htmlFor="block-title" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                Motivo / Título del Bloqueo
+              </label>
               <input
                 id="block-title"
                 name="block_title"
                 type="text"
                 value={blockTitle}
                 onChange={(e) => setBlockTitle(e.target.value)}
-                placeholder="Ej. Vacaciones, Junta de equipo, Capacitación..."
+                placeholder={blockMode === "recurrente" ? "Ej. Hora de Comida" : "Ej. Vacaciones, Junta de equipo..."}
                 className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs font-medium text-slate-800"
               />
             </div>
 
-            <div className="space-y-3 mb-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  📅 Fecha y Hora de Inicio
-                </label>
-                <input
-                  id="block-start"
-                  name="block_start"
-                  type="datetime-local"
-                  value={blockStartStr}
-                  onChange={(e) => setBlockStartStr(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs text-slate-800 font-mono"
-                />
-              </div>
+            {blockMode === "continuo" ? (
+              <>
+                <div className="space-y-3 mb-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      📅 Fecha y Hora de Inicio
+                    </label>
+                    <input
+                      id="block-start"
+                      name="block_start"
+                      type="datetime-local"
+                      value={blockStartStr}
+                      onChange={(e) => setBlockStartStr(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs text-slate-800 font-mono"
+                    />
+                  </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  🏁 Fecha y Hora de Fin
-                </label>
-                <input
-                  id="block-end"
-                  name="block_end"
-                  type="datetime-local"
-                  value={blockEndStr}
-                  onChange={(e) => setBlockEndStr(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs text-slate-800 font-mono"
-                />
-              </div>
-            </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      🏁 Fecha y Hora de Fin
+                    </label>
+                    <input
+                      id="block-end"
+                      name="block_end"
+                      type="datetime-local"
+                      value={blockEndStr}
+                      onChange={(e) => setBlockEndStr(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs text-slate-800 font-mono"
+                    />
+                  </div>
+                </div>
 
-            {/* PRESETS RÁPIDOS DE RANGO */}
-            <div className="mb-6">
-              <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Accesos Rápidos de Rango</label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!blockStartStr) return;
-                    const st = new Date(blockStartStr);
-                    const end = new Date(st.getTime() + 60 * 60 * 1000);
-                    setBlockEndStr(format(end, "yyyy-MM-dd'T'HH:mm"));
-                  }}
-                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 rounded-lg text-xs font-bold transition-all border border-slate-200"
-                >
-                  ⏱️ +1 Hora
-                </button>
+                {/* PRESETS RÁPIDOS DE RANGO */}
+                <div className="mb-6">
+                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                    Accesos Rápidos de Rango
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!blockStartStr) return;
+                        const st = new Date(blockStartStr);
+                        const end = new Date(st.getTime() + 60 * 60 * 1000);
+                        setBlockEndStr(format(end, "yyyy-MM-dd'T'HH:mm"));
+                      }}
+                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 rounded-lg text-xs font-bold transition-all border border-slate-200"
+                    >
+                      ⏱️ +1 Hora
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!blockStartStr) return;
-                    const st = new Date(blockStartStr);
-                    const end = new Date(st.getTime() + 4 * 60 * 60 * 1000);
-                    setBlockEndStr(format(end, "yyyy-MM-dd'T'HH:mm"));
-                  }}
-                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 rounded-lg text-xs font-bold transition-all border border-slate-200"
-                >
-                  ⏳ +4 Horas (Media jornada)
-                </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!blockStartStr) return;
+                        const st = new Date(blockStartStr);
+                        const end = new Date(st.getTime() + 4 * 60 * 60 * 1000);
+                        setBlockEndStr(format(end, "yyyy-MM-dd'T'HH:mm"));
+                      }}
+                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 rounded-lg text-xs font-bold transition-all border border-slate-200"
+                    >
+                      ⏳ +4 Horas (Media jornada)
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!blockStartStr) return;
-                    const datePart = blockStartStr.split("T")[0];
-                    setBlockStartStr(`${datePart}T08:00`);
-                    setBlockEndStr(`${datePart}T18:00`);
-                  }}
-                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 rounded-lg text-xs font-bold transition-all border border-slate-200"
-                >
-                  ☀️ Todo el Día (8 AM - 6 PM)
-                </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!blockStartStr) return;
+                        const datePart = blockStartStr.split("T")[0];
+                        setBlockStartStr(`${datePart}T08:00`);
+                        setBlockEndStr(`${datePart}T18:00`);
+                      }}
+                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 rounded-lg text-xs font-bold transition-all border border-slate-200"
+                    >
+                      ☀️ Todo el Día (8 AM - 6 PM)
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!blockStartStr) return;
-                    const st = new Date(blockStartStr);
-                    const end = new Date(st.getTime() + 48 * 60 * 60 * 1000);
-                    setBlockEndStr(format(end, "yyyy-MM-dd'T'HH:mm"));
-                  }}
-                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 rounded-lg text-xs font-bold transition-all border border-slate-200"
-                >
-                  🏖️ +2 Días (48 Horas)
-                </button>
-              </div>
-            </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!blockStartStr) return;
+                        const st = new Date(blockStartStr);
+                        const end = new Date(st.getTime() + 48 * 60 * 60 * 1000);
+                        setBlockEndStr(format(end, "yyyy-MM-dd'T'HH:mm"));
+                      }}
+                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 rounded-lg text-xs font-bold transition-all border border-slate-200"
+                    >
+                      🏖️ +2 Días (48 Horas)
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* CONFIGURACIÓN BLOQUEO RECURRENTE */}
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      📅 Desde fecha
+                    </label>
+                    <input
+                      type="date"
+                      value={blockStartStr ? blockStartStr.split("T")[0] : ""}
+                      onChange={(e) => {
+                        const timePart = blockStartStr.includes("T") ? blockStartStr.split("T")[1] : "08:00";
+                        setBlockStartStr(`${e.target.value}T${timePart}`);
+                      }}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs text-slate-800 font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      🏁 Hasta fecha
+                    </label>
+                    <input
+                      type="date"
+                      value={blockEndStr ? blockEndStr.split("T")[0] : ""}
+                      onChange={(e) => {
+                        const timePart = blockEndStr.includes("T") ? blockEndStr.split("T")[1] : "18:00";
+                        setBlockEndStr(`${e.target.value}T${timePart}`);
+                      }}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs text-slate-800 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      ⏰ Hora Inicio Diaria
+                    </label>
+                    <input
+                      type="time"
+                      value={blockTimeStart}
+                      onChange={(e) => setBlockTimeStart(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs text-slate-800 font-mono font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      🏁 Hora Fin Diaria
+                    </label>
+                    <input
+                      type="time"
+                      value={blockTimeEnd}
+                      onChange={(e) => setBlockTimeEnd(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs text-slate-800 font-mono font-bold"
+                    />
+                  </div>
+                </div>
+
+                {/* DÍAS DE LA SEMANA */}
+                <div className="mb-6">
+                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                    Días a Bloquear
+                  </label>
+                  <div className="flex gap-1.5">
+                    {[
+                      { id: "MO", label: "L" },
+                      { id: "TU", label: "M" },
+                      { id: "WE", label: "M" },
+                      { id: "TH", label: "J" },
+                      { id: "FR", label: "V" },
+                      { id: "SA", label: "S" },
+                      { id: "SU", label: "D" },
+                    ].map((d) => {
+                      const active = blockDays.includes(d.id);
+                      return (
+                        <button
+                          key={d.id}
+                          type="button"
+                          onClick={() => {
+                            setBlockDays((prev) =>
+                              prev.includes(d.id) ? prev.filter((x) => x !== d.id) : [...prev, d.id]
+                            );
+                          }}
+                          className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all border ${
+                            active
+                              ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                              : "bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100"
+                          }`}
+                        >
+                          {d.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            )}
 
             <div className="flex gap-3">
               <button
