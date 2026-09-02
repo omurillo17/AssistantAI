@@ -155,3 +155,24 @@ def test_lista_negra_deduplica_las_variantes_del_mismo_remitente():
         "5213312345678", "5213312345678@c.us", "5213312345678"
     )
     assert claves == ["3312345678"]
+
+
+
+
+async def test_es_reclutador_detecta_por_clave_10_digitos(monkeypatch):
+    class FakePool:
+        async def fetchrow(self, query, params):
+            # Simula que 3314057808 es reclutadora (Michelle)
+            if "3314057808" in params:
+                return {"telefono": "5213314057808"}
+            return None
+
+    monkeypatch.setattr(ingesta, "get_pool", lambda: FakePool())
+
+    # Llega por LID pero con number resuelto
+    assert await ingesta._es_reclutador("5213314057808", "256688904994915@lid", "256688904994915@lid")
+    # Llega como @c.us
+    assert await ingesta._es_reclutador("5213314057808@c.us")
+    # Candidato normal no coincide
+    assert not await ingesta._es_reclutador("5213399999999", "123456@lid")
+

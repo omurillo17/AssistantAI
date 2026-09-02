@@ -36,17 +36,17 @@ def _headers() -> dict[str, str]:
 
 
 async def send_text(session: str, chat_id: str, text: str) -> None:
-    """Único punto de salida de mensajes de WhatsApp, y por eso el sitio donde
-    se aplica el regulador de ritmo (ver app/throttle.py): así ninguna ruta
-    -- chat, recordatorios, alertas -- puede saltarse el límite por olvido."""
-    await throttle.esperar_turno()
-    url = f"{ENV.WAHA_BASE_URL}/api/sendText"
-    client = _get_client()
-    resp = await client.post(url, headers=_headers(), json={"session": session, "chatId": chat_id, "text": text})
-    resp.raise_for_status()
+    """Único punto de salida de mensajes de WhatsApp vía Meta Cloud API Oficial."""
+    from app import meta_client
+    pid = session.split("meta:", 1)[1] if session.startswith("meta:") else ENV.META_WA_PHONE_NUMBER_ID
+    clean_to = chat_id.replace("@c.us", "").replace("@meta", "")
+    await meta_client.send_text(pid, clean_to, text)
 
 
 async def start_typing(session: str, chat_id: str) -> None:
+    if session.startswith("meta:") or chat_id.endswith("@meta"):
+        return
+
     url = f"{ENV.WAHA_BASE_URL}/api/startTyping"
     try:
         client = _get_client()
@@ -87,10 +87,12 @@ async def get_chats(session: str = "default", limit: int = 10000) -> list[dict]:
 
 
 async def download_media(media_url: str) -> tuple[bytes, str]:
-    """Descarga el binario de un adjunto de WAHA. Replica el nodo
-    `DescargarMedia`: sustituye 'localhost' por el hostname real del
-    contenedor WAHA (media.url que manda WAHA en el webhook apunta a
-    localhost, válido solo dentro del propio contenedor de WAHA)."""
+    """Descarga el binario de un adjunto de WAHA o Meta Cloud API."""
+    if media_url.startswith("meta:"):
+        from app import meta_client
+        media_id = media_url.split("meta:", 1)[1]
+        return await meta_client.download_media(media_id)
+
     fixed_url = media_url.replace("localhost", "waha")
     client = _get_client()
     resp = await client.get(fixed_url, headers=_headers())

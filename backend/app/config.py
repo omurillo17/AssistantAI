@@ -127,5 +127,33 @@ class _Env:
         CargarPrompt/Vacantes en n8n."""
         return os.environ.get("VIRGO_FILES_DIR") or "/app/virgo_files"
 
+    @property
+    def META_WA_ACCESS_TOKEN(self) -> str | None:
+        return os.environ.get("META_WA_ACCESS_TOKEN") or None
+
+    @property
+    def META_WA_PHONE_NUMBER_ID(self) -> str | None:
+        return os.environ.get("META_WA_PHONE_NUMBER_ID") or None
+
+    @property
+    def META_WA_WABA_ID(self) -> str | None:
+        return os.environ.get("META_WA_WABA_ID") or None
+
+    @property
+    def META_WA_VERIFY_TOKEN(self) -> str:
+        return os.environ.get("META_WA_VERIFY_TOKEN") or "virgo_meta_secret_webhook_2026"
+
+    @property
+    def DEFAULT_RECRUITER_PHONE(self) -> str:
+        return os.environ.get("DEFAULT_RECRUITER_PHONE", "")
+
+    @property
+    def DEFAULT_CALENDAR_ID(self) -> str:
+        return os.environ.get("DEFAULT_CALENDAR_ID") or "talreclutamiento01@gmail.com"
+
+    @property
+    def TEST_DEV_PHONE(self) -> str:
+        return os.environ.get("TEST_DEV_PHONE", "5213323379399")
+
 
 ENV = _Env()

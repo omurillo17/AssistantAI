@@ -3,7 +3,7 @@ import { pool } from '@/lib/db';
 import { candidatoMachine } from '@/lib/stateMachine';
 import { createActor } from 'xstate';
 import { verifyInternalApiKey } from '@/lib/auth';
-import { WAHA_BASE, WAHA_API_KEY, WAHA_SESSION } from '@/lib/waha';
+import { enviarNotificacionReclutador } from '@/lib/messagingService';
 import { resolveEmpresaYGrupo } from '@/lib/empresaResolution';
 import { asignarReclutadorPorVacante } from '@/lib/asignacionReclutador';
 import { esPlaceholderVacante, limpiarVacante } from '@/lib/vacantes';
@@ -410,27 +410,8 @@ export async function POST(request: Request) {
     // una discrepancia de CURP nueva (no en cada reenvío mientras sigue pendiente).
     if (debeNotificarReclutador) {
       const mensajeAlerta = `⚠️ *Verificación de identidad requerida*\n\nCandidato: ${safe_nombre}\nTel: wa.me/${telefono}\nVacante: ${safe_vacante || 'Sin vacante'}\n\n${alertaIdentidadMotivoFinal || 'La CURP del INE y del RFC no coinciden.'}\n\nRevisa el candidato en la plataforma para validar o rechazar.`;
-
-      try {
-        await pool.query(
-          `INSERT INTO notificaciones (reclutador_id, mensaje) VALUES ($1, $2)`,
-          [reclutadorAsignadoId || null, mensajeAlerta]
-        );
-      } catch (notifyErr) {
-        console.error('Error guardando notificación de identidad:', notifyErr);
-      }
-
       if (telefono_reclutador) {
-        try {
-          const chatId = String(telefono_reclutador).includes('@') ? telefono_reclutador : `${telefono_reclutador}@c.us`;
-          await fetch(`${WAHA_BASE}/api/sendText`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Api-Key': WAHA_API_KEY },
-            body: JSON.stringify({ session: WAHA_SESSION, chatId, text: mensajeAlerta }),
-          });
-        } catch (wahaErr) {
-          console.error('Error enviando WhatsApp de alerta de identidad:', wahaErr);
-        }
+        await enviarNotificacionReclutador(String(telefono_reclutador), mensajeAlerta, reclutadorAsignadoId || null);
       }
     }
 

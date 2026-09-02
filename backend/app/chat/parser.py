@@ -16,6 +16,7 @@ import unicodedata
 from datetime import datetime, timezone
 from typing import Any
 
+from app.chat.mensajes_comunes import DESCALIFICACION_CIUDAD_MSG
 from app.chat.vacantes import (
     emparejar_nave,
     emparejar_vacante,
@@ -445,6 +446,11 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
                 if _es_ciudad_no_apta(l_str):
                     result["database_updates"]["estado"] = "OTRA_CIUDAD"
                     result["database_updates"]["resumen_ia"] = f"Descalificado automáticamente: Radica en otra ciudad ({l_str})"
+
+            # Estado explícito
+            estado_val = et.get("estado")
+            if estado_val and str(estado_val).strip():
+                result["database_updates"]["estado"] = str(estado_val).strip()
 
             # Privacidad
             priv_val = et.get("privacidad_aceptada")

@@ -565,7 +565,7 @@ def _elegir_gerente(equipo: list[dict], calendarios_ok: set[str]) -> dict:
         logger.warning("_elegir_gerente: ningun reclutador del equipo tiene OAuth de calendario configurado")
         return equipo[0]
 
-    return {"nombre": "Gerente de Reclutamiento", "telefono": "5213332012658", "calendar_id": "talreclutamiento01@gmail.com"}
+    return {"nombre": "Gerente de Reclutamiento", "telefono": "", "calendar_id": "talreclutamiento01@gmail.com"}
 
 
 async def definir_agenda(
@@ -588,16 +588,21 @@ async def definir_agenda(
                 if not isinstance(equipo, list):
                     equipo = []
     except Exception:
-        logger.exception("definir_agenda: fetch reclutador_vacantes falló, usando fallback")
-        equipo = [{
-            "nombre": "Gerente de Reclutamiento", "emoji": "🚨", "telefono": "5213332012658",
-            "calendar_id": "talreclutamiento01@gmail.com", "naves": ["1", "2", "3"], "vacantes": [],
-        }]
+        logger.exception("definir_agenda: fetch reclutador_vacantes falló, consultando BD directamente")
+        try:
+            pool = get_pool()
+            rows = await pool.fetch(
+                "SELECT id, nombre, telefono, calendar_id, naves FROM reclutadores WHERE activo = TRUE AND (empresa_id = $1::uuid OR $1::uuid IS NULL)",
+                empresa_id,
+            )
+            equipo = [dict(r) for r in rows]
+        except Exception:
+            logger.exception("definir_agenda: consulta directa a BD reclutadores falló")
 
     calendarios_ok = await _calendarios_con_credenciales()
     gerente = _elegir_gerente(equipo, calendarios_ok)
 
-    default_calendar = (gerente.get("calendar_id") or "").strip() or "talreclutamiento01@gmail.com"
+    default_calendar = (gerente.get("calendar_id") or "").strip() or ENV.DEFAULT_CALENDAR_ID
 
     vacante_clean = _clean_str(vacante)
     vacante_desconocida = not vacante_clean or vacante_clean == "GENERAL"
@@ -605,7 +610,7 @@ async def definir_agenda(
     def _agenda_de(rec: dict) -> dict:
         return {
             "nombre_reclutador": rec.get("nombre") or "Equipo de Reclutamiento",
-            "telefono_reclutador": rec.get("telefono") or "5213323379399",
+            "telefono_reclutador": rec.get("telefono") or "",
             "calendar_id": (rec.get("calendar_id") or "").strip() or default_calendar,
             "vacante_detectada": vacante,
             "nave_candidato": nave_actual,
@@ -673,7 +678,7 @@ async def definir_agenda(
         cand = candidatos[0]
         return {
             "nombre_reclutador": cand.get("nombre") or "Equipo de Reclutamiento",
-            "telefono_reclutador": cand.get("telefono") or "5213323379399",
+            "telefono_reclutador": cand.get("telefono") or "",
             "calendar_id": (cand.get("calendar_id") or "").strip() or default_calendar,
             "vacante_detectada": vacante,
             "nave_candidato": nave_actual,
@@ -691,7 +696,7 @@ async def definir_agenda(
         "candidatos_turno": json.dumps([
             {
                 "nombre": r.get("nombre") or "Reclutador",
-                "telefono": r.get("telefono") or "5213323379399",
+                "telefono": r.get("telefono") or "",
                 "calendar_id": (r.get("calendar_id") or "").strip() or default_calendar,
                 "emoji": r.get("emoji") or "📅",
             }

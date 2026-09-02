@@ -61,6 +61,9 @@ function aChatId(telefono: string): string {
 }
 
 async function obtenerUrlFoto(chatId: string): Promise<string | null> {
+  if (process.env.META_WA_ACCESS_TOKEN && process.env.META_WA_PHONE_NUMBER_ID) {
+    return null;
+  }
   const enCache = leerCache(chatId);
   if (enCache) return enCache.url;
 

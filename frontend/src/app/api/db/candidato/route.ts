@@ -19,7 +19,7 @@ const patchBodySchema = z.object({
   empresa_id: z.string().uuid().optional(),
 });
 
-import { WAHA_BASE, WAHA_API_KEY, WAHA_SESSION } from '@/lib/waha';
+import { enviarNotificacionReclutador } from '@/lib/messagingService';
 import { getSession } from '@/lib/auth';
 
 // ─── GET /api/db/candidato?telefono=xxx ───────────────────
@@ -194,31 +194,11 @@ export async function PATCH(request: Request) {
         if (recRes.rows.length > 0) {
           const recTelefono = recRes.rows[0].telefono;
           const msg = `🔔 *Atención*: Se te ha transferido un nuevo candidato.\n\n👤 *Teléfono:* ${telefono}\nPor favor revisa la plataforma para atenderlo.`;
-
-          await fetch(`${WAHA_BASE}/api/sendText`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-              'X-Api-Key': WAHA_API_KEY
-            },
-            body: JSON.stringify({
-              chatId: `${recTelefono}@c.us`,
-              text: msg,
-              session: WAHA_SESSION
-            })
-          });
+          await enviarNotificacionReclutador(recTelefono, msg, asignado_a_id);
           console.log(`Notificación enviada al reclutador ${asignado_a_id} (${recTelefono})`);
-
-          // Guardar notificación en base de datos
-          await pool.query(
-            'INSERT INTO notificaciones (reclutador_id, mensaje) VALUES ($1, $2)',
-            [asignado_a_id, `Se te ha transferido un nuevo candidato: ${telefono}`]
-          );
         }
       } catch (notifyErr) {
         console.error('Error al notificar al reclutador:', notifyErr);
-        // No bloqueamos la respuesta principal si falla la notificación
       }
     }
 

@@ -53,7 +53,7 @@ export function WahaStatusBanner() {
         <div>
           <h3 className="font-bold text-lg leading-none mb-1">¡Alerta: Conexión con WhatsApp Perdida!</h3>
           <p className="text-red-100 text-sm">
-            El servicio de WhatsApp (WAHA) está desconectado. No se pueden enviar ni recibir mensajes.
+            El servicio de WhatsApp está desconectado. No se pueden enviar ni recibir mensajes.
           </p>
         </div>
       </div>

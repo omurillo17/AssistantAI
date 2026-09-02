@@ -217,12 +217,17 @@ async def job_recordatorio_entrevista() -> None:
 # --- Branch B: Vigilante ----------------------------------------------------
 
 _SELECT_VIGILANTE_SQL = (
-    "SELECT * FROM candidatos "
-    "WHERE estado IN ('NUEVO', 'INTERESADO') "
-    "AND ultima_interaccion < (NOW() - INTERVAL '30 minutes') "
-    "AND COALESCE(privacidad_aceptada, false) = false "
-    "AND COALESCE(vacante_interes, '') = '' "
-    "AND COALESCE(fecha_entrevista, '') = '';"
+    "SELECT c.* FROM candidatos c "
+    "WHERE c.estado IN ('NUEVO', 'INTERESADO') "
+    "AND c.ultima_interaccion < (NOW() - INTERVAL '30 minutes') "
+    "AND COALESCE(c.privacidad_aceptada, false) = false "
+    "AND COALESCE(c.vacante_interes, '') = '' "
+    "AND COALESCE(c.fecha_entrevista, '') = '' "
+    "AND RIGHT(regexp_replace(c.telefono, '[^0-9]', '', 'g'), 10) NOT IN ("
+    "  SELECT telefono FROM numeros_ignorados WHERE activo = TRUE "
+    "  UNION "
+    "  SELECT RIGHT(regexp_replace(telefono, '[^0-9]', '', 'g'), 10) FROM reclutadores WHERE activo = TRUE AND telefono IS NOT NULL"
+    ");"
 )
 
 # Texto fijo que se guarda en conversation_history -- a propósito NO incluye

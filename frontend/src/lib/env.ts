@@ -11,9 +11,13 @@ export const ENV = {
     return val;
   },
   get WAHA_API_KEY() {
-    const val = process.env.WAHA_API_KEY;
-    if (!val) throw new Error("CRITICAL: WAHA_API_KEY is missing from environment variables.");
-    return val;
+    return process.env.WAHA_API_KEY || '';
+  },
+  get META_WA_ACCESS_TOKEN() {
+    return process.env.META_WA_ACCESS_TOKEN || '';
+  },
+  get META_WA_PHONE_NUMBER_ID() {
+    return process.env.META_WA_PHONE_NUMBER_ID || '';
   },
   get DATABASE_URL() {
     const val = process.env.DATABASE_URL;

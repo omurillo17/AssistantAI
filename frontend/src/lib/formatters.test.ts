@@ -149,8 +149,9 @@ describe("formatNaveName", () => {
     expect(formatNaveName("Nave 2")).toBe("CEDIS");
   });
 
-  it("devuelve el texto en mayúsculas cuando no conoce la nave", () => {
-    expect(formatNaveName("bodega norte")).toBe("BODEGA NORTE");
+  it("devuelve vacío cuando no reconoce la nave o es placeholder", () => {
+    expect(formatNaveName("bodega norte")).toBe("");
+    expect(formatNaveName("GENERAL")).toBe("");
   });
 });
 

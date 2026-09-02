@@ -14,17 +14,13 @@ import logging
 import time
 import uuid
 
-import httpx
-
 from app import waha_client
 from app.chat import agente, analizador
 from app.config import ENV
 from app.db import get_pool
-from app.internal_api import auth_headers
 
 logger = logging.getLogger("ingesta")
 
-_TEST_PHONE = "5213323379399"
 _DEBOUNCE_SECONDS = 8.0
 _debounce_deadlines: dict[str, float] = {}
 _debounce_lock = asyncio.Lock()
@@ -162,56 +158,50 @@ async def _dedup(message_id: str | None) -> bool:
     return row is not None
 
 
-async def _reset_sofia_test() -> None:
-    """Comando de prueba '/reset_sofia': borra todo rastro del número de
-    prueba hardcodeado. Solo se activa si alguien manda ese comando exacto
-    -- utilidad de debug, no ruta de negocio real."""
+async def _reset_sofia_test(session: str, chat_id: str, telefono: str) -> None:
+    """Comando de prueba '/reset_sofia': borra el historial y candidato del remitente que ejecuta el comando."""
+    if not telefono:
+        return
     pool = get_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
-            await conn.execute("DELETE FROM n8n_chat_histories WHERE session_id = $1", f"{_TEST_PHONE}@c.us")
-            await conn.execute("DELETE FROM conversation_history WHERE telefono = $1", _TEST_PHONE)
-            await conn.execute("DELETE FROM rate_limiting WHERE telefono = $1", _TEST_PHONE)
-            await conn.execute("DELETE FROM candidatos WHERE telefono = $1", _TEST_PHONE)
-    await waha_client.send_text("default", f"{_TEST_PHONE}@c.us", "Resteo listo")
+            await conn.execute("DELETE FROM n8n_chat_histories WHERE session_id = $1", f"{telefono}@c.us")
+            await conn.execute("DELETE FROM conversation_history WHERE telefono = $1", telefono)
+            await conn.execute("DELETE FROM rate_limiting WHERE telefono = $1", telefono)
+            await conn.execute("DELETE FROM candidatos WHERE telefono = $1", telefono)
+    await waha_client.send_text(session, chat_id, "Reseteo listo")
 
 
-async def _es_reclutador(remitente_id: str) -> bool:
-    try:
-        url = f"{ENV.FRONTEND_API_BASE}/api/db/reclutador_vacantes"
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(url, headers=auth_headers())
-            if resp.status_code != 200:
-                return False
-            equipo = resp.json()
-    except Exception:
-        logger.exception("_es_reclutador: fetch reclutador_vacantes falló")
+from app.utils.phone import clave_lista_negra as _clave_lista_negra, limpiar_digitos as _clean_digits, obtener_ultimos_10_digitos
+
+
+async def _es_reclutador(*numeros: str | None) -> bool:
+    """Comprueba si el remitente es un reclutador registrado en la BD.
+    Compara los últimos 10 dígitos de los números provistos contra los
+    teléfonos de reclutadores activos en PostgreSQL (directo en BD, sin HTTP)."""
+    claves = _clave_lista_negra(*numeros)
+    if not claves:
         return False
-
-    for reclutador in equipo if isinstance(equipo, list) else []:
-        telefono = (reclutador or {}).get("telefono")
-        if telefono and telefono.strip()[-10:] in remitente_id:
-            return True
-    return False
-
-
-def _clave_lista_negra(*numeros: str | None) -> list[str]:
-    """Normaliza cada identificador a sus últimos 10 dígitos, que es como se
-    guarda `numeros_ignorados.telefono`. WhatsApp entrega el mismo número como
-    5213312345678, 523312345678 o 3312345678 según el dispositivo y la versión
-    de WAHA, así que comparar la cadena completa fallaría justo con quien se
-    quiere silenciar."""
-    claves = set()
-    for numero in numeros:
-        digitos = "".join(c for c in (numero or "") if c.isdigit())
-        if len(digitos) >= 10:
-            claves.add(digitos[-10:])
-    return sorted(claves)
+    try:
+        pool = get_pool()
+        row = await pool.fetchrow(
+            """
+            SELECT telefono FROM reclutadores 
+            WHERE activo = TRUE 
+              AND telefono IS NOT NULL 
+              AND RIGHT(regexp_replace(telefono, '[^0-9]', '', 'g'), 10) = ANY($1::text[])
+            """,
+            claves,
+        )
+        return row is not None
+    except Exception:
+        logger.exception("_es_reclutador: consulta falló para %s", claves)
+        return False
 
 
 async def _es_numero_ignorado(*numeros: str | None) -> bool:
     """Lista negra manual de `numeros_ignorados`: reclutadoras, jefes y demás
-    gente interna que le escribe al WhatsApp del bot. `_es_reclutador()` solo
+    gente interna que le escribe al WhatsApp del bot. `_es_reclutador()` ya
     cubre al equipo dado de alta en `reclutadores`; esta es la manija para el
     resto, sin tener que darlos de alta como reclutadores."""
     claves = _clave_lista_negra(*numeros)
@@ -223,12 +213,14 @@ async def _es_numero_ignorado(*numeros: str | None) -> bool:
             "SELECT telefono FROM numeros_ignorados WHERE activo = TRUE AND telefono = ANY($1::text[])",
             claves,
         )
+        return row is not None
     except Exception:
         # Fail-soft: si la consulta truena, se prefiere contestarle a alguien
         # de la lista antes que dejar de contestarle a todos los candidatos.
         logger.exception("_es_numero_ignorado: consulta falló para %s", claves)
         return False
-    return row is not None
+
+
 
 
 def _fix_lid(get_info_result: dict, payload: dict | None = None) -> dict:
@@ -329,6 +321,18 @@ async def _guardar_lid(lid: str | None, telefono: str | None) -> None:
 
 
 async def _resolver_contacto(session: str, remitente_raw: str, payload: dict) -> dict:
+    if session.startswith("meta:") or payload.get("provider") == "meta":
+        clean_digits = "".join(filter(str.isdigit, remitente_raw.split("@")[0]))
+        contact_name = (payload.get("_data") or {}).get("notifyName") or "Candidato"
+        return {
+            "id": remitente_raw,
+            "number": clean_digits,
+            "pushname": contact_name,
+            "name": contact_name,
+            "chat_id": f"{clean_digits}@meta",
+            "provider": "meta",
+        }
+
     get_info = await waha_client.get_contact(session, remitente_raw)
     contacto = _fix_lid(get_info, payload)
 
@@ -462,26 +466,38 @@ async def procesar_webhook(body: dict) -> None:
     if not await _dedup(payload.get("id")):
         return
 
-    if payload.get("body") == "/reset_sofia":
-        await _reset_sofia_test()
-        return
-
     session = body.get("session") or "default"
     remitente_raw = payload.get("from") or ""
     contacto = await _resolver_contacto(session, remitente_raw, payload)
     remitente_original = contacto.get("id") or remitente_raw
+    numero_resuelto = contacto.get("number")
+    chat_id = contacto.get("chat_id") or remitente_raw
 
-    # Antes que `_es_reclutador()`, que sale a la red: la lista negra es una
-    # consulta indexada local y corta el turno igual de pronto -- sin crear
-    # expediente, sin guardar el mensaje y sin gastar una llamada a Gemini.
-    if await _es_numero_ignorado(contacto.get("number"), remitente_original, remitente_raw):
+    if payload.get("body") == "/reset_sofia" and numero_resuelto:
+        await _reset_sofia_test(session, chat_id, numero_resuelto)
+        return
+    # Todos los identificadores posibles para listas de exclusión
+    ids_remitente = (
+        numero_resuelto,
+        remitente_original,
+        remitente_raw,
+        contacto.get("lid"),
+        payload.get("author"),
+        payload.get("participant"),
+    )
+
+    if await _es_numero_ignorado(*ids_remitente):
         logger.info(
             "procesar_webhook: remitente en numeros_ignorados (%s), no se responde",
-            contacto.get("number") or remitente_raw,
+            numero_resuelto or remitente_raw,
         )
         return
 
-    if await _es_reclutador(remitente_original):
+    if await _es_reclutador(*ids_remitente):
+        logger.info(
+            "procesar_webhook: remitente es reclutador (%s), no se responde",
+            numero_resuelto or remitente_raw,
+        )
         return
 
     await _migrar_lid(contacto.get("number"), contacto.get("lid"))
@@ -575,3 +591,73 @@ async def analizador_y_chat(body: dict, contacto: dict, candidato: dict) -> None
         agenda=agenda,
         mensaje_override=mensaje_override,
     )
+
+
+async def procesar_webhook_meta(body: dict) -> None:
+    """Parsea el payload de Meta Cloud API (WhatsApp Business Platform) y
+    lo adapta a la estructura interna estándar para que pase por el mismo
+    pipeline de ingesta, analizador y agente Sofía."""
+    entries = body.get("entry") or []
+    for entry in entries:
+        changes = entry.get("changes") or []
+        for change in changes:
+            value = change.get("value") or {}
+            metadata = value.get("metadata") or {}
+            phone_number_id = metadata.get("phone_number_id") or ENV.META_WA_PHONE_NUMBER_ID
+            contacts = value.get("contacts") or []
+            contact_profile = contacts[0].get("profile", {}) if contacts else {}
+            contact_name = contact_profile.get("name") or "Candidato"
+
+            messages = value.get("messages") or []
+            for msg in messages:
+                msg_id = msg.get("id")
+                from_num = msg.get("from")
+                if not from_num:
+                    continue
+                msg_type = msg.get("type", "text")
+                msg_ts = int(msg.get("timestamp") or time.time())
+
+                body_text = ""
+                media_info = None
+
+                if msg_type == "text":
+                    body_text = (msg.get("text") or {}).get("body") or ""
+                elif msg_type == "audio":
+                    audio = msg.get("audio") or {}
+                    media_id = audio.get("id")
+                    body_text = "[Audio]"
+                    media_info = {"url": f"meta:{media_id}", "mimetype": audio.get("mime_type", "audio/ogg")}
+                elif msg_type == "document":
+                    doc = msg.get("document") or {}
+                    media_id = doc.get("id")
+                    body_text = doc.get("filename") or "[Documento]"
+                    media_info = {"url": f"meta:{media_id}", "mimetype": doc.get("mime_type", "application/pdf"), "filename": doc.get("filename")}
+                elif msg_type == "image":
+                    img = msg.get("image") or {}
+                    media_id = img.get("id")
+                    body_text = img.get("caption") or "[Imagen]"
+                    media_info = {"url": f"meta:{media_id}", "mimetype": img.get("mime_type", "image/jpeg")}
+                else:
+                    body_text = f"[{msg_type}]"
+
+                adapted_body = {
+                    "event": "message",
+                    "session": f"meta:{phone_number_id}",
+                    "payload": {
+                        "id": msg_id,
+                        "from": f"{from_num}@c.us",
+                        "to": phone_number_id,
+                        "body": body_text,
+                        "type": msg_type,
+                        "timestamp": msg_ts,
+                        "fromMe": False,
+                        "media": media_info,
+                        "_data": {
+                            "notifyName": contact_name,
+                            "author": f"{from_num}@c.us",
+                        },
+                        "provider": "meta",
+                        "phone_number_id": phone_number_id,
+                    },
+                }
+                await procesar_webhook(adapted_body)
