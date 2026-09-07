@@ -1,6 +1,6 @@
-import { unlink } from 'fs/promises';
-import fs from 'fs';
-import path from 'path';
+import { unlink } from 'node:fs/promises';
+import fs from 'node:fs';
+import path from 'node:path';
 
 export const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads');
 

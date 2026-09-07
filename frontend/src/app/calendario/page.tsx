@@ -49,7 +49,7 @@ type GoogleEvent = {
 };
 
 // ─── Custom Toolbar ──────────────────────────────────────────────────────────
-function CustomToolbar({ date, view, onNavigate, onView }: ToolbarProps<CalendarEvent, object>) {
+function CustomToolbar({ date, view, onNavigate, onView }: Readonly<ToolbarProps<CalendarEvent, object>>) {
   // "DATE" es la acción con la que react-big-calendar acepta una fecha ya
   // calculada y la usa tal cual (ver utils/move.js). Antes se mandaba "prev" /
   // "next", que la librería no reconoce: funcionaba de rebote porque su
@@ -133,6 +133,838 @@ function CustomToolbar({ date, view, onNavigate, onView }: ToolbarProps<Calendar
   );
 }
 
+function cleanPhone(p: string | null | undefined): string {
+  if (!p) return "";
+  const digits = String(p).replace(/\D/g, "");
+  return digits.length >= 10 ? digits.slice(-10) : digits;
+}
+
+function parseFechaEntrevista(fechaStr: string | null | undefined): Date | null {
+  if (!fechaStr?.trim()) return null;
+  let d = new Date(fechaStr);
+  if (Number.isNaN(d.getTime())) d = parse(fechaStr, "dd/MM/yyyy HH:mm", new Date());
+  if (Number.isNaN(d.getTime())) {
+    d = parse(fechaStr, "dd/MM/yyyy", new Date());
+    if (!Number.isNaN(d.getTime())) d.setHours(10, 0, 0, 0);
+  }
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function findOrphanedCandidatoIds(
+  candidatos: Candidato[],
+  googleEvents: GoogleEvent[],
+  gcalRange: { start: Date; end: Date } | null
+): Set<string> {
+  if (!gcalRange) return new Set<string>();
+  const liveIds = new Set(googleEvents.map((ge) => ge.id).filter(Boolean));
+  const ids = new Set<string>();
+  for (const c of candidatos) {
+    if (!c.id || !c.event_id) continue;
+    if (!["CITA_AGENDADA", "RECORDATORIO_ENVIADO"].includes(c.estado)) continue;
+    if (liveIds.has(c.event_id)) continue;
+    const d = parseFechaEntrevista(c.fecha_entrevista);
+    if (d && d >= gcalRange.start && d <= gcalRange.end) {
+      ids.add(c.id);
+    }
+  }
+  return ids;
+}
+
+function processRecruitersData(recs: Recruiter[], myRecruiterId: string | null) {
+  const colorMap: Record<string, string> = {};
+  const nameMap: Record<string, string> = {};
+  const phoneMap: Record<string, string> = {};
+  const idToEmailMap: Record<string, string> = {};
+  const palette = ["#6366f1", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
+  let myCalIdLocal = "";
+
+  recs.forEach((r: Recruiter, i: number) => {
+    const calId = (r.calendar_id || "").toLowerCase();
+    if (calId) {
+      colorMap[calId] = r.color || palette[i % palette.length];
+      nameMap[calId] = r.nombre || (r as Recruiter & { name?: string }).name || calId;
+      if (r.telefono) phoneMap[calId] = r.telefono;
+      if (r.reclutador_id) {
+        idToEmailMap[r.reclutador_id] = calId;
+        if (r.telefono) phoneMap[r.reclutador_id] = r.telefono;
+      }
+      if (r.reclutador_id == myRecruiterId) {
+        myCalIdLocal = calId;
+      }
+    }
+  });
+
+  return { colorMap, nameMap, phoneMap, idToEmailMap, myCalIdLocal };
+}
+
+function parseGCalEventTitleAndDesc(ge: GoogleEvent) {
+  let nombre = ge.title || ge.summary || "Candidato";
+  let vacante = "Sin especificar";
+  let telefono = "No registrado";
+  let nave = "No especificada";
+  const desc = ge.description || "";
+
+  if (nombre.toLowerCase().includes(" con ")) {
+    const parts = nombre.split(/ con /i);
+    vacante = parts[0].replace(/Entrevista para /i, "").replace(/Entrevista /i, "").trim();
+    nombre = parts[1].trim();
+  } else if (nombre.includes(" - ")) {
+    const parts = nombre.split(" - ");
+    nombre = parts[0].replace(/Entrevista /i, "").trim();
+    vacante = parts[1].trim();
+  } else {
+    nombre = nombre.replace(/Entrevista con /i, "").replace(/Entrevista /i, "").trim();
+  }
+
+  const nombreMatch = /Nombre:\s*(.+)/i.exec(desc);
+  if (nombreMatch) nombre = nombreMatch[1].trim();
+  const naveMatch = /Nave\/Sucursal:\s*(.+)/i.exec(desc);
+  if (naveMatch) nave = naveMatch[1].trim();
+  const telMatch = /(?:Tel[ée]fono|Tel):\s*([0-9+\s]+)/i.exec(desc);
+  if (telMatch) telefono = telMatch[1].trim();
+  const vacanteMatch = /Vacante:\s*(.+)/i.exec(desc);
+  if (vacanteMatch) vacante = vacanteMatch[1].trim();
+
+  return { nombre, vacante, telefono, nave, desc };
+}
+
+function filterEventsByPermissions(
+  unifiedEvents: CalendarEvent[],
+  recruiterColors: Record<string, string>,
+  myCalId: string
+): CalendarEvent[] {
+  let allEvents = unifiedEvents;
+
+  const storedEmpresaId = typeof window !== "undefined" ? localStorage.getItem("tci_empresa_id") : null;
+  if (storedEmpresaId) {
+    const allowedCalIds = new Set(Object.keys(recruiterColors));
+    allEvents = allEvents.filter((ev) => {
+      if (!ev.resource.es_google_calendar) return true;
+      const email = (ev.resource.creator_email || "").toLowerCase();
+      return allowedCalIds.has(email);
+    });
+  }
+
+  const role = typeof window !== "undefined" ? localStorage.getItem("tci_role") : "USER";
+  if (role !== "ADMIN" && role !== "ENCARGADO" && role !== "ROOT") {
+    const myRecruiterId = typeof window !== "undefined" ? localStorage.getItem("tci_reclutador_id") : null;
+    allEvents = allEvents.filter((ev) => {
+      const evEmail = (ev.resource.creator_email || "").toLowerCase();
+      const matchesEmail = myCalId && evEmail === myCalId;
+      const matchesId = myRecruiterId && ev.resource.asignado_a_id === myRecruiterId;
+      return matchesEmail || matchesId;
+    });
+  }
+  return allEvents;
+}
+
+function buildCandidateIndexes(
+  candidatos: Candidato[],
+  orphanedCandidatoIds: Set<string>
+) {
+  const candByEventId = new Map<string, Candidato>();
+  const candByPhone = new Map<string, Candidato>();
+  const activeCandidates = candidatos.filter(
+    (c) => c.fecha_entrevista?.trim() && !(c.id && orphanedCandidatoIds.has(c.id))
+  );
+
+  for (const c of activeCandidates) {
+    if (c.event_id) candByEventId.set(c.event_id, c);
+    const cTel = cleanPhone(c.telefono);
+    if (cTel) candByPhone.set(cTel, c);
+  }
+  return { activeCandidates, candByEventId, candByPhone };
+}
+
+function resolveCreatorEmail(
+  rawCreatorEmail: string,
+  matchedCandidate: Candidato | null | undefined,
+  recruiterIdToEmail: Record<string, string>
+): string {
+  if (rawCreatorEmail !== "desconocido") return rawCreatorEmail;
+  if (matchedCandidate?.asignado_a_id && recruiterIdToEmail[matchedCandidate.asignado_a_id]) {
+    return recruiterIdToEmail[matchedCandidate.asignado_a_id];
+  }
+  return "sin_asignar";
+}
+
+function buildGCalUnifiedEvent(
+  gcalId: string,
+  ge: GoogleEvent,
+  matchedCandidate: Candidato | null | undefined,
+  recruiterIdToEmail: Record<string, string>
+): CalendarEvent {
+  const parsedGcal = parseGCalEventTitleAndDesc(ge);
+  const rawCreatorEmail = String(
+    ge.calendarId || ge.creator?.email || ge.organizer?.email || (typeof ge.creator === 'string' ? ge.creator : '') || "desconocido"
+  ).toLowerCase();
+
+  const fechaDe = (v: GoogleEvent["start"]) => typeof v === "string" ? v : v?.dateTime || v?.date;
+  const startDate = new Date(fechaDe(ge.start) || new Date());
+  const endDate = new Date(fechaDe(ge.end) || new Date());
+
+  if (matchedCandidate) {
+    const candName = matchedCandidate.nombre_chat || matchedCandidate.nombre_ine || matchedCandidate.nombre_solicitud || matchedCandidate.nombre || parsedGcal.nombre;
+    const candVacante = matchedCandidate.vacante_interes || parsedGcal.vacante;
+    const resolvedCreatorEmail = resolveCreatorEmail(rawCreatorEmail, matchedCandidate, recruiterIdToEmail);
+
+    return {
+      id: gcalId || matchedCandidate.event_id || matchedCandidate.telefono,
+      title: `${candName} – ${candVacante}`,
+      start: startDate,
+      end: endDate,
+      resource: {
+        ...matchedCandidate,
+        ...ge,
+        event_id: gcalId || matchedCandidate.event_id,
+        es_google_calendar: true,
+        creator_email: resolvedCreatorEmail,
+        nombre_chat: candName,
+        vacante_interes: candVacante,
+        telefono: matchedCandidate.telefono || parsedGcal.telefono,
+        nave_interes: matchedCandidate.nave_interes || parsedGcal.nave,
+        estado: matchedCandidate.estado || "Agendado (GCal)",
+        resumen_ia: matchedCandidate.resumen_ia || parsedGcal.desc,
+      },
+    };
+  }
+
+  return {
+    id: gcalId,
+    title: ge.title || ge.summary || "Entrevista",
+    start: startDate,
+    end: endDate,
+    resource: {
+      ...ge,
+      nombre: parsedGcal.nombre,
+      escalado: false,
+      es_google_calendar: true,
+      resumen_ia: parsedGcal.desc,
+      creator_email: rawCreatorEmail,
+      nombre_chat: parsedGcal.nombre,
+      vacante_interes: parsedGcal.vacante,
+      telefono: parsedGcal.telefono,
+      nave_interes: parsedGcal.nave,
+      estado: "Agendado (GCal)",
+    } as Candidato,
+  };
+}
+
+function buildUnrepresentedCandidateEvents(
+  activeCandidates: Candidato[],
+  representedCandidateIds: Set<string>,
+  representedPhones: Set<string>,
+  recruiterIdToEmail: Record<string, string>
+): CalendarEvent[] {
+  const candidateEvents: CalendarEvent[] = [];
+  for (const c of activeCandidates) {
+    if (c.id && representedCandidateIds.has(c.id)) continue;
+    const cPhone = cleanPhone(c.telefono);
+    if (cPhone && representedPhones.has(cPhone)) continue;
+
+    const startDate = parseFechaEntrevista(c.fecha_entrevista);
+    if (!startDate) continue;
+
+    candidateEvents.push({
+      id: c.event_id || c.telefono,
+      title: `${c.nombre_chat || c.nombre_ine || c.nombre_solicitud || c.nombre || "Candidato"} – ${c.vacante_interes || "Sin vacante"}`,
+      start: startDate,
+      end: new Date(startDate.getTime() + 60 * 60 * 1000),
+      resource: {
+        ...c,
+        creator_email: c.asignado_a_id ? (recruiterIdToEmail[c.asignado_a_id] || "sin_asignar") : "sin_asignar",
+      },
+    });
+  }
+  return candidateEvents;
+}
+
+function buildUnifiedCalendarEvents(
+  candidatos: Candidato[],
+  googleEvents: GoogleEvent[],
+  orphanedCandidatoIds: Set<string>,
+  recruiterColors: Record<string, string>,
+  recruiterIdToEmail: Record<string, string>,
+  myCalId: string
+): CalendarEvent[] {
+  const { activeCandidates, candByEventId, candByPhone } = buildCandidateIndexes(candidatos, orphanedCandidatoIds);
+
+  const representedCandidateIds = new Set<string>();
+  const representedPhones = new Set<string>();
+
+  const uniqueGcalMap = new Map<string, GoogleEvent>();
+  for (const ge of googleEvents) {
+    if (ge?.id && !uniqueGcalMap.has(ge.id)) {
+      uniqueGcalMap.set(ge.id, ge);
+    }
+  }
+
+  const unifiedEvents: CalendarEvent[] = [];
+
+  for (const [gcalId, ge] of uniqueGcalMap.entries()) {
+    const parsedGcal = parseGCalEventTitleAndDesc(ge);
+    const gePhoneClean = cleanPhone(parsedGcal.telefono);
+    const matchedCandidate = candByEventId.get(gcalId) || (gePhoneClean ? candByPhone.get(gePhoneClean) : null);
+
+    if (matchedCandidate) {
+      if (matchedCandidate.id) representedCandidateIds.add(matchedCandidate.id);
+      const cPhone = cleanPhone(matchedCandidate.telefono);
+      if (cPhone) representedPhones.add(cPhone);
+    }
+
+    unifiedEvents.push(buildGCalUnifiedEvent(gcalId, ge, matchedCandidate, recruiterIdToEmail));
+  }
+
+  const unrepEvents = buildUnrepresentedCandidateEvents(activeCandidates, representedCandidateIds, representedPhones, recruiterIdToEmail);
+  unifiedEvents.push(...unrepEvents);
+
+  return filterEventsByPermissions(unifiedEvents, recruiterColors, myCalId);
+}
+
+async function fetchCandidatosList(storedEmpresaId: string | null, storedGrupoId: string | null): Promise<Candidato[]> {
+  const candidatosParams = new URLSearchParams();
+  if (storedEmpresaId) candidatosParams.set("empresa_id", storedEmpresaId);
+  if (storedGrupoId) candidatosParams.set("grupo_id", storedGrupoId);
+  candidatosParams.set("limit", "2000");
+  const res = await fetch(`/api/db/candidatos?${candidatosParams.toString()}`);
+  if (!res.ok) throw new Error("Error API DB");
+  const data = await res.json();
+  return Array.isArray(data) ? data : data.data || [];
+}
+
+async function fetchGoogleCalendarList(): Promise<{ events: GoogleEvent[]; range: { start: Date; end: Date } | null }> {
+  try {
+    const rangeStart = subMonths(new Date(), 2);
+    const rangeEnd = addMonths(new Date(), 3);
+    const resGcal = await fetch(`${BACKEND_BASE_URL}/internal/citas/google-calendar?start=${rangeStart.toISOString()}&end=${rangeEnd.toISOString()}`);
+    if (resGcal.ok) {
+      const gcalData = await resGcal.json();
+      const rawEvents: Record<string, unknown>[] = Array.isArray(gcalData) ? gcalData : gcalData.events || gcalData.data || [];
+      const realEvents = rawEvents.filter((ge) => ge && typeof ge.id === "string" && ge.id.length > 0 && !ge.error);
+      return { events: realEvents, range: { start: rangeStart, end: rangeEnd } };
+    }
+  } catch { }
+  return { events: [], range: null };
+}
+
+async function fetchRecruitersConfig(tenantQuery: string, myRecruiterId: string | null) {
+  try {
+    const resRec = await fetch(`/api/db/vacantes${tenantQuery}`);
+    if (resRec.ok) {
+      const recData = await resRec.json();
+      const recs: Recruiter[] = Array.isArray(recData) ? recData : recData.data || [];
+      return processRecruitersData(recs, myRecruiterId);
+    }
+  } catch { }
+  return null;
+}
+
+async function submitCancelCita({
+  cancelTarget,
+  cancelReason,
+  recruiterPhone,
+  nombreReclutador,
+}: {
+  cancelTarget: CalendarEvent;
+  cancelReason: string;
+  recruiterPhone: string;
+  nombreReclutador: string;
+}) {
+  const payload = {
+    telefono: cancelTarget.resource.telefono,
+    event_id: cancelTarget.resource.event_id || (cancelTarget.resource.es_google_calendar ? cancelTarget.id : null),
+    calendar_id: cancelTarget.resource.creator_email,
+    motivo: cancelReason,
+    telefono_reclutador: recruiterPhone,
+    nombre_reclutador: nombreReclutador,
+    nombre_candidato: cancelTarget.resource.nombre_chat || cancelTarget.resource.nombre_solicitud || "Candidato"
+  };
+  const res = await fetch(`${BACKEND_BASE_URL}/internal/citas/cancelar`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Error al cancelar la cita");
+}
+
+async function submitRescheduleCita({
+  rescheduleTarget,
+  newDate,
+  newTime,
+  rescheduleReason,
+  recruiterPhone,
+  nombreReclutador,
+}: {
+  rescheduleTarget: CalendarEvent;
+  newDate: string;
+  newTime: string;
+  rescheduleReason: string;
+  recruiterPhone: string;
+  nombreReclutador: string;
+}) {
+  const startStr = `${newDate}T${newTime}:00`;
+  const start = new Date(startStr);
+  const end = new Date(start.getTime() + 60 * 60 * 1000);
+
+  const payload = {
+    telefono: rescheduleTarget.resource.telefono,
+    event_id: rescheduleTarget.resource.event_id || (rescheduleTarget.resource.es_google_calendar ? rescheduleTarget.id : null),
+    calendar_id: rescheduleTarget.resource.creator_email,
+    start: start.toISOString(),
+    end: end.toISOString(),
+    motivo: rescheduleReason,
+    telefono_reclutador: recruiterPhone,
+    nombre_reclutador: nombreReclutador,
+    nombre_candidato: rescheduleTarget.resource.nombre_chat || rescheduleTarget.resource.nombre_solicitud || "Candidato",
+    correo: rescheduleTarget.resource.correo || ""
+  };
+  const res = await fetch(`${BACKEND_BASE_URL}/internal/citas/reagendar`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Error al reagendar la cita");
+}
+
+async function submitBlockCita({
+  blockMode,
+  blockTarget,
+  blockStartStr,
+  blockEndStr,
+  blockTimeStart,
+  blockTimeEnd,
+  blockDays,
+  blockTitle,
+  myCalId,
+}: {
+  blockMode: "continuo" | "recurrente";
+  blockTarget: { start: Date; end: Date };
+  blockStartStr: string;
+  blockEndStr: string;
+  blockTimeStart: string;
+  blockTimeEnd: string;
+  blockDays: string[];
+  blockTitle: string;
+  myCalId: string;
+}) {
+  let payload: Record<string, any>;
+  if (blockMode === "recurrente") {
+    const startDatePart = (blockStartStr || format(blockTarget.start, "yyyy-MM-dd")).split("T")[0];
+    const endDatePart = (blockEndStr || format(blockTarget.end, "yyyy-MM-dd")).split("T")[0];
+    const startIso = `${startDatePart}T${blockTimeStart}:00`;
+    const endIso = `${startDatePart}T${blockTimeEnd}:00`;
+    const untilStr = endDatePart.replace(/-/g, "") + "T235959Z";
+    const daysStr = blockDays.length > 0 ? blockDays.join(",") : "MO,TU,WE,TH,FR";
+    const rrule = `RRULE:FREQ=WEEKLY;BYDAY=${daysStr};UNTIL=${untilStr}`;
+
+    payload = {
+      calendar_id: myCalId,
+      start: startIso,
+      end: endIso,
+      summary: blockTitle,
+      description: `Bloqueo recurrente (${daysStr} de ${blockTimeStart} a ${blockTimeEnd})`,
+      recurrence: [rrule],
+    };
+  } else {
+    const startDate = blockStartStr ? new Date(blockStartStr) : blockTarget.start;
+    const endDate = blockEndStr ? new Date(blockEndStr) : blockTarget.end;
+    payload = {
+      calendar_id: myCalId,
+      start: startDate.toISOString(),
+      end: endDate.toISOString(),
+      summary: blockTitle,
+      description: "Bloqueo manual creado desde CRM",
+    };
+  }
+
+  const res = await fetch(`${BACKEND_BASE_URL}/internal/citas/bloqueo`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Error al crear bloqueo");
+}
+
+function resolveAssignedPhone(event: CalendarEvent, recruiterPhones: Record<string, string>): string {
+  const recEmail = (event.resource.creator_email || "").toLowerCase();
+  const recId = event.resource.asignado_a_id;
+  const assignedPhone = (recEmail && recruiterPhones[recEmail]) || (recId && recruiterPhones[recId]) || "";
+  const defaultTel = typeof window !== "undefined" ? localStorage.getItem("tci_telefono") : "";
+  return assignedPhone || defaultTel || "";
+}
+
+function groupEventsByRecruiter(events: CalendarEvent[], recruiterNames: Record<string, string>): Record<string, CalendarEvent[]> {
+  const today = new Date(new Date().setHours(0, 0, 0, 0));
+  const grouped: Record<string, CalendarEvent[]> = {};
+
+  Object.keys(recruiterNames).forEach((email) => {
+    grouped[email] = [];
+  });
+
+  events.forEach((e) => {
+    if (e.start < today) return;
+    const email = e.resource.creator_email
+      ? String(e.resource.creator_email).toLowerCase()
+      : "sin_asignar";
+    if (!grouped[email]) grouped[email] = [];
+    grouped[email].push(e);
+  });
+
+  Object.keys(grouped).forEach((key) => {
+    grouped[key].sort((a, b) => a.start.getTime() - b.start.getTime());
+  });
+
+  return grouped;
+}
+
+function getRecruiterColor(email: string, recruiterColors: Record<string, string>): string {
+  if (recruiterColors[email]) return recruiterColors[email];
+  const palette = ["#6366f1", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
+  let hash = 0;
+  for (let i = 0; i < email.length; i++) hash = (email.codePointAt(i) || 0) + ((hash << 5) - hash);
+  return palette[Math.abs(hash) % palette.length];
+}
+
+function resolveRecruiterDisplayName(email: string, recruiterNames: Record<string, string>): string {
+  if (email === "sin_asignar") return "Sin Reclutador";
+  return recruiterNames[email] || email;
+}
+
+function markCandidatesAsCancelled(candidatos: Candidato[], cancelledIds: string[]): Candidato[] {
+  return candidatos.map((c) =>
+    c.id && cancelledIds.includes(c.id)
+      ? { ...c, estado: "CITA_CANCELADA", event_id: undefined, fecha_entrevista: null }
+      : c
+  );
+}
+
+function getDatePart(str: string): string {
+  return str ? str.split("T")[0] : "";
+}
+
+function getTimePart(str: string, fallback: string): string {
+  return str.includes("T") ? str.split("T")[1] : fallback;
+}
+
+function addHoursToDate(dateStr: string, hours: number): string {
+  if (!dateStr) return "";
+  const st = new Date(dateStr);
+  const end = new Date(st.getTime() + hours * 60 * 60 * 1000);
+  return format(end, "yyyy-MM-dd'T'HH:mm");
+}
+
+interface BloquearHorarioModalProps {
+  blockTarget: { start: Date; end: Date } | null;
+  blockBackdrop: ReturnType<typeof useBackdropClose>;
+  blockTitle: string;
+  setBlockTitle: (val: string) => void;
+  blockMode: "continuo" | "recurrente";
+  setBlockMode: (val: "continuo" | "recurrente") => void;
+  blockStartStr: string;
+  setBlockStartStr: (val: string) => void;
+  blockEndStr: string;
+  setBlockEndStr: (val: string) => void;
+  blockTimeStart: string;
+  setBlockTimeStart: (val: string) => void;
+  blockTimeEnd: string;
+  setBlockTimeEnd: (val: string) => void;
+  blockDays: string[];
+  setBlockDays: React.Dispatch<React.SetStateAction<string[]>>;
+  blocking: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}
+
+function BloquearHorarioModal(props: Readonly<BloquearHorarioModalProps>) {
+  const {
+    blockTarget,
+    blockBackdrop,
+    blockTitle,
+    setBlockTitle,
+    blockMode,
+    setBlockMode,
+    blockStartStr,
+    setBlockStartStr,
+    blockEndStr,
+    setBlockEndStr,
+    blockTimeStart,
+    setBlockTimeStart,
+    blockTimeEnd,
+    setBlockTimeEnd,
+    blockDays,
+    setBlockDays,
+    blocking,
+    onClose,
+    onConfirm,
+  } = props;
+
+  if (!blockTarget) return null;
+
+  return (
+    <div
+      className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[2000]"
+      {...blockBackdrop}
+    >
+      <div className="bg-white w-[90%] max-w-md rounded-2xl p-6 shadow-2xl relative">
+        <h3 className="font-bold text-slate-800 text-lg mb-1">Bloquear Horario</h3>
+        <p className="text-xs text-slate-500 mb-4">
+          Bloquea tu disponibilidad en Google Calendar (continuo o recurrente diario).
+        </p>
+
+        {/* TOGGLE TIPO DE BLOQUEO */}
+        <div className="flex bg-slate-100 p-1 rounded-xl mb-4 text-xs font-bold">
+          <button
+            type="button"
+            onClick={() => setBlockMode("continuo")}
+            className={`flex-1 py-1.5 rounded-lg transition-all ${
+              blockMode === "continuo"
+                ? "bg-white text-indigo-600 shadow-sm"
+                : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            📌 Continuo (Vacaciones)
+          </button>
+          <button
+            type="button"
+            onClick={() => setBlockMode("recurrente")}
+            className={`flex-1 py-1.5 rounded-lg transition-all ${
+              blockMode === "recurrente"
+                ? "bg-white text-indigo-600 shadow-sm"
+                : "text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            ⏰ Diario (Comida / Fijo)
+          </button>
+        </div>
+
+        <div className="mb-4">
+          <label htmlFor="block-title" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+            Motivo / Título del Bloqueo
+          </label>
+          <input
+            id="block-title"
+            name="block_title"
+            type="text"
+            value={blockTitle}
+            onChange={(e) => setBlockTitle(e.target.value)}
+            placeholder={blockMode === "recurrente" ? "Ej. Hora de Comida" : "Ej. Vacaciones, Junta de equipo..."}
+            className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs font-medium text-slate-800"
+          />
+        </div>
+
+        {blockMode === "continuo" ? (
+          <>
+            <div className="space-y-3 mb-4">
+              <div>
+                <label htmlFor="block-start" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  📅 Fecha y Hora de Inicio
+                </label>
+                <input
+                  id="block-start"
+                  name="block_start"
+                  type="datetime-local"
+                  value={blockStartStr}
+                  onChange={(e) => setBlockStartStr(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs text-slate-800 font-mono"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="block-end" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  🏁 Fecha y Hora de Fin
+                </label>
+                <input
+                  id="block-end"
+                  name="block_end"
+                  type="datetime-local"
+                  value={blockEndStr}
+                  onChange={(e) => setBlockEndStr(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs text-slate-800 font-mono"
+                />
+              </div>
+            </div>
+
+            {/* PRESETS RÁPIDOS DE RANGO */}
+            <div className="mb-6">
+              <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                Accesos Rápidos de Rango
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const end = addHoursToDate(blockStartStr, 1);
+                    if (end) setBlockEndStr(end);
+                  }}
+                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 rounded-lg text-xs font-bold transition-all border border-slate-200"
+                >
+                  ⏱️ +1 Hora
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const end = addHoursToDate(blockStartStr, 4);
+                    if (end) setBlockEndStr(end);
+                  }}
+                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 rounded-lg text-xs font-bold transition-all border border-slate-200"
+                >
+                  ⏳ +4 Horas (Media jornada)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!blockStartStr) return;
+                    const datePart = getDatePart(blockStartStr);
+                    setBlockStartStr(`${datePart}T08:00`);
+                    setBlockEndStr(`${datePart}T18:00`);
+                  }}
+                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 rounded-lg text-xs font-bold transition-all border border-slate-200"
+                >
+                  ☀️ Todo el Día (8 AM - 6 PM)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const end = addHoursToDate(blockStartStr, 48);
+                    if (end) setBlockEndStr(end);
+                  }}
+                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 rounded-lg text-xs font-bold transition-all border border-slate-200"
+                >
+                  🏖️ +2 Días (48 Horas)
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            {/* CONFIGURACIÓN BLOQUEO RECURRENTE */}
+            <div className="grid grid-cols-2 gap-3 mb-3">
+              <div>
+                <label htmlFor="block-recurrente-start-date" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  📅 Desde fecha
+                </label>
+                <input
+                  id="block-recurrente-start-date"
+                  name="block_start_date"
+                  type="date"
+                  value={getDatePart(blockStartStr)}
+                  onChange={(e) => {
+                    const timePart = getTimePart(blockStartStr, "08:00");
+                    setBlockStartStr(`${e.target.value}T${timePart}`);
+                  }}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs text-slate-800 font-mono"
+                />
+              </div>
+              <div>
+                <label htmlFor="block-recurrente-end-date" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  🏁 Hasta fecha
+                </label>
+                <input
+                  id="block-recurrente-end-date"
+                  name="block_end_date"
+                  type="date"
+                  value={getDatePart(blockEndStr)}
+                  onChange={(e) => {
+                    const timePart = getTimePart(blockEndStr, "18:00");
+                    setBlockEndStr(`${e.target.value}T${timePart}`);
+                  }}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs text-slate-800 font-mono"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div>
+                <label htmlFor="block-recurrente-time-start" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  ⏰ Hora Inicio Diaria
+                </label>
+                <input
+                  id="block-recurrente-time-start"
+                  name="block_time_start"
+                  type="time"
+                  value={blockTimeStart}
+                  onChange={(e) => setBlockTimeStart(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs text-slate-800 font-mono font-bold"
+                />
+              </div>
+              <div>
+                <label htmlFor="block-recurrente-time-end" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  🏁 Hora Fin Diaria
+                </label>
+                <input
+                  id="block-recurrente-time-end"
+                  name="block_time_end"
+                  type="time"
+                  value={blockTimeEnd}
+                  onChange={(e) => setBlockTimeEnd(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs text-slate-800 font-mono font-bold"
+                />
+              </div>
+            </div>
+
+            {/* DÍAS DE LA SEMANA */}
+            <div className="mb-6">
+              <span className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                Días a Bloquear
+              </span>
+              <div className="flex gap-1.5">
+                {[
+                  { id: "MO", label: "L" },
+                  { id: "TU", label: "M" },
+                  { id: "WE", label: "M" },
+                  { id: "TH", label: "J" },
+                  { id: "FR", label: "V" },
+                  { id: "SA", label: "S" },
+                  { id: "SU", label: "D" },
+                ].map((d) => {
+                  const active = blockDays.includes(d.id);
+                  return (
+                    <button
+                      key={d.id}
+                      type="button"
+                      onClick={() => {
+                        setBlockDays((prev) =>
+                          prev.includes(d.id) ? prev.filter((x) => x !== d.id) : [...prev, d.id]
+                        );
+                      }}
+                      className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all border ${
+                        active
+                          ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                          : "bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100"
+                      }`}
+                    >
+                      {d.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        )}
+
+        <div className="flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm transition-colors"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={blocking}
+            className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-colors disabled:opacity-50 shadow-sm"
+          >
+            {blocking ? "Bloqueando..." : "Confirmar Bloqueo"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 export default function CalendarioPage() {
   const router = useRouter();
@@ -203,64 +1035,24 @@ export default function CalendarioPage() {
       if (storedEmpresaId) tenantParams.set("empresa_id", storedEmpresaId);
       const tenantQuery = tenantParams.toString() ? `?${tenantParams.toString()}` : "";
 
-      const candidatosParams = new URLSearchParams();
-      if (storedEmpresaId) candidatosParams.set("empresa_id", storedEmpresaId);
-      if (storedGrupoId) candidatosParams.set("grupo_id", storedGrupoId);
-      candidatosParams.set("limit", "2000");
-      const res = await fetch(`/api/db/candidatos?${candidatosParams.toString()}`);
-      if (!res.ok) throw new Error("Error API DB");
-      const data = await res.json();
-      setCandidatos(Array.isArray(data) ? data : data.data || []);
+      const cands = await fetchCandidatosList(storedEmpresaId, storedGrupoId);
+      setCandidatos(cands);
 
-      try {
-        const rangeStart = subMonths(new Date(), 2);
-        const rangeEnd = addMonths(new Date(), 3);
-        const resGcal = await fetch(`${BACKEND_BASE_URL}/internal/citas/google-calendar?start=${rangeStart.toISOString()}&end=${rangeEnd.toISOString()}`);
-        if (resGcal.ok) {
-          const gcalData = await resGcal.json();
-          const rawEvents: Record<string, unknown>[] = Array.isArray(gcalData) ? gcalData : gcalData.events || gcalData.data || [];
-          const realEvents = rawEvents.filter((ge) => ge && typeof ge.id === "string" && ge.id.length > 0 && !ge.error);
-          setGoogleEvents(realEvents);
-          setGcalRange({ start: rangeStart, end: rangeEnd });
-        }
-      } catch { }
+      const gcal = await fetchGoogleCalendarList();
+      if (gcal.range) {
+        setGoogleEvents(gcal.events);
+        setGcalRange(gcal.range);
+      }
 
-      try {
-        const resRec = await fetch(`/api/db/vacantes${tenantQuery}`);
-        if (resRec.ok) {
-          const recData = await resRec.json();
-          const recs: Recruiter[] = Array.isArray(recData) ? recData : recData.data || [];
-          const colorMap: Record<string, string> = {};
-          const nameMap: Record<string, string> = {};
-          const phoneMap: Record<string, string> = {};
-          const idToEmailMap: Record<string, string> = {};
-          const palette = ["#6366f1", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
-          let myCalIdLocal = "";
-          const myRecruiterId = localStorage.getItem("tci_reclutador_id");
-
-          recs.forEach((r: Recruiter, i: number) => {
-            const calId = (r.calendar_id || "").toLowerCase();
-            if (calId) {
-              colorMap[calId] = r.color || palette[i % palette.length];
-              // Algunas respuestas traen `name` en vez de `nombre`.
-              nameMap[calId] = r.nombre || (r as Recruiter & { name?: string }).name || calId;
-              if (r.telefono) phoneMap[calId] = r.telefono;
-              if (r.reclutador_id) {
-                idToEmailMap[r.reclutador_id] = calId;
-                if (r.telefono) phoneMap[r.reclutador_id] = r.telefono;
-              }
-              if (r.reclutador_id == myRecruiterId) {
-                myCalIdLocal = calId;
-              }
-            }
-          });
-          setRecruiterColors(colorMap);
-          setRecruiterNames(nameMap);
-          setRecruiterPhones(phoneMap);
-          setRecruiterIdToEmail(idToEmailMap);
-          if (myCalIdLocal) setMyCalId(myCalIdLocal);
-        }
-      } catch { }
+      const myRecruiterId = localStorage.getItem("tci_reclutador_id");
+      const recConfig = await fetchRecruitersConfig(tenantQuery, myRecruiterId);
+      if (recConfig) {
+        setRecruiterColors(recConfig.colorMap);
+        setRecruiterNames(recConfig.nameMap);
+        setRecruiterPhones(recConfig.phoneMap);
+        setRecruiterIdToEmail(recConfig.idToEmailMap);
+        if (recConfig.myCalIdLocal) setMyCalId(recConfig.myCalIdLocal);
+      }
 
       showToast("Datos cargados", false);
     } catch {
@@ -283,22 +1075,7 @@ export default function CalendarioPage() {
 
   // ── Citas huérfanas ──────────────────────────────────────────────────────
   const orphanedCandidatoIds = useMemo(() => {
-    if (!gcalRange) return new Set<string>();
-    const liveIds = new Set(googleEvents.map((ge) => ge.id).filter(Boolean));
-    const ids = new Set<string>();
-    for (const c of candidatos) {
-      if (!c.id || !c.event_id) continue;
-      if (!["CITA_AGENDADA", "RECORDATORIO_ENVIADO"].includes(c.estado)) continue;
-      if (liveIds.has(c.event_id)) continue;
-      const fechaStr = c.fecha_entrevista;
-      if (!fechaStr?.trim()) continue;
-      let d = new Date(fechaStr);
-      if (isNaN(d.getTime())) d = parse(fechaStr, "dd/MM/yyyy HH:mm", new Date());
-      if (isNaN(d.getTime())) d = parse(fechaStr, "dd/MM/yyyy", new Date());
-      if (isNaN(d.getTime())) continue;
-      if (d >= gcalRange.start && d <= gcalRange.end) ids.add(c.id);
-    }
-    return ids;
+    return findOrphanedCandidatoIds(candidatos, googleEvents, gcalRange);
   }, [candidatos, googleEvents, gcalRange]);
 
   // Manda a corregir en BD las citas huérfanas detectadas (una sola vez por id)
@@ -314,13 +1091,7 @@ export default function CalendarioPage() {
     })
       .then((res) => {
         if (!res.ok) return;
-        setCandidatos((prev) =>
-          prev.map((c) =>
-            c.id && pendientes.includes(c.id)
-              ? { ...c, estado: "CITA_CANCELADA", event_id: undefined, fecha_entrevista: null }
-              : c
-          )
-        );
+        setCandidatos((prev) => markCandidatesAsCancelled(prev, pendientes));
       })
       .catch(() => {
         pendientes.forEach((id) => reconciledRef.current.delete(id));
@@ -329,220 +1100,23 @@ export default function CalendarioPage() {
 
   // ── Events ──────────────────────────────────────────────────────────────
   const events: CalendarEvent[] = useMemo(() => {
-    // Helper to get normalized 10-digit phone number
-    const cleanPhone = (p: string | null | undefined): string => {
-      if (!p) return "";
-      const digits = String(p).replace(/\D/g, "");
-      return digits.length >= 10 ? digits.slice(-10) : digits;
-    };
-
-    // Index DB candidates
-    const candByEventId = new Map<string, Candidato>();
-    const candByPhone = new Map<string, Candidato>();
-    const activeCandidates = candidatos.filter(
-      (c) => c.fecha_entrevista?.trim() && !(c.id && orphanedCandidatoIds.has(c.id))
+    return buildUnifiedCalendarEvents(
+      candidatos,
+      googleEvents,
+      orphanedCandidatoIds,
+      recruiterColors,
+      recruiterIdToEmail,
+      myCalId
     );
-
-    for (const c of activeCandidates) {
-      if (c.event_id) {
-        candByEventId.set(c.event_id, c);
-      }
-      const cTel = cleanPhone(c.telefono);
-      if (cTel) {
-        candByPhone.set(cTel, c);
-      }
-    }
-
-    // Set to track which candidate IDs/telefonos have been matched/included
-    const representedCandidateIds = new Set<string>();
-    const representedPhones = new Set<string>();
-
-    // Deduplicate raw GCal events by id first
-    const uniqueGcalMap = new Map<string, GoogleEvent>();
-    for (const ge of googleEvents) {
-      if (ge && ge.id && !uniqueGcalMap.has(ge.id)) {
-        uniqueGcalMap.set(ge.id, ge);
-      }
-    }
-
-    const unifiedEvents: CalendarEvent[] = [];
-
-    // Process all Google Calendar events
-    for (const [gcalId, ge] of uniqueGcalMap.entries()) {
-      let nombre = ge.title || ge.summary || "Candidato";
-      let vacante = "Sin especificar";
-      let telefono = "No registrado";
-      let nave = "No especificada";
-      const desc = ge.description || "";
-
-      if (nombre.toLowerCase().includes(" con ")) {
-        const parts = nombre.split(/ con /i);
-        vacante = parts[0].replace(/Entrevista para /i, "").replace(/Entrevista /i, "").trim();
-        nombre = parts[1].trim();
-      } else if (nombre.includes(" - ")) {
-        const parts = nombre.split(" - ");
-        nombre = parts[0].replace(/Entrevista /i, "").trim();
-        vacante = parts[1].trim();
-      } else {
-        nombre = nombre.replace(/Entrevista con /i, "").replace(/Entrevista /i, "").trim();
-      }
-
-      const nombreMatch = desc.match(/Nombre:\s*(.+)/i);
-      if (nombreMatch) nombre = nombreMatch[1].trim();
-      const naveMatch = desc.match(/Nave\/Sucursal:\s*(.+)/i);
-      if (naveMatch) nave = naveMatch[1].trim();
-      const telMatch = desc.match(/(?:Tel[ée]fono|Tel):\s*([0-9+\s]+)/i);
-      if (telMatch) telefono = telMatch[1].trim();
-      const vacanteMatch = desc.match(/Vacante:\s*(.+)/i);
-      if (vacanteMatch) vacante = vacanteMatch[1].trim();
-
-      const creatorEmail = String(
-        ge.calendarId || ge.creator?.email || ge.organizer?.email || (typeof ge.creator === 'string' ? ge.creator : '') || "desconocido"
-      ).toLowerCase();
-
-      const gePhoneClean = cleanPhone(telefono);
-      const matchedCandidate = candByEventId.get(gcalId) || (gePhoneClean ? candByPhone.get(gePhoneClean) : null);
-
-      const fechaDe = (v: GoogleEvent["start"]) =>
-        typeof v === "string" ? v : v?.dateTime || v?.date;
-      const startDate = new Date(fechaDe(ge.start) || new Date());
-      const endDate = new Date(fechaDe(ge.end) || new Date());
-
-      if (matchedCandidate) {
-        if (matchedCandidate.id) representedCandidateIds.add(matchedCandidate.id);
-        const cPhone = cleanPhone(matchedCandidate.telefono);
-        if (cPhone) representedPhones.add(cPhone);
-
-        const candName = matchedCandidate.nombre_chat || matchedCandidate.nombre_ine || matchedCandidate.nombre_solicitud || matchedCandidate.nombre || nombre;
-        const candVacante = matchedCandidate.vacante_interes || vacante;
-
-        unifiedEvents.push({
-          id: gcalId || matchedCandidate.event_id || matchedCandidate.telefono,
-          title: `${candName} – ${candVacante}`,
-          start: startDate,
-          end: endDate,
-          resource: {
-            ...matchedCandidate,
-            ...ge,
-            event_id: gcalId || matchedCandidate.event_id,
-            es_google_calendar: true,
-            creator_email: creatorEmail !== "desconocido" ? creatorEmail : (matchedCandidate.asignado_a_id ? (recruiterIdToEmail[matchedCandidate.asignado_a_id] || "sin_asignar") : "sin_asignar"),
-            nombre_chat: candName,
-            vacante_interes: candVacante,
-            telefono: matchedCandidate.telefono || telefono,
-            nave_interes: matchedCandidate.nave_interes || nave,
-            estado: matchedCandidate.estado || "Agendado (GCal)",
-            resumen_ia: matchedCandidate.resumen_ia || desc,
-          },
-        });
-      } else {
-        // Evento directo de GCal (bloqueo, junta o cita sin candidato en DB)
-        unifiedEvents.push({
-          id: gcalId,
-          title: ge.title || ge.summary || "Entrevista",
-          start: startDate,
-          end: endDate,
-          resource: {
-            ...ge,
-            // El evento no tiene candidato detrás: `nombre` y `escalado` son
-            // obligatorios en Candidato y antes viajaban en undefined.
-            nombre,
-            escalado: false,
-            es_google_calendar: true,
-            resumen_ia: desc,
-            creator_email: creatorEmail,
-            nombre_chat: nombre,
-            vacante_interes: vacante,
-            telefono,
-            nave_interes: nave,
-            estado: "Agendado (GCal)",
-          } as Candidato,
-        });
-      }
-    }
-
-    // Add any DB candidates that were not matched to any GCal event
-    for (const c of activeCandidates) {
-      if (c.id && representedCandidateIds.has(c.id)) continue;
-      const cPhone = cleanPhone(c.telefono);
-      if (cPhone && representedPhones.has(cPhone)) continue;
-
-      const fechaStr = c.fecha_entrevista!;
-      let startDate = new Date(fechaStr);
-      if (isNaN(startDate.getTime())) startDate = parse(fechaStr, "dd/MM/yyyy HH:mm", new Date());
-      if (isNaN(startDate.getTime())) {
-        startDate = parse(fechaStr, "dd/MM/yyyy", new Date());
-        if (!isNaN(startDate.getTime())) startDate.setHours(10, 0, 0, 0);
-      }
-      if (isNaN(startDate.getTime())) continue;
-
-      unifiedEvents.push({
-        id: c.event_id || c.telefono,
-        title: `${c.nombre_chat || c.nombre_ine || c.nombre_solicitud || c.nombre || "Candidato"} – ${c.vacante_interes || "Sin vacante"}`,
-        start: startDate,
-        end: new Date(startDate.getTime() + 60 * 60 * 1000),
-        resource: {
-          ...c,
-          creator_email: c.asignado_a_id ? (recruiterIdToEmail[c.asignado_a_id] || "sin_asignar") : "sin_asignar",
-        },
-      });
-    }
-
-    let allEvents = unifiedEvents;
-
-    const storedEmpresaId = typeof window !== "undefined" ? localStorage.getItem("tci_empresa_id") : null;
-    if (storedEmpresaId) {
-      const allowedCalIds = new Set(Object.keys(recruiterColors));
-      allEvents = allEvents.filter((ev) => {
-        if (!ev.resource.es_google_calendar) return true;
-        const email = (ev.resource.creator_email || "").toLowerCase();
-        return allowedCalIds.has(email);
-      });
-    }
-
-    // Filter by role if not ADMIN or ENCARGADO
-    const role = typeof window !== "undefined" ? localStorage.getItem("tci_role") : "USER";
-    if (role !== "ADMIN" && role !== "ENCARGADO" && role !== "ROOT") {
-      const myRecruiterId = typeof window !== "undefined" ? localStorage.getItem("tci_reclutador_id") : null;
-      allEvents = allEvents.filter((ev) => {
-        const evEmail = (ev.resource.creator_email || "").toLowerCase();
-        const matchesEmail = myCalId && evEmail === myCalId;
-        const matchesId = myRecruiterId && ev.resource.asignado_a_id === myRecruiterId;
-        return matchesEmail || matchesId;
-      });
-    }
-
-    return allEvents;
   }, [candidatos, googleEvents, myCalId, orphanedCandidatoIds, recruiterColors, recruiterIdToEmail]);
 
   const formatVisualDate = (d: Date) => format(d, "dd/MM/yyyy HH:mm");
 
   // ── Panel lateral agrupado ───────────────────────────────────────────────
-  const eventsByRecruiter = useMemo(() => {
-    const today = new Date(new Date().setHours(0, 0, 0, 0));
-    const grouped: Record<string, CalendarEvent[]> = {};
-
-    // Inicializar todos los reclutadores registrados para que aparezcan todos en el panel
-    Object.keys(recruiterNames).forEach((email) => {
-      grouped[email] = [];
-    });
-
-    events.forEach((e) => {
-      if (e.start < today) return;
-      // Para eventos de DB sin creator_email, los ponemos en 'sin_asignar'
-      const email = e.resource.creator_email
-        ? String(e.resource.creator_email).toLowerCase()
-        : "sin_asignar";
-      if (!grouped[email]) grouped[email] = [];
-      grouped[email].push(e);
-    });
-
-    Object.keys(grouped).forEach((key) => {
-      grouped[key].sort((a, b) => a.start.getTime() - b.start.getTime());
-    });
-
-    return grouped;
-  }, [events, recruiterNames]);
+  const eventsByRecruiter = useMemo(
+    () => groupEventsByRecruiter(events, recruiterNames),
+    [events, recruiterNames]
+  );
 
   const toggleRecruiter = (email: string) =>
     setExpandedRecruiters((prev) => ({ ...prev, [email]: !prev[email] }));
@@ -554,11 +1128,7 @@ export default function CalendarioPage() {
     setCancelPassword("");
     setCancelError("");
     setCancelReason("Por imprevistos de agenda en el equipo de reclutamiento.");
-    const recEmail = (event.resource.creator_email || "").toLowerCase();
-    const recId = event.resource.asignado_a_id;
-    const assignedPhone = (recEmail && recruiterPhones[recEmail]) || (recId && recruiterPhones[recId]) || "";
-    const defaultTel = typeof window !== "undefined" ? localStorage.getItem("tci_telefono") : "";
-    setRecruiterPhone(assignedPhone || defaultTel || "");
+    setRecruiterPhone(resolveAssignedPhone(event, recruiterPhones));
   };
 
   const confirmCancel = async () => {
@@ -586,24 +1156,11 @@ export default function CalendarioPage() {
         return;
       }
 
-      // 2. Si es correcta, procedemos a cancelar en n8n
+      // 2. Si es correcta, procedemos a cancelar
       setCancelTarget(null);
       const myRecruiterName = typeof window !== "undefined" ? localStorage.getItem("tci_nombre") : "";
-      const payload = {
-        telefono: cancelTarget.resource.telefono,
-        event_id: cancelTarget.resource.event_id || (cancelTarget.resource.es_google_calendar ? cancelTarget.id : null),
-        calendar_id: cancelTarget.resource.creator_email,
-        motivo: cancelReason,
-        telefono_reclutador: recruiterPhone,
-        nombre_reclutador: myRecruiterName || getRecruiterDisplayName(cancelTarget.resource.creator_email || ""),
-        nombre_candidato: cancelTarget.resource.nombre_chat || cancelTarget.resource.nombre_solicitud || "Candidato"
-      };
-      const res = await fetch(`${BACKEND_BASE_URL}/internal/citas/cancelar`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error();
+      const nombreReclutador = myRecruiterName || resolveRecruiterDisplayName(cancelTarget.resource.creator_email || "", recruiterNames);
+      await submitCancelCita({ cancelTarget, cancelReason, recruiterPhone, nombreReclutador });
       showToast("✅ Cita cancelada y candidato notificado por WhatsApp", false);
       setSelectedEvent(null);
       loadData();
@@ -620,41 +1177,24 @@ export default function CalendarioPage() {
     setNewDate(format(event.start, "yyyy-MM-dd"));
     setNewTime(format(event.start, "HH:mm"));
     setRescheduleReason("Por reorganización de agenda de entrevistas.");
-    const recEmail = (event.resource.creator_email || "").toLowerCase();
-    const recId = event.resource.asignado_a_id;
-    const assignedPhone = (recEmail && recruiterPhones[recEmail]) || (recId && recruiterPhones[recId]) || "";
-    const defaultTel = typeof window !== "undefined" ? localStorage.getItem("tci_telefono") : "";
-    setRecruiterPhone(assignedPhone || defaultTel || "");
+    setRecruiterPhone(resolveAssignedPhone(event, recruiterPhones));
   };
 
   const confirmReschedule = async () => {
     if (!rescheduleTarget || !newDate || !newTime) return;
     setRescheduling(true);
 
-    const startStr = `${newDate}T${newTime}:00`;
-    const start = new Date(startStr);
-    const end = new Date(start.getTime() + 60 * 60 * 1000);
-
     try {
       const myRecruiterName = typeof window !== "undefined" ? localStorage.getItem("tci_nombre") : "";
-      const payload = {
-        telefono: rescheduleTarget.resource.telefono,
-        event_id: rescheduleTarget.resource.event_id || (rescheduleTarget.resource.es_google_calendar ? rescheduleTarget.id : null),
-        calendar_id: rescheduleTarget.resource.creator_email,
-        start: start.toISOString(),
-        end: end.toISOString(),
-        motivo: rescheduleReason,
-        telefono_reclutador: recruiterPhone,
-        nombre_reclutador: myRecruiterName || getRecruiterDisplayName(rescheduleTarget.resource.creator_email || ""),
-        nombre_candidato: rescheduleTarget.resource.nombre_chat || rescheduleTarget.resource.nombre_solicitud || "Candidato",
-        correo: rescheduleTarget.resource.correo || ""
-      };
-      const res = await fetch(`${BACKEND_BASE_URL}/internal/citas/reagendar`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+      const nombreReclutador = myRecruiterName || resolveRecruiterDisplayName(rescheduleTarget.resource.creator_email || "", recruiterNames);
+      await submitRescheduleCita({
+        rescheduleTarget,
+        newDate,
+        newTime,
+        rescheduleReason,
+        recruiterPhone,
+        nombreReclutador,
       });
-      if (!res.ok) throw new Error();
       showToast("✅ Cita reagendada y candidato notificado por WhatsApp", false);
       setSelectedEvent(null);
       setRescheduleTarget(null);
@@ -681,42 +1221,17 @@ export default function CalendarioPage() {
     if (!blockTarget || !blockTitle) return;
     setBlocking(true);
     try {
-      let payload: Record<string, any>;
-      if (blockMode === "recurrente") {
-        const startDatePart = (blockStartStr || format(blockTarget.start, "yyyy-MM-dd")).split("T")[0];
-        const endDatePart = (blockEndStr || format(blockTarget.end, "yyyy-MM-dd")).split("T")[0];
-        const startIso = `${startDatePart}T${blockTimeStart}:00`;
-        const endIso = `${startDatePart}T${blockTimeEnd}:00`;
-        const untilStr = endDatePart.replace(/-/g, "") + "T235959Z";
-        const daysStr = blockDays.length > 0 ? blockDays.join(",") : "MO,TU,WE,TH,FR";
-        const rrule = `RRULE:FREQ=WEEKLY;BYDAY=${daysStr};UNTIL=${untilStr}`;
-
-        payload = {
-          calendar_id: myCalId,
-          start: startIso,
-          end: endIso,
-          summary: blockTitle,
-          description: `Bloqueo recurrente (${daysStr} de ${blockTimeStart} a ${blockTimeEnd})`,
-          recurrence: [rrule],
-        };
-      } else {
-        const startDate = blockStartStr ? new Date(blockStartStr) : blockTarget.start;
-        const endDate = blockEndStr ? new Date(blockEndStr) : blockTarget.end;
-        payload = {
-          calendar_id: myCalId,
-          start: startDate.toISOString(),
-          end: endDate.toISOString(),
-          summary: blockTitle,
-          description: "Bloqueo manual creado desde CRM",
-        };
-      }
-
-      const res = await fetch(`${BACKEND_BASE_URL}/internal/citas/bloqueo`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+      await submitBlockCita({
+        blockMode,
+        blockTarget,
+        blockStartStr,
+        blockEndStr,
+        blockTimeStart,
+        blockTimeEnd,
+        blockDays,
+        blockTitle,
+        myCalId,
       });
-      if (!res.ok) throw new Error();
       showToast(blockMode === "recurrente" ? "✅ Bloqueo diario recurrente creado correctamente" : "✅ Bloqueo de horario creado correctamente", false);
       setBlockTarget(null);
       loadData();
@@ -729,18 +1244,9 @@ export default function CalendarioPage() {
 
   const handleSelectEvent = (event: CalendarEvent) => setSelectedEvent(event);
 
-  const getRecruiterDisplayName = (email: string) => {
-    if (email === "sin_asignar") return "Sin Reclutador";
-    return recruiterNames[email] || email;
-  };
+  const getRecruiterDisplayName = (email: string) => resolveRecruiterDisplayName(email, recruiterNames);
 
-  const getColorForEmail = (email: string) => {
-    if (recruiterColors[email]) return recruiterColors[email];
-    const palette = ["#6366f1", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
-    let hash = 0;
-    for (let i = 0; i < email.length; i++) hash = email.charCodeAt(i) + ((hash << 5) - hash);
-    return palette[Math.abs(hash) % palette.length];
-  };
+  const getColorForEmail = (email: string) => getRecruiterColor(email, recruiterColors);
 
   if (loading) return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center">
@@ -821,32 +1327,34 @@ export default function CalendarioPage() {
                       {recruiterEvents.map((ev) => (
                         <div
                           key={ev.id}
-                          className="px-4 py-3 hover:bg-white transition-colors cursor-pointer group"
-                          onClick={() => handleSelectEvent(ev)}
+                          className="px-4 py-3 hover:bg-white transition-colors group flex items-start justify-between gap-2"
                         >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="overflow-hidden flex-1">
-                              <p className="font-semibold text-slate-800 text-sm truncate">
-                                {ev.resource.nombre_chat || ev.resource.nombre_solicitud || "Candidato"}
-                              </p>
-                              <p className="text-[11px] text-slate-400 truncate mt-0.5">
-                                {ev.resource.vacante_interes || "Sin vacante"}
-                              </p>
-                              <p className="text-[11px] text-indigo-500 font-semibold mt-1">
-                                {format(ev.start, "EEE d MMM · HH:mm", { locale: es })}
-                              </p>
-                            </div>
-                            <button
-                              onClick={(e) => openCancelModal(e, ev)}
-                              disabled={cancelingId === ev.id}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
-                              title="Cancelar cita"
-                            >
-                              {cancelingId === ev.id
-                                ? <span className="w-3 h-3 border-2 border-red-400 border-t-transparent rounded-full animate-spin block" />
-                                : <XCircle size={16} />}
-                            </button>
-                          </div>
+                          <button
+                            type="button"
+                            className="overflow-hidden flex-1 text-left cursor-pointer"
+                            onClick={() => handleSelectEvent(ev)}
+                          >
+                            <p className="font-semibold text-slate-800 text-sm truncate">
+                              {ev.resource.nombre_chat || ev.resource.nombre_solicitud || "Candidato"}
+                            </p>
+                            <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                              {ev.resource.vacante_interes || "Sin vacante"}
+                            </p>
+                            <p className="text-[11px] text-indigo-500 font-semibold mt-1">
+                              {format(ev.start, "EEE d MMM · HH:mm", { locale: es })}
+                            </p>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => openCancelModal(e, ev)}
+                            disabled={cancelingId === ev.id}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0 p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg"
+                            title="Cancelar cita"
+                          >
+                            {cancelingId === ev.id
+                              ? <span className="w-3 h-3 border-2 border-red-400 border-t-transparent rounded-full animate-spin block" />
+                              : <XCircle size={16} />}
+                          </button>
                         </div>
                       ))}
                     </div>
@@ -926,7 +1434,6 @@ export default function CalendarioPage() {
         >
           <div
             className="bg-white w-[90%] max-w-md rounded-2xl p-6 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
@@ -946,7 +1453,7 @@ export default function CalendarioPage() {
 
             <div className="space-y-4 mb-5">
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                <label htmlFor="cancel-reason" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                   Motivo / Explicación para el candidato
                 </label>
                 <textarea
@@ -961,7 +1468,7 @@ export default function CalendarioPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                <label htmlFor="cancel-recruiter-phone" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                   Teléfono del Reclutador (para aclaraciones)
                 </label>
                 <input
@@ -1026,7 +1533,6 @@ export default function CalendarioPage() {
         >
           <div
             className="bg-white w-[90%] max-w-md rounded-2xl p-7 shadow-2xl relative"
-            onClick={(e) => e.stopPropagation()}
           >
             <button
               onClick={() => setSelectedEvent(null)}
@@ -1110,7 +1616,6 @@ export default function CalendarioPage() {
         >
           <div
             className="bg-white w-[90%] max-w-md rounded-2xl p-6 shadow-2xl relative"
-            onClick={(e) => e.stopPropagation()}
           >
             <h3 className="font-bold text-slate-800 text-lg mb-1">Reagendar Entrevista</h3>
             <p className="text-xs text-indigo-600 font-semibold mb-4">
@@ -1145,7 +1650,7 @@ export default function CalendarioPage() {
 
             <div className="space-y-3 mb-5">
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                <label htmlFor="reschedule-reason" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                   Motivo / Explicación del cambio
                 </label>
                 <textarea
@@ -1160,7 +1665,7 @@ export default function CalendarioPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                <label htmlFor="reschedule-recruiter-phone" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
                   Teléfono del Reclutador (para aclaraciones)
                 </label>
                 <input
@@ -1195,270 +1700,27 @@ export default function CalendarioPage() {
       )}
 
       {/* ─── MODAL CREAR BLOQUEO DE RANGO (DÍAS, HORAS, MINUTOS) ─── */}
-      {blockTarget && (
-        <div
-          className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[2000]"
-          {...blockBackdrop}
-        >
-          <div
-            className="bg-white w-[90%] max-w-md rounded-2xl p-6 shadow-2xl relative"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="font-bold text-slate-800 text-lg mb-1">Bloquear Horario</h3>
-            <p className="text-xs text-slate-500 mb-4">
-              Bloquea tu disponibilidad en Google Calendar (continuo o recurrente diario).
-            </p>
-
-            {/* TOGGLE TIPO DE BLOQUEO */}
-            <div className="flex bg-slate-100 p-1 rounded-xl mb-4 text-xs font-bold">
-              <button
-                type="button"
-                onClick={() => setBlockMode("continuo")}
-                className={`flex-1 py-1.5 rounded-lg transition-all ${
-                  blockMode === "continuo"
-                    ? "bg-white text-indigo-600 shadow-sm"
-                    : "text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                📌 Continuo (Vacaciones)
-              </button>
-              <button
-                type="button"
-                onClick={() => setBlockMode("recurrente")}
-                className={`flex-1 py-1.5 rounded-lg transition-all ${
-                  blockMode === "recurrente"
-                    ? "bg-white text-indigo-600 shadow-sm"
-                    : "text-slate-500 hover:text-slate-700"
-                }`}
-              >
-                ⏰ Diario (Comida / Fijo)
-              </button>
-            </div>
-
-            <div className="mb-4">
-              <label htmlFor="block-title" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                Motivo / Título del Bloqueo
-              </label>
-              <input
-                id="block-title"
-                name="block_title"
-                type="text"
-                value={blockTitle}
-                onChange={(e) => setBlockTitle(e.target.value)}
-                placeholder={blockMode === "recurrente" ? "Ej. Hora de Comida" : "Ej. Vacaciones, Junta de equipo..."}
-                className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs font-medium text-slate-800"
-              />
-            </div>
-
-            {blockMode === "continuo" ? (
-              <>
-                <div className="space-y-3 mb-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                      📅 Fecha y Hora de Inicio
-                    </label>
-                    <input
-                      id="block-start"
-                      name="block_start"
-                      type="datetime-local"
-                      value={blockStartStr}
-                      onChange={(e) => setBlockStartStr(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs text-slate-800 font-mono"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                      🏁 Fecha y Hora de Fin
-                    </label>
-                    <input
-                      id="block-end"
-                      name="block_end"
-                      type="datetime-local"
-                      value={blockEndStr}
-                      onChange={(e) => setBlockEndStr(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs text-slate-800 font-mono"
-                    />
-                  </div>
-                </div>
-
-                {/* PRESETS RÁPIDOS DE RANGO */}
-                <div className="mb-6">
-                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                    Accesos Rápidos de Rango
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!blockStartStr) return;
-                        const st = new Date(blockStartStr);
-                        const end = new Date(st.getTime() + 60 * 60 * 1000);
-                        setBlockEndStr(format(end, "yyyy-MM-dd'T'HH:mm"));
-                      }}
-                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 rounded-lg text-xs font-bold transition-all border border-slate-200"
-                    >
-                      ⏱️ +1 Hora
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!blockStartStr) return;
-                        const st = new Date(blockStartStr);
-                        const end = new Date(st.getTime() + 4 * 60 * 60 * 1000);
-                        setBlockEndStr(format(end, "yyyy-MM-dd'T'HH:mm"));
-                      }}
-                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 rounded-lg text-xs font-bold transition-all border border-slate-200"
-                    >
-                      ⏳ +4 Horas (Media jornada)
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!blockStartStr) return;
-                        const datePart = blockStartStr.split("T")[0];
-                        setBlockStartStr(`${datePart}T08:00`);
-                        setBlockEndStr(`${datePart}T18:00`);
-                      }}
-                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 rounded-lg text-xs font-bold transition-all border border-slate-200"
-                    >
-                      ☀️ Todo el Día (8 AM - 6 PM)
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!blockStartStr) return;
-                        const st = new Date(blockStartStr);
-                        const end = new Date(st.getTime() + 48 * 60 * 60 * 1000);
-                        setBlockEndStr(format(end, "yyyy-MM-dd'T'HH:mm"));
-                      }}
-                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 rounded-lg text-xs font-bold transition-all border border-slate-200"
-                    >
-                      🏖️ +2 Días (48 Horas)
-                    </button>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <>
-                {/* CONFIGURACIÓN BLOQUEO RECURRENTE */}
-                <div className="grid grid-cols-2 gap-3 mb-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                      📅 Desde fecha
-                    </label>
-                    <input
-                      type="date"
-                      value={blockStartStr ? blockStartStr.split("T")[0] : ""}
-                      onChange={(e) => {
-                        const timePart = blockStartStr.includes("T") ? blockStartStr.split("T")[1] : "08:00";
-                        setBlockStartStr(`${e.target.value}T${timePart}`);
-                      }}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs text-slate-800 font-mono"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                      🏁 Hasta fecha
-                    </label>
-                    <input
-                      type="date"
-                      value={blockEndStr ? blockEndStr.split("T")[0] : ""}
-                      onChange={(e) => {
-                        const timePart = blockEndStr.includes("T") ? blockEndStr.split("T")[1] : "18:00";
-                        setBlockEndStr(`${e.target.value}T${timePart}`);
-                      }}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs text-slate-800 font-mono"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 mb-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                      ⏰ Hora Inicio Diaria
-                    </label>
-                    <input
-                      type="time"
-                      value={blockTimeStart}
-                      onChange={(e) => setBlockTimeStart(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs text-slate-800 font-mono font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                      🏁 Hora Fin Diaria
-                    </label>
-                    <input
-                      type="time"
-                      value={blockTimeEnd}
-                      onChange={(e) => setBlockTimeEnd(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 outline-none text-xs text-slate-800 font-mono font-bold"
-                    />
-                  </div>
-                </div>
-
-                {/* DÍAS DE LA SEMANA */}
-                <div className="mb-6">
-                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                    Días a Bloquear
-                  </label>
-                  <div className="flex gap-1.5">
-                    {[
-                      { id: "MO", label: "L" },
-                      { id: "TU", label: "M" },
-                      { id: "WE", label: "M" },
-                      { id: "TH", label: "J" },
-                      { id: "FR", label: "V" },
-                      { id: "SA", label: "S" },
-                      { id: "SU", label: "D" },
-                    ].map((d) => {
-                      const active = blockDays.includes(d.id);
-                      return (
-                        <button
-                          key={d.id}
-                          type="button"
-                          onClick={() => {
-                            setBlockDays((prev) =>
-                              prev.includes(d.id) ? prev.filter((x) => x !== d.id) : [...prev, d.id]
-                            );
-                          }}
-                          className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all border ${
-                            active
-                              ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
-                              : "bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100"
-                          }`}
-                        >
-                          {d.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </>
-            )}
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => setBlockTarget(null)}
-                className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm transition-colors"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={confirmBlock}
-                disabled={blocking}
-                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-colors disabled:opacity-50 shadow-sm"
-              >
-                {blocking ? "Bloqueando..." : "Confirmar Bloqueo"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <BloquearHorarioModal
+        blockTarget={blockTarget}
+        blockBackdrop={blockBackdrop}
+        blockTitle={blockTitle}
+        setBlockTitle={setBlockTitle}
+        blockMode={blockMode}
+        setBlockMode={setBlockMode}
+        blockStartStr={blockStartStr}
+        setBlockStartStr={setBlockStartStr}
+        blockEndStr={blockEndStr}
+        setBlockEndStr={setBlockEndStr}
+        blockTimeStart={blockTimeStart}
+        setBlockTimeStart={setBlockTimeStart}
+        blockTimeEnd={blockTimeEnd}
+        setBlockTimeEnd={setBlockTimeEnd}
+        blockDays={blockDays}
+        setBlockDays={setBlockDays}
+        blocking={blocking}
+        onClose={() => setBlockTarget(null)}
+        onConfirm={confirmBlock}
+      />
 
       {/* TOAST */}
       <div className={`fixed bottom-6 right-6 px-5 py-3 rounded-xl font-bold text-white shadow-xl transition-all duration-300 z-[3000] ${toast ? "translate-y-0 opacity-100" : "translate-y-16 opacity-0"

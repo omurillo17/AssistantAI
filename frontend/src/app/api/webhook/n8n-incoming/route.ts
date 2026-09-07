@@ -18,6 +18,176 @@ import type { CandidatoEvent } from "@/lib/stateMachine";
  */
 const esVerdadero = (v: unknown): boolean => v === true || v === 'true';
 
+function determineCandidatoEvent({
+  privacidad,
+  currentState,
+  es_cv,
+  cv_manual,
+  cita_creada,
+  fecha_entrevista,
+  cita_cancelada,
+  resumen,
+}: {
+  privacidad: unknown;
+  currentState: string;
+  es_cv: unknown;
+  cv_manual: unknown;
+  cita_creada: unknown;
+  fecha_entrevista?: string;
+  cita_cancelada: unknown;
+  resumen?: string;
+}): CandidatoEvent {
+  let event: CandidatoEvent = { type: 'INTERES' };
+
+  if (esVerdadero(privacidad) && currentState === 'NUEVO') {
+    event = { type: 'INTERES' };
+  }
+  if (esVerdadero(es_cv) || cv_manual) {
+    event = { type: 'RECIBE_CV' };
+  }
+  if (esVerdadero(cita_creada) || fecha_entrevista) {
+    event = { type: 'AGENDA_CITA', fecha: fecha_entrevista || 'Por confirmar' };
+  }
+  if (esVerdadero(cita_cancelada)) {
+    event = { type: 'CANCELA_CITA' };
+  }
+  if (resumen && (resumen as string).includes('solicitó apoyo')) {
+    event = { type: 'ESCALA_HUMANO' };
+  }
+  return event;
+}
+
+function extractNombreFromResumen(resumen: unknown): string {
+  if (typeof resumen !== 'string') return '';
+  const nameMatch = /Nombre:\s*([^.\n|]+)/i.exec(resumen);
+  if (!nameMatch?.[1]) return '';
+  const extracted = nameMatch[1].trim();
+  const invalid = ['Candidato', 'Desconocido', 'No registrado', 'Pendiente'];
+  if (!extracted || invalid.includes(extracted) || /^\+?\d+$/.test(extracted)) {
+    return '';
+  }
+  return extracted;
+}
+
+function extractNombreFromWpp(nombre_wpp?: string): string {
+  const trimmed = nombre_wpp?.trim();
+  if (!trimmed || trimmed === 'Candidato' || /^[^\w\s]+$/.test(trimmed)) {
+    return '';
+  }
+  return trimmed;
+}
+
+function extractCandidatoNombre(nombre: string | undefined, resumen: unknown, nombre_wpp: string | undefined, telefono: string): string {
+  let finalNombre = (nombre && nombre !== 'Candidato') ? nombre.trim() : '';
+
+  if (!finalNombre || finalNombre === 'Candidato') {
+    finalNombre = extractNombreFromResumen(resumen);
+  }
+
+  if (!finalNombre || finalNombre === 'Candidato') {
+    finalNombre = extractNombreFromWpp(nombre_wpp);
+  }
+
+  if (!finalNombre || finalNombre === telefono || /^\+?\d+$/.test(finalNombre)) {
+    return 'Candidato';
+  }
+  return finalNombre;
+}
+
+function extractLugarResidencia(lugar_residencia: unknown, resumen: unknown): string {
+  let finalLugarResidencia = (lugar_residencia && typeof lugar_residencia === 'string') ? lugar_residencia.trim() : '';
+  if (!finalLugarResidencia && resumen && typeof resumen === 'string') {
+    const resMatch = /(?:Lugar de )?residencia:\s*([^.\n|]+)/i.exec(resumen);
+    if (resMatch?.[1]) {
+      const extRes = resMatch[1].trim();
+      const noUsables = ['pendiente', 'desconocido', 'none', 'null', 'x', 'n/a'];
+      if (extRes && !noUsables.includes(extRes.toLowerCase())) {
+        finalLugarResidencia = extRes;
+      }
+    }
+  }
+  return finalLugarResidencia;
+}
+
+function extractIncomingVacante(vacante: string | undefined, resumen: unknown): string {
+  let finalVacante = esPlaceholderVacante(vacante) ? '' : limpiarVacante(vacante);
+  if (!finalVacante && resumen && typeof resumen === 'string') {
+    const vacMatch = /Vacante:\s*([^.\n|]+)/i.exec(resumen);
+    if (vacMatch?.[1] && !esPlaceholderVacante(vacMatch[1])) {
+      finalVacante = limpiarVacante(vacMatch[1]);
+    }
+  }
+  return finalVacante;
+}
+
+function parseFiltrosVeredicto(filtros: unknown): { veredicto: string | null; motivo_analisis: string | null } {
+  let veredicto: string | null = null;
+  let motivo_analisis: string | null = null;
+  if (typeof filtros === 'string') {
+    try {
+      const parsed = JSON.parse(filtros);
+      if (parsed && typeof parsed === 'object') {
+        if (parsed.viable === true) veredicto = 'VIABLE';
+        else if (parsed.viable === false) veredicto = 'NO VIABLE';
+        if (parsed.motivo) motivo_analisis = parsed.motivo;
+      }
+    } catch {
+      // Ignorar si no es JSON válido
+    }
+  }
+  return { veredicto, motivo_analisis };
+}
+
+async function fetchCandidatoCurrentContext(telefono: string) {
+  const res = await pool.query('SELECT id, estado, tiene_cv, cv_manual as db_cv_manual, fecha_entrevista as db_fecha, privacidad_aceptada, escalado, vacante_interes, asignado_a_id FROM candidatos WHERE telefono = $1 ORDER BY updated_at DESC LIMIT 1', [telefono]);
+  let currentState = 'NUEVO';
+  let context = {
+    telefono,
+    tiene_cv: false,
+    cv_manual: false,
+    fecha_entrevista: null,
+    privacidad_aceptada: false,
+    escalado: false,
+  };
+
+  const resRechazados = await pool.query(`SELECT nave_interes FROM candidatos WHERE telefono = $1 AND estado IN ('RECHAZADO', 'OTRA_CIUDAD') LIMIT 1`, [telefono]);
+  const fueRechazadoGlobalmente = resRechazados.rowCount ? (resRechazados.rowCount > 0) : false;
+  const naveRechazo = fueRechazadoGlobalmente ? resRechazados.rows[0].nave_interes : null;
+
+  if (res.rowCount && res.rowCount > 0) {
+    currentState = res.rows[0].estado;
+    if (!ESTADOS_VALIDOS.has(currentState)) {
+      console.warn(`[n8n-incoming] estado desconocido '${currentState}' para ${telefono}; se usa NUEVO`);
+      currentState = 'NUEVO';
+    }
+    context = {
+      telefono,
+      tiene_cv: res.rows[0].tiene_cv || false,
+      cv_manual: !!res.rows[0].db_cv_manual,
+      fecha_entrevista: res.rows[0].db_fecha || null,
+      privacidad_aceptada: res.rows[0].privacidad_aceptada || false,
+      escalado: res.rows[0].escalado || false,
+    };
+  }
+
+  return { currentState, context, fueRechazadoGlobalmente, naveRechazo };
+}
+
+async function actualizarBandejaCompartida(candidatoId: string, telefono: string, mensaje_ia?: string, mensaje_candidato?: string) {
+  const ultimoMensajeTexto = mensaje_ia || mensaje_candidato;
+  const ultimoMensajeRol = mensaje_ia ? 'assistant' : 'user';
+  await pool.query(`
+    INSERT INTO mensajes_bandeja (candidato_id, telefono, ultimo_mensaje, ultimo_mensaje_rol, mensajes_no_leidos, activo, ultimo_mensaje_at)
+    VALUES ($1, $2, $3, $4, 1, true, NOW())
+    ON CONFLICT (candidato_id) DO UPDATE SET
+      ultimo_mensaje = EXCLUDED.ultimo_mensaje,
+      ultimo_mensaje_rol = EXCLUDED.ultimo_mensaje_rol,
+      ultimo_mensaje_at = NOW(),
+      mensajes_no_leidos = mensajes_bandeja.mensajes_no_leidos + 1,
+      activo = true
+  `, [candidatoId, telefono, ultimoMensajeTexto, ultimoMensajeRol]);
+}
+
 export async function POST(request: Request) {
   if (!verifyInternalApiKey(request)) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
@@ -51,73 +221,25 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Falta telefono' }, { status: 400 });
     }
 
-    // 1. Obtener estado actual (buscamos por telefono; puede haber una fila por empresa)
-    const res = await pool.query('SELECT id, estado, tiene_cv, cv_manual as db_cv_manual, fecha_entrevista as db_fecha, privacidad_aceptada, escalado, vacante_interes, asignado_a_id FROM candidatos WHERE telefono = $1 ORDER BY updated_at DESC LIMIT 1', [telefono]);
-    let currentState = 'NUEVO';
-    let context = {
-      telefono,
-      tiene_cv: false,
-      cv_manual: false,
-      fecha_entrevista: null,
-      privacidad_aceptada: false,
-      escalado: false,
-    };
+    // 1. Obtener estado actual
+    const { currentState, context, fueRechazadoGlobalmente, naveRechazo } = await fetchCandidatoCurrentContext(telefono);
 
-    // Verificación de Rechazo Global (Cross-Company/Nave)
-    const resRechazados = await pool.query(`SELECT nave_interes FROM candidatos WHERE telefono = $1 AND estado IN ('RECHAZADO', 'OTRA_CIUDAD') LIMIT 1`, [telefono]);
-    const fueRechazadoGlobalmente = resRechazados.rowCount ? (resRechazados.rowCount > 0) : false;
-    const naveRechazo = fueRechazadoGlobalmente ? resRechazados.rows[0].nave_interes : null;
-
-    if (res.rowCount && res.rowCount > 0) {
-      currentState = res.rows[0].estado;
-
-      if (currentState === "RECHAZADO" || currentState === "OTRA_CIUDAD" || fueRechazadoGlobalmente) {
-        console.log(`[n8n-incoming] Candidato ${telefono} está ${currentState}. Se omite procesamiento para ahorrar tokens.`);
-        return NextResponse.json({ success: true, ignored: true, reason: `Candidato en ${currentState}` });
-      }
-      // `resolveState` lanza si el valor guardado no es un estado de la
-      // máquina, y como eso ocurre ANTES de responder, el candidato quedaba
-      // con todos sus mensajes devolviendo HTTP 500 (pasó con 'CITA_CANCELADA',
-      // que el backend escribía sin que existiera aquí). Un estado huérfano
-      // -- por dato viejo o por otro camino que escriba directo -- no debe
-      // volver a congelar el expediente: se degrada a NUEVO y se avisa.
-      if (!ESTADOS_VALIDOS.has(currentState)) {
-        console.warn(`[n8n-incoming] estado desconocido '${currentState}' para ${telefono}; se usa NUEVO`);
-        currentState = 'NUEVO';
-      }
-      context = {
-        telefono,
-        tiene_cv: res.rows[0].tiene_cv || false,
-        cv_manual: !!res.rows[0].db_cv_manual,
-        fecha_entrevista: res.rows[0].db_fecha || null,
-        privacidad_aceptada: res.rows[0].privacidad_aceptada || false,
-        escalado: res.rows[0].escalado || false,
-      };
+    if (currentState === "RECHAZADO" || currentState === "OTRA_CIUDAD" || fueRechazadoGlobalmente) {
+      console.log(`[n8n-incoming] Candidato ${telefono} está ${currentState}. Se omite procesamiento para ahorrar tokens.`);
+      return NextResponse.json({ success: true, ignored: true, reason: `Candidato en ${currentState}` });
     }
 
-    // 2. Determinar el evento basado en la información entrante (emulando lo que hacía el CASE WHEN)
-    let event: CandidatoEvent = { type: 'INTERES' }; // default fallback
-
-    if (esVerdadero(privacidad) && currentState === 'NUEVO') {
-      event = { type: 'INTERES' };
-    }
-    if (esVerdadero(es_cv) || cv_manual) {
-      event = { type: 'RECIBE_CV' };
-    }
-    if (esVerdadero(cita_creada) || fecha_entrevista) {
-      event = { type: 'AGENDA_CITA', fecha: fecha_entrevista || 'Por confirmar' };
-    }
-    // Cancelar NO es escalar: antes ambos casos mandaban ESCALA_HUMANO, así que
-    // un candidato que cancelaba su cita quedaba con escalado=true y el bot
-    // dejaba de responderle (procesar_turno corta en seco si escalado).
-    if (esVerdadero(cita_cancelada)) {
-      event = { type: 'CANCELA_CITA' };
-    }
-    // Escalamiento explícito en resumen (ej. HUMAN_ALERT) -- va al final porque
-    // es más severo y debe ganar si ambos vienen en el mismo turno.
-    if (resumen && (resumen as string).includes('solicitó apoyo')) {
-      event = { type: 'ESCALA_HUMANO' };
-    }
+    // 2. Determinar el evento basado en la información entrante
+    const event = determineCandidatoEvent({
+      privacidad,
+      currentState,
+      es_cv,
+      cv_manual,
+      cita_creada,
+      fecha_entrevista,
+      cita_cancelada,
+      resumen,
+    });
 
     // 3. Evaluar Máquina de Estados
     const actor = createActor(candidatoMachine, {
@@ -133,87 +255,11 @@ export async function POST(request: Request) {
       try { parsedCvManual = JSON.parse(cv_manual); } catch { parsedCvManual = null; }
     }
 
-    let finalNombre = (nombre && nombre !== 'Candidato') ? nombre.trim() : '';
-
-    // Intento 1: Extraer del resumen si Gemini detectó el nombre (ej. "Nombre: Oscar")
-    if (!finalNombre || finalNombre === 'Candidato') {
-      if (resumen && typeof resumen === 'string') {
-        const nameMatch = resumen.match(/Nombre:\s*([^.\n|]+)/i);
-        if (nameMatch && nameMatch[1]) {
-          const extracted = nameMatch[1].trim();
-          if (extracted && !['Candidato', 'Desconocido', 'No registrado', 'Pendiente'].includes(extracted) && !/^\+?\d+$/.test(extracted)) {
-            finalNombre = extracted;
-          }
-        }
-      }
-    }
-
-    // Intento 2: Usar nombre_wpp si es un nombre legible
-    if (!finalNombre || finalNombre === 'Candidato') {
-      if (nombre_wpp && nombre_wpp.trim() && nombre_wpp.trim() !== 'Candidato' && !/^[^\w\s]+$/.test(nombre_wpp.trim())) {
-        finalNombre = nombre_wpp.trim();
-      }
-    }
-
-    if (!finalNombre || finalNombre === telefono || /^\+?\d+$/.test(finalNombre)) {
-      finalNombre = 'Candidato';
-    }
-
-    // Extraer y procesar lugar de residencia
-    let finalLugarResidencia = (lugar_residencia && typeof lugar_residencia === 'string') ? lugar_residencia.trim() : '';
-    // Rescate desde el resumen (memoria_update) cuando la etiqueta no vino.
-    // El prefijo "Lugar de " es opcional a propósito: el formato que pide el
-    // prompt es "Residencia: X", así que buscar solo "Lugar de residencia:"
-    // hacía que este rescate no entrara nunca.
-    if (!finalLugarResidencia && resumen && typeof resumen === 'string') {
-      const resMatch = resumen.match(/(?:Lugar de )?residencia:\s*([^.\n|]+)/i);
-      if (resMatch && resMatch[1]) {
-        const extRes = resMatch[1].trim();
-        // 'X' es el literal de la plantilla del prompt cuando el modelo la copia
-        // sin rellenar; guardarlo dejaría basura en el expediente.
-        const noUsables = ['pendiente', 'desconocido', 'none', 'null', 'x', 'n/a'];
-        if (extRes && !noUsables.includes(extRes.toLowerCase())) {
-          finalLugarResidencia = extRes;
-        }
-      }
-    }
-
+    const finalNombre = extractCandidatoNombre(nombre, resumen, nombre_wpp, telefono);
+    const finalLugarResidencia = extractLugarResidencia(lugar_residencia, resumen);
     const esNombreConfirmado = esVerdadero(nombre_confirmado) || (finalNombre !== '' && finalNombre !== 'Candidato');
-
-    // Extraer Vacante desde Resumen si viene como 'General'/'GENERAL' (placeholder
-    // del backend mientras el candidato no ha elegido vacante) o vacía. Comparación
-    // insensible a mayúsculas: el backend de Python (parser.py) siempre manda este
-    // valor en MAYÚSCULAS, así que el check original (case-sensitive contra
-    // 'General') nunca lo atrapaba -- el placeholder se guardaba como si fuera una
-    // vacante real y, por el COALESCE del UPSERT de abajo, quedaba atorado ahí para
-    // siempre (rompiendo el match de vacante->reclutador en definir_agenda).
-    // esPlaceholderVacante vive en @/lib/vacantes: la copia local comparaba
-    // el string crudo, así que '{Ninguna}' (con las llaves que dejaba el
-    // prompt) no coincidía con 'NINGUNA' y pasaba como vacante real.
-    let finalVacante = esPlaceholderVacante(vacante) ? '' : limpiarVacante(vacante);
-    if (!finalVacante) {
-      if (resumen && typeof resumen === 'string') {
-        const vacMatch = resumen.match(/Vacante:\s*([^.\n|]+)/i);
-        if (vacMatch && vacMatch[1] && !esPlaceholderVacante(vacMatch[1])) {
-          finalVacante = limpiarVacante(vacMatch[1]);
-        }
-      }
-    }
-
-    let veredicto = null;
-    let motivo_analisis = null;
-    if (filtros) {
-      try {
-        const parsed = JSON.parse(filtros);
-        if (parsed && typeof parsed === 'object') {
-          if (parsed.viable === true) veredicto = 'VIABLE';
-          else if (parsed.viable === false) veredicto = 'NO VIABLE';
-          if (parsed.motivo) motivo_analisis = parsed.motivo;
-        }
-      } catch {
-        // Ignorar si no es JSON válido
-      }
-    }
+    const finalVacante = extractIncomingVacante(vacante, resumen);
+    const { veredicto, motivo_analisis } = parseFiltrosVeredicto(filtros);
 
     // Determinar si escalar por rechazo previo
     let esEscalado = newState.value === 'ESCALADO';
@@ -227,7 +273,7 @@ export async function POST(request: Request) {
     // vía grupos_reclutamiento. Fallback de una sola empresa mientras n8n no lo mande.
     const { empresa_id: empresaId } = await resolveEmpresaYGrupo(telefono_destino, 'n8n-incoming');
 
-    const upsertQuery = `
+    const upsertQuery = String.raw`
       INSERT INTO candidatos (
         telefono, nombre, estado, ultima_interaccion, vacante_interes,
         resumen_ia, filtros_tecnicos, cv_manual, fecha_entrevista, privacidad_aceptada,
@@ -245,13 +291,13 @@ export async function POST(request: Request) {
       )
       ON CONFLICT (telefono, empresa_id) DO UPDATE SET
         nombre = CASE
-          WHEN EXCLUDED.nombre IS NOT NULL AND EXCLUDED.nombre != 'Candidato' AND EXCLUDED.nombre != '' AND EXCLUDED.nombre !~ '^[^\\w\\s]+$' THEN EXCLUDED.nombre
-          WHEN candidatos.nombre IS NULL OR candidatos.nombre = '' OR candidatos.nombre = 'Candidato' OR candidatos.nombre ~ '^[^\\w\\s]+$' THEN EXCLUDED.nombre
+          WHEN EXCLUDED.nombre IS NOT NULL AND EXCLUDED.nombre != 'Candidato' AND EXCLUDED.nombre != '' AND EXCLUDED.nombre !~ '^[^\w\s]+$' THEN EXCLUDED.nombre
+          WHEN candidatos.nombre IS NULL OR candidatos.nombre = '' OR candidatos.nombre = 'Candidato' OR candidatos.nombre ~ '^[^\w\s]+$' THEN EXCLUDED.nombre
           ELSE candidatos.nombre
         END,
         nombre_chat = CASE
-          WHEN EXCLUDED.nombre_chat IS NOT NULL AND EXCLUDED.nombre_chat != 'Candidato' AND EXCLUDED.nombre_chat != '' AND EXCLUDED.nombre_chat !~ '^[^\\w\\s]+$' THEN EXCLUDED.nombre_chat
-          WHEN candidatos.nombre_chat IS NULL OR candidatos.nombre_chat = '' OR candidatos.nombre_chat = 'Candidato' OR candidatos.nombre_chat ~ '^[^\\w\\s]+$' THEN EXCLUDED.nombre_chat
+          WHEN EXCLUDED.nombre_chat IS NOT NULL AND EXCLUDED.nombre_chat != 'Candidato' AND EXCLUDED.nombre_chat != '' AND EXCLUDED.nombre_chat !~ '^[^\w\s]+$' THEN EXCLUDED.nombre_chat
+          WHEN candidatos.nombre_chat IS NULL OR candidatos.nombre_chat = '' OR candidatos.nombre_chat = 'Candidato' OR candidatos.nombre_chat ~ '^[^\w\s]+$' THEN EXCLUDED.nombre_chat
           ELSE candidatos.nombre_chat
         END,
         nombre_confirmado = EXCLUDED.nombre_confirmado OR candidatos.nombre_confirmado,
@@ -317,30 +363,13 @@ export async function POST(request: Request) {
     // aquí: el backend de Python (agente.py) lo guarda directo apenas pasa
     // cada evento real (mensaje del usuario al llegar, cada respuesta del
     // bot justo cuando se manda por WAHA). Insertarlo aquí -- al final de
-    // todo el pipeline -- causaba que el orden en la plataforma no
+    // la totalidad del pipeline -- causaba que el orden en la plataforma no
     // coincidiera con el de WhatsApp cuando un turno tardaba más que el
     // siguiente, y además solo se guardaba el primer mensaje de una
     // respuesta partida ([SPLIT]).
 
     // 6. Actualizar bandeja compartida (mensajes_bandeja)
-    // La vista previa del chat debe reflejar el ÚLTIMO mensaje real del turno:
-    // si el bot respondió (mensaje_ia), ese es el último, no el mensaje del
-    // candidato que lo disparó. Antes esto quedaba hardcodeado a
-    // ultimo_mensaje = mensaje_candidato / ultimo_mensaje_rol = 'user' sin
-    // importar si Sofía ya había contestado, así que la bandeja mostraba
-    // permanentemente la pregunta del candidato en vez de la respuesta.
-    const ultimoMensajeTexto = mensaje_ia || mensaje_candidato;
-    const ultimoMensajeRol = mensaje_ia ? 'assistant' : 'user';
-    await pool.query(`
-      INSERT INTO mensajes_bandeja (candidato_id, telefono, ultimo_mensaje, ultimo_mensaje_rol, mensajes_no_leidos, activo, ultimo_mensaje_at)
-      VALUES ($1, $2, $3, $4, 1, true, NOW())
-      ON CONFLICT (candidato_id) DO UPDATE SET
-        ultimo_mensaje = EXCLUDED.ultimo_mensaje,
-        ultimo_mensaje_rol = EXCLUDED.ultimo_mensaje_rol,
-        ultimo_mensaje_at = NOW(),
-        mensajes_no_leidos = mensajes_bandeja.mensajes_no_leidos + 1,
-        activo = true
-    `, [candidatoId, telefono, ultimoMensajeTexto, ultimoMensajeRol]);
+    await actualizarBandejaCompartida(candidatoId, telefono, mensaje_ia, mensaje_candidato);
 
     return NextResponse.json({ success: true, estado: newState.value });
   } catch (err) {

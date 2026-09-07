@@ -16,7 +16,7 @@ interface EmpresaModalProps {
 // prop y se limpia al cerrar. Antes eso se hacía copiando el prop al estado
 // desde un useEffect, lo que provoca un render en cascada
 // (react-hooks/set-state-in-effect).
-export default function EmpresaModal(props: EmpresaModalProps) {
+export default function EmpresaModal(props: Readonly<EmpresaModalProps>) {
   if (!props.isOpen) return null;
   return <EmpresaModalContent key={props.empresa?.id ?? "nueva"} {...props} />;
 }
@@ -26,7 +26,7 @@ function EmpresaModalContent({
   onSuccess,
   empresa,
   showToast,
-}: EmpresaModalProps) {
+}: Readonly<EmpresaModalProps>) {
   const backdropHandlers = useBackdropClose(onClose);
   const [nombre, setNombre] = useState(empresa?.nombre || "");
   const [promptIa, setPromptIa] = useState(empresa?.prompt_ia || "");
@@ -44,7 +44,7 @@ function EmpresaModalContent({
       const url = "/api/db/empresas";
       const method = isEditing ? "PATCH" : "POST";
 
-      const parsedRetencion = parseInt(retencionDias, 10);
+      const parsedRetencion = Number.parseInt(retencionDias, 10);
       const payload = {
         id: empresa?.id,
         nombre: nombre.toUpperCase(),
@@ -73,12 +73,21 @@ function EmpresaModalContent({
     }
   };
 
+  let submitLabel = "Crear Empresa";
+  if (saving) {
+    submitLabel = "Guardando...";
+  } else if (empresa?.id) {
+    submitLabel = "Actualizar";
+  }
+
   return (
     <div
       className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4 opacity-100 animate-in fade-in"
       {...backdropHandlers}
     >
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95"
+      >
         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
           <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
             <Building2 size={20} className="text-indigo-600" />
@@ -102,24 +111,31 @@ function EmpresaModalContent({
             />
           </div>
           <div>
-            <label htmlFor="empresa-prompt" className="block text-sm font-bold text-slate-700 mb-1.5">System Prompt de la Empresa (Opcional)</label>
+            <label htmlFor="empresa-modal-prompt-ia" className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">
+              Prompt Personalizado del Asistente IA (Sofía)
+            </label>
             <textarea
-              id="empresa-prompt"
-              name="prompt_ia"
-              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-mono text-sm resize-none h-32"
-              placeholder="Sobreescribe el prompt global de Virgo para esta empresa en específico..."
+              id="empresa-modal-prompt-ia"
+              name="empresa_prompt_ia"
+              rows={4}
+              placeholder="Instrucciones específicas para el bot al atender candidatos de esta empresa..."
+              className="w-full text-sm font-medium p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition-all text-slate-800 resize-none"
               value={promptIa}
               onChange={(e) => setPromptIa(e.target.value)}
             />
           </div>
           <div>
-            <label htmlFor="empresa-retencion" className="block text-sm font-bold text-slate-700 mb-1.5">Retención de archivos de candidatos (días)</label>
+            <label htmlFor="empresa-modal-retencion-dias" className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">
+              Días de retención de archivos de candidatos
+            </label>
             <input
-              id="empresa-retencion"
-              name="retencion_archivos_dias"
+              id="empresa-modal-retencion-dias"
+              name="empresa_retencion_archivos_dias"
               type="number"
               min={1}
-              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all font-medium"
+              max={365}
+              placeholder="30"
+              className="w-full text-sm font-semibold p-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:bg-white transition-all text-slate-800"
               value={retencionDias}
               onChange={(e) => setRetencionDias(e.target.value)}
             />
@@ -133,7 +149,7 @@ function EmpresaModalContent({
             Cancelar
           </button>
           <button onClick={handleSaveEmpresa} disabled={saving} className="px-5 py-2.5 font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md shadow-indigo-600/20 flex items-center gap-2 transition-all disabled:opacity-65">
-            <Save size={18} /> {saving ? "Guardando..." : (empresa?.id ? "Actualizar" : "Crear Empresa")}
+            <Save size={18} /> {submitLabel}
           </button>
         </div>
       </div>

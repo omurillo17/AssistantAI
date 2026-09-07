@@ -53,6 +53,8 @@ _MX_TZ = ZoneInfo("America/Mexico_City")
 _MAX_TOOL_ROUNDS = 5
 _ENTRE_MENSAJES_SEGUNDOS = 3
 _DEFAULT_CALENDAR = "talreclutamiento01@gmail.com"
+_MENSAJE_MULTIMEDIA_FALLBACK = "[Mensaje multimedia]"
+_WA_C_US_SUFFIX = "@c.us"
 
 # Regla Diamante de chat_prompt.md: "Sofia NO puede rechazar candidatos por
 # experiencia, carrera, escolaridad o falta de perfil." El modelo la viola
@@ -141,7 +143,7 @@ async def _guardar_mensaje_usuario(telefono: str, juntado: dict) -> None:
     quedar en orden invertido en la plataforma si el segundo termina de
     procesarse antes que el primero (visto en producción)."""
     pool = get_pool()
-    msg_content = juntado.get("mensaje_completo") or "[Mensaje multimedia]"
+    msg_content = juntado.get("mensaje_completo") or _MENSAJE_MULTIMEDIA_FALLBACK
     msg_type = juntado.get("message_type") or "text"
     media_url = juntado.get("media_url")
     timestamp = juntado.get("primer_timestamp")
@@ -172,7 +174,7 @@ async def _guardar_mensaje_asistente(telefono: str, texto: str) -> None:
 
 async def _guardar_mensaje_usuario_escalado(telefono: str, juntado: dict) -> None:
     pool = get_pool()
-    msg_content = juntado.get("mensaje_completo") or "[Mensaje multimedia]"
+    msg_content = juntado.get("mensaje_completo") or _MENSAJE_MULTIMEDIA_FALLBACK
     msg_type = juntado.get("message_type") or "text"
     media_url = juntado.get("media_url")
     timestamp = juntado.get("primer_timestamp")
@@ -237,19 +239,22 @@ async def _tool_revisar_calendario(calendar_id: str, args: dict) -> dict:
     ]}
 
 
+def _extraer_dict_candidato(val: object) -> dict:
+    if isinstance(val, dict):
+        return val
+    if isinstance(val, str):
+        try:
+            parsed = json.loads(val)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            return {}
+    return {}
+
+
 async def _tool_crear_evento(candidato: dict, reclutador: dict, args: dict) -> dict:
-    datos_ine = candidato.get("datos_ine") or {}
-    if isinstance(datos_ine, str):
-        try:
-            datos_ine = json.loads(datos_ine)
-        except json.JSONDecodeError:
-            datos_ine = {}
-    datos_rfc = candidato.get("datos_rfc") or {}
-    if isinstance(datos_rfc, str):
-        try:
-            datos_rfc = json.loads(datos_rfc)
-        except json.JSONDecodeError:
-            datos_rfc = {}
+    datos_ine = _extraer_dict_candidato(candidato.get("datos_ine"))
+    datos_rfc = _extraer_dict_candidato(candidato.get("datos_rfc"))
 
     curp = (
         datos_ine.get("curp")
@@ -289,7 +294,7 @@ async def _tool_eliminar_evento(candidato: dict, reclutador: dict) -> dict:
     cancel_count = res.get("cancelaciones", 1)
 
     # Alerta WhatsApp al reclutador
-    tel_rec = (reclutador.get("telefono_reclutador") or "").replace("@c.us", "").strip()
+    tel_rec = (reclutador.get("telefono_reclutador") or "").replace(_WA_C_US_SUFFIX, "").strip()
     if tel_rec:
         nombre_c = candidato.get("nombre") or "Candidato"
         tel_c = candidato.get("telefono") or ""
@@ -302,14 +307,14 @@ async def _tool_eliminar_evento(candidato: dict, reclutador: dict) -> dict:
                     f"ha cancelado/reagendado su cita por 3ª vez para la vacante *{vac_c}*.\n\n"
                     f"Se le permitirá reagendar una última vez antes de ser bloqueado automáticamente al 4º intento."
                 )
-                await waha_client.send_text("default", f"{tel_rec}@c.us", msg_wpp)
+                await waha_client.send_text("default", f"{tel_rec}{_WA_C_US_SUFFIX}", msg_wpp)
             elif cancel_count >= 4:
                 msg_wpp = (
                     f"🚫 *CANDIDATO BLOQUEADO POR CANCELACIONES*\n\n"
                     f"El candidato *{nombre_c}* (📱 wa.me/{tel_c}) "
                     f"ha acumulado 4 cancelaciones/reagendamientos y ha sido bloqueado automáticamente."
                 )
-                await waha_client.send_text("default", f"{tel_rec}@c.us", msg_wpp)
+                await waha_client.send_text("default", f"{tel_rec}{_WA_C_US_SUFFIX}", msg_wpp)
         except Exception:
             logger.exception("_tool_eliminar_evento: error enviando alerta WhatsApp al reclutador")
 
@@ -372,10 +377,10 @@ async def _alertar_fallo_tool(nombre_tool: str, exc: Exception, candidato: dict,
     # ordenado como conjunto para no mandar dos mensajes iguales cuando el
     # administrador es además el reclutador de esa vacante.
     destinos: dict[str, None] = {}
-    reclutador_tel = (reclutador.get("telefono_reclutador") or "").replace("@c.us", "").strip()
+    reclutador_tel = (reclutador.get("telefono_reclutador") or "").replace(_WA_C_US_SUFFIX, "").strip()
     if reclutador_tel:
         destinos[reclutador_tel] = None
-    admin_tel = (ENV.ALERTAS_ADMIN_TELEFONO or "").replace("@c.us", "").strip()
+    admin_tel = (ENV.ALERTAS_ADMIN_TELEFONO or "").replace(_WA_C_US_SUFFIX, "").strip()
     if admin_tel:
         destinos[admin_tel] = None
 
@@ -383,7 +388,7 @@ async def _alertar_fallo_tool(nombre_tool: str, exc: Exception, candidato: dict,
         # Cada destinatario se envía por separado: que WAHA rechace uno no
         # debe dejar al otro sin enterarse.
         try:
-            await waha_client.send_text("default", f"{destino}@c.us", mensaje)
+            await waha_client.send_text("default", f"{destino}{_WA_C_US_SUFFIX}", mensaje)
             logger.info("_alertar_fallo_tool: alerta enviada a %s por fallo en %s", destino, nombre_tool)
         except Exception:
             logger.exception("_alertar_fallo_tool: no se pudo avisar a %s del fallo en %s", destino, nombre_tool)
@@ -420,6 +425,32 @@ async def _ejecutar_tool(nombre: str, args: dict, candidato: dict, reclutador: d
         return {"error": str(e)}
 
 
+async def _ejecutar_ronda_tools(
+    chat,
+    calls,
+    candidato: dict,
+    reclutador: dict,
+) -> tuple[bool, bool, str | None, object]:
+    evento_creado_ok = False
+    evento_eliminado_ok = False
+    fecha_evento: str | None = None
+    parts = []
+    for fc in calls:
+        args = dict(fc.args) if fc.args else {}
+        resultado = await _ejecutar_tool(fc.name, args, candidato, reclutador)
+        exito = isinstance(resultado, dict) and resultado.get("success") and not resultado.get("error")
+        if fc.name == "crear_evento" and exito:
+            evento_creado_ok = True
+            fecha_evento = args.get("start") or fecha_evento
+        if fc.name == "eliminar_evento" and exito:
+            evento_eliminado_ok = True
+        parts.append(genai.protos.Part(function_response=genai.protos.FunctionResponse(
+            name=fc.name, response={"result": resultado},
+        )))
+    response = await gemini_client.enviar_mensaje(chat, parts)
+    return evento_creado_ok, evento_eliminado_ok, fecha_evento, response
+
+
 async def _ejecutar_agente(system_prompt: str, historial: list[dict], mensaje_usuario: str, candidato: dict, reclutador: dict) -> dict:
     """Devuelve el texto final más lo que REALMENTE pasó con las tools en
     este turno:
@@ -443,20 +474,12 @@ async def _ejecutar_agente(system_prompt: str, historial: list[dict], mensaje_us
         calls = gemini_client.extraer_function_calls(response)
         if not calls:
             break
-        parts = []
-        for fc in calls:
-            args = dict(fc.args) if fc.args else {}
-            resultado = await _ejecutar_tool(fc.name, args, candidato, reclutador)
-            exito = isinstance(resultado, dict) and resultado.get("success") and not resultado.get("error")
-            if fc.name == "crear_evento" and exito:
-                evento_creado_ok = True
-                fecha_evento = args.get("start") or fecha_evento
-            if fc.name == "eliminar_evento" and exito:
-                evento_eliminado_ok = True
-            parts.append(genai.protos.Part(function_response=genai.protos.FunctionResponse(
-                name=fc.name, response={"result": resultado},
-            )))
-        response = await gemini_client.enviar_mensaje(chat, parts)
+        creado, eliminado, fecha, response = await _ejecutar_ronda_tools(chat, calls, candidato, reclutador)
+        if creado:
+            evento_creado_ok = True
+            fecha_evento = fecha or fecha_evento
+        if eliminado:
+            evento_eliminado_ok = True
 
     texto_final = gemini_client.extraer_texto(response)
 
@@ -485,7 +508,7 @@ async def _resolver_telefono_reclutador_con_fallback(reclutador: dict, empresa_i
     2. Si encuentra un reclutador de respaldo, devuelve su teléfono y una nota aclaratoria.
     3. Si ningún reclutador en la BD tiene teléfono, devuelve (None, "").
     """
-    telefono_directo = (reclutador.get("telefono_reclutador") or reclutador.get("telefono") or "").replace("@c.us", "").strip()
+    telefono_directo = (reclutador.get("telefono_reclutador") or reclutador.get("telefono") or "").replace(_WA_C_US_SUFFIX, "").strip()
     nombre_original = reclutador.get("nombre_reclutador") or reclutador.get("nombre") or "Reclutador Asignado"
 
     if telefono_directo and len("".join(filter(str.isdigit, telefono_directo))) >= 10:
@@ -505,7 +528,7 @@ async def _resolver_telefono_reclutador_con_fallback(reclutador: dict, empresa_i
             )
 
         if row and row["telefono"]:
-            tel_respaldo = str(row["telefono"]).replace("@c.us", "").strip()
+            tel_respaldo = str(row["telefono"]).replace(_WA_C_US_SUFFIX, "").strip()
             nota = (
                 f"⚠️ *AVISO AUTOMÁTICO:* No se encontró el número de teléfono registrado del reclutador "
                 f"*{nombre_original}*, por lo que esta notificación se te envió a ti ({row['nombre']}) para atención inmediata:\n\n"
@@ -670,7 +693,7 @@ async def _almacenar_mensajes(contacto: dict, candidato: dict, item: dict, junta
         # El preview de la bandeja debe reflejar el ÚLTIMO mensaje que
         # realmente se mandó, no el primero de una respuesta partida.
         "mensaje_ia": ultimo_texto or item.get("message_to_user") or "",
-        "mensaje_candidato": juntado.get("mensaje_completo") or "[Mensaje multimedia]",
+        "mensaje_candidato": juntado.get("mensaje_completo") or _MENSAJE_MULTIMEDIA_FALLBACK,
         "message_type": juntado.get("message_type") or "text",
         "media_url": juntado.get("media_url"),
     }
@@ -694,7 +717,7 @@ def _session_id_memoria(numero: str | None, chat_id: str) -> str:
     """
     digitos = "".join(filter(str.isdigit, str(numero or "")))
     if digitos:
-        return f"{digitos}@c.us"
+        return f"{digitos}{_WA_C_US_SUFFIX}"
     return chat_id
 
 
@@ -722,11 +745,106 @@ def _rescatar_residencia(candidato: dict, items: list[dict], mensaje_usuario: st
     return parser.detectar_municipio_zmg(mensaje_usuario)
 
 
+def _sincronizar_items_con_tools(items: list[dict], ejecucion: dict, numero: str) -> list[dict]:
+    evento_creado_ok = ejecucion["evento_creado_ok"]
+    if evento_creado_ok and ejecucion["fecha_evento"]:
+        for item in items:
+            item["fecha_entrevista_detectada"] = ejecucion["fecha_evento"]
+            item["cita_creada"] = True
+    if ejecucion["evento_eliminado_ok"]:
+        for item in items:
+            item["cita_cancelada"] = True
+
+    primero = items[0]
+    if primero.get("fecha_entrevista_detectada") and not evento_creado_ok:
+        logger.warning(
+            "procesar_turno: la IA reportó cita confirmada sin llamar crear_evento (telefono=%s) -- se corrige",
+            numero,
+        )
+        for item in items:
+            item["fecha_entrevista_detectada"] = None
+            item["cita_creada"] = False
+        items = [items[0]]
+        primero = items[0]
+        primero["message_to_user"] = (
+            "¡Ya casi! 😊 Tuvimos un problema técnico al confirmar tu horario en el calendario. "
+            "Dame un momento e intenta decirme de nuevo qué día y hora te gustaría, por favor. 🙏"
+        )
+    return items
+
+
+async def _despachar_alerta_humano(
+    session: str,
+    chat_id: str,
+    numero: str,
+    primero: dict,
+    candidato: dict,
+    contacto: dict,
+    payload: dict,
+    reclutador: dict,
+    motivo_escalamiento: str | None,
+) -> list[str]:
+    enviados: list[str] = []
+    if primero.get("message_to_user"):
+        await waha_client.send_text(session, chat_id, primero["message_to_user"])
+        await _guardar_mensaje_asistente(numero, primero["message_to_user"])
+        enviados.append(primero["message_to_user"])
+    alerta = await _preparar_alerta_humano(candidato, contacto, payload, reclutador, primero.get("human_alert_nombre"), motivo_escalamiento)
+    if alerta.get("telefono_destino"):
+        await waha_client.send_text(session, f"{alerta['telefono_destino']}{_WA_C_US_SUFFIX}", alerta["mensaje_alerta"])
+    else:
+        logger.warning("procesar_turno: no hay ningún teléfono de reclutador en BD para enviar la alerta")
+    await _marcar_escalado(
+        alerta["telefono_candidato"],
+        alerta["nombre_candidato"],
+        alerta["vacante"],
+        motivo_escalamiento,
+        alerta.get("empresa_id"),
+    )
+    logger.info(
+        "procesar_turno: candidato telefono=%s escalado a %s (motivo=%s)",
+        numero, alerta.get("telefono_destino"), motivo_escalamiento,
+    )
+    return enviados
+
+
+async def _despachar_mensajes_normales(
+    session: str,
+    chat_id: str,
+    numero: str,
+    items: list[dict],
+) -> list[str]:
+    enviados: list[str] = []
+    for i, item in enumerate(items):
+        if item.get("message_to_user"):
+            await waha_client.send_text(session, chat_id, item["message_to_user"])
+            await _guardar_mensaje_asistente(numero, item["message_to_user"])
+            enviados.append(item["message_to_user"])
+        if i < len(items) - 1:
+            await asyncio.sleep(_ENTRE_MENSAJES_SEGUNDOS)
+    return enviados
+
+
+async def _notificar_cita_si_aplica(
+    session: str,
+    primero: dict,
+    candidato: dict,
+    contacto: dict,
+    reclutador: dict,
+) -> None:
+    if primero.get("fecha_entrevista_detectada"):
+        alerta_cita = await _preparar_alerta_cita(candidato, contacto, reclutador, primero)
+        if alerta_cita.get("telefono_destino"):
+            await waha_client.send_text(session, f"{alerta_cita['telefono_destino']}{_WA_C_US_SUFFIX}", alerta_cita["mensaje_alerta"])
+        else:
+            logger.warning("procesar_turno: no hay teléfono de reclutador en BD para enviar alerta de cita")
+
+
 async def procesar_turno(webhook_body: dict, contacto: dict, candidato: dict, system_prompt_base: str, agenda: dict, mensaje_override: str | None) -> None:
     payload = webhook_body["payload"]
     session = webhook_body.get("session") or "default"
     numero = contacto.get("number")
-    chat_id = contacto.get("chat_id") or (f"{numero}@c.us" if str(numero).isdigit() else f"{numero}@lid")
+    chat_id = contacto.get("chat_id") or (f"{numero}{_WA_C_US_SUFFIX}" if str(numero).isdigit() else f"{numero}@lid")
 
     reclutador = await resolver_reclutador(agenda)
     system_prompt = system_prompt_base.replace("{{RECLUTADOR_ASIGNADO}}", reclutador.get("nombre_reclutador") or "Tu equipo")
@@ -744,27 +862,11 @@ async def procesar_turno(webhook_body: dict, contacto: dict, candidato: dict, sy
     await _guardar_mensaje_usuario(numero, juntado)
 
     mensaje_para_ia = mensaje_override or juntado["mensaje_completo"] or "[Mensaje sin texto]"
-
-    # La memoria se indexa por el TELÉFONO resuelto, nunca por `chat_id`.
-    #
-    # WhatsApp entrega el remitente a veces como LID ("151226570248433@lid") en
-    # vez del número, y `chat_id` conserva ese remitente crudo porque es la
-    # dirección a la que hay que responder. Pero `number` sí queda resuelto al
-    # teléfono real, y es lo que usan `conversation_history` y `candidatos`.
-    #
-    # Cuando se usaba `chat_id`, un turno que entraba por LID se guardaba en una
-    # sesión aparte y `cargar_historial` devolvía vacío: el modelo no veía nada
-    # de la conversación y volvía a saludar desde el PASO 1. En la BD quedaban
-    # sesiones "@lid" sueltas de un solo turno -- 33 al detectar esto.
-    #
-    # `{number}@c.us` es además la forma canónica a la que `_migrar_lid`
-    # (ingesta.py) consolida las sesiones cuando logra resolver el LID.
     session_id = _session_id_memoria(numero, chat_id)
     historial = await memoria.cargar_historial(session_id)
 
     ejecucion = await _ejecutar_agente(system_prompt, historial, mensaje_para_ia, candidato, reclutador)
     texto_ia = ejecucion["texto"]
-    evento_creado_ok = ejecucion["evento_creado_ok"]
 
     items = parser.procesar_respuesta_ia(texto_ia, candidato)
     if not items:
@@ -781,98 +883,26 @@ async def procesar_turno(webhook_body: dict, contacto: dict, candidato: dict, sy
         )
         primero.setdefault("database_updates", {})["lugar_residencia"] = municipio_rescatado
         primero["lugar_residencia"] = municipio_rescatado
-    # Se aceptan las DOS formas de escalar, no solo el código pipe:
-    # `detected_codes` viene del formato legado `HUMAN_ALERT|motivo|`, que el
-    # prompt actual prohíbe emitir (§8: "Nunca incluyas ... barras `|`"), y
-    # `pending_actions` de la rama JSON `etiquetas_internas.human_alert`, que es
-    # la única que el prompt enseña (§4.5). Mirando solo la primera, el
-    # escalamiento automático nunca se disparó en producción.
+
     es_human_alert = any(
         c.get("code") == "HUMAN_ALERT" for c in primero.get("detected_codes", [])
     ) or any(
         a.get("type") == "alert_human" for a in primero.get("pending_actions", [])
     )
-    # `human_alert_resumen` lo pone la rama JSON del parser; `motivo_final`, la
-    # rama pipe. Sin este fallback la alerta al reclutador salía siempre con el
-    # texto genérico "El usuario solicitó hablar con un humano".
     motivo_escalamiento = primero.get("human_alert_resumen") or primero.get("motivo_final")
 
-    # Lo que hicieron las tools manda sobre lo que el modelo haya escrito: el
-    # marcador de texto (CITA_CONFIRMADA / CITA_CANCELADA) se pierde cuando
-    # Gemini trunca el JSON de cola, y entonces la cita quedaba creada o
-    # borrada en Google Calendar pero sin registrarse en el expediente.
-    if evento_creado_ok and ejecucion["fecha_evento"]:
-        for item in items:
-            item["fecha_entrevista_detectada"] = ejecucion["fecha_evento"]
-            item["cita_creada"] = True
-    if ejecucion["evento_eliminado_ok"]:
-        for item in items:
-            item["cita_cancelada"] = True
+    items = _sincronizar_items_con_tools(items, ejecucion, numero)
+    primero = items[0]
 
-    if primero.get("fecha_entrevista_detectada") and not evento_creado_ok:
-        # El modelo redactó una confirmación de cita (CITA_CONFIRMADA /
-        # fecha_entrevista_detectada) sin haber llamado con éxito a la tool
-        # crear_evento en este turno -- no existe el evento real en Google
-        # Calendar. No se confía en el texto de la IA: se sobreescribe con un
-        # mensaje honesto y se evita notificar al reclutador una cita falsa.
-        logger.warning(
-            "procesar_turno: la IA reportó cita confirmada sin llamar crear_evento (telefono=%s) -- se corrige",
-            numero,
-        )
-        for item in items:
-            item["fecha_entrevista_detectada"] = None
-            item["cita_creada"] = False
-        items = [items[0]]
-        primero = items[0]
-        primero["message_to_user"] = (
-            "¡Ya casi! 😊 Tuvimos un problema técnico al confirmar tu horario en el calendario. "
-            "Dame un momento e intenta decirme de nuevo qué día y hora te gustaría, por favor. 🙏"
-        )
-
-    # Se registra lo que REALMENTE se le mandó al candidato para guardarlo
-    # completo en la memoria (ver guardar_turno al final): antes solo se
-    # guardaba `items[0]`, así que en una respuesta partida con [SPLIT] el
-    # historial perdía todo lo posterior al primer mensaje. El modelo, al no
-    # verlo en su historial, creía que nunca lo había dicho y lo repetía en el
-    # siguiente turno (visto en producción con el bloque de actividades).
     enviados: list[str] = []
-
     if es_human_alert:
-        if primero.get("message_to_user"):
-            await waha_client.send_text(session, chat_id, primero["message_to_user"])
-            await _guardar_mensaje_asistente(numero, primero["message_to_user"])
-            enviados.append(primero["message_to_user"])
-        alerta = await _preparar_alerta_humano(candidato, contacto, payload, reclutador, primero.get("human_alert_nombre"), motivo_escalamiento)
-        if alerta.get("telefono_destino"):
-            await waha_client.send_text(session, f"{alerta['telefono_destino']}@c.us", alerta["mensaje_alerta"])
-        else:
-            logger.warning("procesar_turno: no hay ningún teléfono de reclutador en BD para enviar la alerta")
-        await _marcar_escalado(
-            alerta["telefono_candidato"],
-            alerta["nombre_candidato"],
-            alerta["vacante"],
-            motivo_escalamiento,
-            alerta.get("empresa_id"),
-        )
-        logger.info(
-            "procesar_turno: candidato telefono=%s escalado a %s (motivo=%s)",
-            numero, alerta.get("telefono_destino"), motivo_escalamiento,
+        enviados = await _despachar_alerta_humano(
+            session, chat_id, numero, primero, candidato, contacto, payload, reclutador, motivo_escalamiento
         )
     elif primero.get("message_to_user"):
-        for i, item in enumerate(items):
-            if item.get("message_to_user"):
-                await waha_client.send_text(session, chat_id, item["message_to_user"])
-                await _guardar_mensaje_asistente(numero, item["message_to_user"])
-                enviados.append(item["message_to_user"])
-            if i < len(items) - 1:
-                await asyncio.sleep(_ENTRE_MENSAJES_SEGUNDOS)
+        enviados = await _despachar_mensajes_normales(session, chat_id, numero, items)
 
-    if primero.get("fecha_entrevista_detectada"):
-        alerta_cita = await _preparar_alerta_cita(candidato, contacto, reclutador, primero)
-        if alerta_cita.get("telefono_destino"):
-            await waha_client.send_text(session, f"{alerta_cita['telefono_destino']}@c.us", alerta_cita["mensaje_alerta"])
-        else:
-            logger.warning("procesar_turno: no hay teléfono de reclutador en BD para enviar alerta de cita")
+    await _notificar_cita_si_aplica(session, primero, candidato, contacto, reclutador)
 
     await memoria.guardar_turno(
         session_id,

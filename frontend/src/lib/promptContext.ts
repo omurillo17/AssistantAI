@@ -1,6 +1,6 @@
 import { pool } from '@/lib/db';
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 
 // Prompt global de respaldo cuando la empresa no tiene un prompt_ia propio configurado
 function getGlobalPromptBase(): string {
@@ -108,84 +108,9 @@ export type PromptContext = {
   };
 };
 
-/**
- * Fuente única de verdad del contexto que necesita la IA de n8n (menús de
- * naves/vacantes, reglas de evaluación por filtros, equipo de reclutadores).
- * La usan tanto GET /api/prompt-context (consumido en vivo por el nodo
- * "Vacantes" de n8n) como syncPromptContextDisk (que escribe el archivo que
- * lee el nodo "CargarPrompt") — antes eran dos implementaciones separadas que
- * se desincronizaban entre sí cada vez que una cambiaba y la otra no.
- */
-export async function buildPromptContext(empresaId?: string | null): Promise<PromptContext> {
-  // 1. Obtener empresa(s)
-  const empresaQuery = empresaId
-    ? `SELECT id, nombre, prompt_ia FROM empresas WHERE id = $1 ORDER BY nombre ASC`
-    : `SELECT id, nombre, prompt_ia FROM empresas ORDER BY nombre ASC`;
-  const empresaParams = empresaId ? [empresaId] : [];
-  const empresasRes = await pool.query(empresaQuery, empresaParams);
-  const empresas = empresasRes.rows;
-
-  if (empresas.length === 0) {
-    return {
-      prompt_base: getGlobalPromptBase(),
-      menu_naves: 'No hay sucursales registradas.',
-      menu_vacantes: 'No hay vacantes disponibles por el momento.',
-      detalle_vacantes: 'Informacion no disponible.',
-      equipo_reclutadores: [],
-      _meta: { empresas: [], total_reclutadores: 0, total_vacantes_unicas: 0, generated_at: new Date().toISOString() },
-    };
-  }
-
-  // El prompt_ia de la empresa (si se definio uno en el panel SaaS) sobreescribe el prompt global
-  const empresaPromptIa = (empresas[0]?.prompt_ia || '').trim();
-  const prompt_base = empresaPromptIa || getGlobalPromptBase();
-
-  const empresaIds = empresas.map((e: { id: string }) => e.id);
-
-  // 2. Obtener naves activas de esas empresas (numeradas por orden de creacion por empresa)
-  const navesRes = await pool.query(
-    `SELECT
-       n.id,
-       n.nombre,
-       n.ubicacion_maps,
-       n.empresa_id,
-       ROW_NUMBER() OVER (PARTITION BY n.empresa_id ORDER BY n.created_at ASC) AS numero
-     FROM naves n
-     WHERE n.empresa_id = ANY($1::uuid[])
-     ORDER BY n.empresa_id, n.created_at ASC`,
-    [empresaIds]
-  );
-  const naves = navesRes.rows;
-
-  // 3. Obtener reclutadores activos con sus vacantes
-  const reclutadoresRes = await pool.query(
-    `SELECT
-       r.id AS reclutador_id,
-       r.nombre,
-       r.telefono,
-       r.calendar_id,
-       r.color,
-       r.empresa_id,
-       u.usuario,
-       v.id AS vacante_id,
-       v.nombre AS vacante_nombre,
-       v.naves AS vacante_naves,
-       v.detalles,
-       v.funciones,
-       v.palabras_clave,
-       v.filtros,
-       v.orden
-     FROM reclutadores r
-     LEFT JOIN usuarios u ON r.id = u.reclutador_id
-     LEFT JOIN vacantes_def v ON r.id = v.reclutador_id AND v.activa = true
-     WHERE r.activo = true AND r.empresa_id = ANY($1::uuid[])
-     ORDER BY r.created_at ASC, v.orden ASC`,
-    [empresaIds]
-  );
-
-  // 4. Agrupar reclutadores => equipo_reclutadores
+function groupEquipoReclutadores(rows: Record<string, any>[]): PromptContext['equipo_reclutadores'] {
   const recMap = new Map<string, PromptContext['equipo_reclutadores'][number]>();
-  for (const row of reclutadoresRes.rows) {
+  for (const row of rows) {
     if (!recMap.has(row.reclutador_id)) {
       recMap.set(row.reclutador_id, {
         reclutador_id: row.reclutador_id,
@@ -217,9 +142,10 @@ export async function buildPromptContext(empresaId?: string | null): Promise<Pro
       });
     }
   }
-  const equipo_reclutadores = Array.from(recMap.values());
+  return Array.from(recMap.values());
+}
 
-  // 5. Construir menu_naves usando numero calculado y ubicacion_maps
+function buildMenuNaves(naves: Array<{ numero: number; nombre: string; ubicacion_maps?: string | null }>): string {
   const menu_naves_lines: string[] = [];
   for (const nav of naves) {
     let line = `${nav.numero}. ${nav.nombre}`;
@@ -228,17 +154,22 @@ export async function buildPromptContext(empresaId?: string | null): Promise<Pro
     }
     menu_naves_lines.push(line);
   }
-  const menu_naves = menu_naves_lines.length > 0
+  return menu_naves_lines.length > 0
     ? menu_naves_lines.join('\n')
     : 'No hay sucursales registradas.';
+}
 
-  // 6. Recopilar vacantes unicas
-  // `funciones` y `palabras_clave` se arrastran hasta aquí a propósito: antes se
-  // leían de la BD y se exponían en equipo_reclutadores, pero se quedaban fuera
-  // de este arreglo, que es lo único que alimenta menu_vacantes/detalle_vacantes
-  // -- o sea, la IA nunca las veía y el campo "Palabras Clave" del modal no
-  // hacía absolutamente nada.
-  const todasLasVacantes: Array<{ nombre: string; detalles: string; funciones: string; palabras_clave: string; naves: string[]; filtros: Filtro[] }> = [];
+type VacanteConFiltros = {
+  nombre: string;
+  detalles: string;
+  funciones: string;
+  palabras_clave: string;
+  naves: string[];
+  filtros: Filtro[];
+};
+
+function extractUniqueVacantes(equipo_reclutadores: PromptContext['equipo_reclutadores']): VacanteConFiltros[] {
+  const todasLasVacantes: VacanteConFiltros[] = [];
   for (const rec of equipo_reclutadores) {
     for (const vac of rec.vacantes) {
       if (!todasLasVacantes.some((v) => v.nombre === vac.nombre)) {
@@ -253,11 +184,20 @@ export async function buildPromptContext(empresaId?: string | null): Promise<Pro
       }
     }
   }
+  return todasLasVacantes;
+}
 
-  // Mapa nave_id (UUID real, tal como se guarda en vacantes_def.naves) => { numero, naveName, vacantes[] }
-  // El "numero" (secuencial por empresa) solo se usa para el texto que ve la IA/n8n
-  // ("--- SUCURSAL {numero}: ---"), nunca como llave de cruce con las vacantes.
-  const naveMap = new Map<string, { numero: number; naveName: string; vacantes: Array<{ nombre: string; detalles: string; funciones: string; palabras_clave: string; filtros: Filtro[] }> }>();
+type NaveVacantesData = {
+  numero: number;
+  naveName: string;
+  vacantes: Array<{ nombre: string; detalles: string; funciones: string; palabras_clave: string; filtros: Filtro[] }>;
+};
+
+function buildNaveVacantesMap(
+  naves: Array<{ id: string; numero: number; nombre: string }>,
+  todasLasVacantes: VacanteConFiltros[]
+) {
+  const naveMap = new Map<string, NaveVacantesData>();
   for (const nav of naves) {
     naveMap.set(nav.id, { numero: nav.numero, naveName: nav.nombre, vacantes: [] });
   }
@@ -278,8 +218,25 @@ export async function buildPromptContext(empresaId?: string | null): Promise<Pro
       }
     }
   }
+  return naveMap;
+}
 
-  // 7. Construir menu_vacantes y detalle_vacantes
+function buildDetalleVacanteItem(v: NaveVacantesData['vacantes'][number], index: number): string {
+  const partes = [`*${index + 1}. ${v.nombre}*`, v.detalles || '(Sin detalles registrados)'];
+  if ((v.funciones || '').trim()) {
+    partes.push(`[ACTIVIDADES A REALIZAR]\n${v.funciones.trim()}`);
+  }
+  if ((v.palabras_clave || '').trim()) {
+    partes.push(`[PALABRAS CLAVE / SINÓNIMOS (uso interno, NO mostrar)]\n${v.palabras_clave.trim()}`);
+  }
+  const reglas = buildReglasEvaluacion(v.filtros);
+  if (reglas) partes.push(reglas);
+  const preguntasBase = buildPreguntasBase(v.filtros);
+  if (preguntasBase) partes.push(preguntasBase);
+  return partes.join('\n\n');
+}
+
+function buildMenuYDetalleVacantes(naveMap: Map<string, NaveVacantesData>) {
   const menuVacantesParts: string[] = [];
   const detalleVacantesParts: string[] = [];
   for (const navData of naveMap.values()) {
@@ -288,24 +245,7 @@ export async function buildPromptContext(empresaId?: string | null): Promise<Pro
     const menuLines = navData.vacantes.map((v, i) => `*${i + 1}. ${v.nombre}*`).join('\n');
     menuVacantesParts.push(`${header}\n${menuLines}`);
     const detalleLines = navData.vacantes
-      .map((v, i) => {
-        const partes = [`*${i + 1}. ${v.nombre}*`, v.detalles || '(Sin detalles registrados)'];
-        // Bloques que chat_prompt.md busca literalmente (sección 3.7): las
-        // funciones se mandan al candidato como SEGUNDO mensaje tras los
-        // detalles, y las palabras clave son solo para que la IA reconozca la
-        // vacante -- nunca se le muestran al candidato.
-        if ((v.funciones || '').trim()) {
-          partes.push(`[ACTIVIDADES A REALIZAR]\n${v.funciones.trim()}`);
-        }
-        if ((v.palabras_clave || '').trim()) {
-          partes.push(`[PALABRAS CLAVE / SINÓNIMOS (uso interno, NO mostrar)]\n${v.palabras_clave.trim()}`);
-        }
-        const reglas = buildReglasEvaluacion(v.filtros);
-        if (reglas) partes.push(reglas);
-        const preguntasBase = buildPreguntasBase(v.filtros);
-        if (preguntasBase) partes.push(preguntasBase);
-        return partes.join('\n\n');
-      })
+      .map((v, i) => buildDetalleVacanteItem(v, i))
       .join('\n\n---\n\n');
     detalleVacantesParts.push(`${header}\n${detalleLines}`);
   }
@@ -316,6 +256,85 @@ export async function buildPromptContext(empresaId?: string | null): Promise<Pro
   const detalle_vacantes = detalleVacantesParts.length > 0
     ? detalleVacantesParts.join('\n\n')
     : 'Informacion no disponible.';
+
+  return { menu_vacantes, detalle_vacantes };
+}
+
+/**
+ * Fuente única de verdad del contexto que necesita la IA de n8n (menús de
+ * naves/vacantes, reglas de evaluación por filtros, equipo de reclutadores).
+ * La usan tanto GET /api/prompt-context (consumido en vivo por el nodo
+ * "Vacantes" de n8n) como syncPromptContextDisk (que escribe el archivo que
+ * lee el nodo "CargarPrompt") — antes eran dos implementaciones separadas que
+ * se desincronizaban entre sí cada vez que una cambiaba y la otra no.
+ */
+export async function buildPromptContext(empresaId?: string | null): Promise<PromptContext> {
+  const empresaQuery = empresaId
+    ? `SELECT id, nombre, prompt_ia FROM empresas WHERE id = $1 ORDER BY nombre ASC`
+    : `SELECT id, nombre, prompt_ia FROM empresas ORDER BY nombre ASC`;
+  const empresaParams = empresaId ? [empresaId] : [];
+  const empresasRes = await pool.query(empresaQuery, empresaParams);
+  const empresas = empresasRes.rows;
+
+  if (empresas.length === 0) {
+    return {
+      prompt_base: getGlobalPromptBase(),
+      menu_naves: 'No hay sucursales registradas.',
+      menu_vacantes: 'No hay vacantes disponibles por el momento.',
+      detalle_vacantes: 'Informacion no disponible.',
+      equipo_reclutadores: [],
+      _meta: { empresas: [], total_reclutadores: 0, total_vacantes_unicas: 0, generated_at: new Date().toISOString() },
+    };
+  }
+
+  const empresaPromptIa = (empresas[0]?.prompt_ia || '').trim();
+  const prompt_base = empresaPromptIa || getGlobalPromptBase();
+  const empresaIds = empresas.map((e: { id: string }) => e.id);
+
+  const navesRes = await pool.query(
+    `SELECT
+       n.id,
+       n.nombre,
+       n.ubicacion_maps,
+       n.empresa_id,
+       ROW_NUMBER() OVER (PARTITION BY n.empresa_id ORDER BY n.created_at ASC) AS numero
+     FROM naves n
+     WHERE n.empresa_id = ANY($1::uuid[])
+     ORDER BY n.empresa_id, n.created_at ASC`,
+    [empresaIds]
+  );
+  const naves = navesRes.rows;
+
+  const reclutadoresRes = await pool.query(
+    `SELECT
+       r.id AS reclutador_id,
+       r.nombre,
+       r.telefono,
+       r.calendar_id,
+       r.color,
+       r.empresa_id,
+       u.usuario,
+       v.id AS vacante_id,
+       v.nombre AS vacante_nombre,
+       v.naves AS vacante_naves,
+       v.detalles,
+       v.funciones,
+       v.palabras_clave,
+       v.filtros,
+       v.orden
+     FROM reclutadores r
+     LEFT JOIN usuarios u ON r.id = u.reclutador_id
+     LEFT JOIN vacantes_def v ON r.id = v.reclutador_id AND v.activa = true
+     WHERE r.activo = true AND r.empresa_id = ANY($1::uuid[])
+     ORDER BY r.created_at ASC, v.orden ASC`,
+    [empresaIds]
+  );
+
+  const equipo_reclutadores = groupEquipoReclutadores(reclutadoresRes.rows);
+  const menu_naves = buildMenuNaves(naves);
+  const todasLasVacantes = extractUniqueVacantes(equipo_reclutadores);
+  const naveMap = buildNaveVacantesMap(naves, todasLasVacantes);
+  const { menu_vacantes, detalle_vacantes } = buildMenuYDetalleVacantes(naveMap);
 
   return {
     prompt_base,

@@ -13,7 +13,7 @@ export default function ChangePasswordModal({
   isOpen,
   onClose,
   username,
-}: ChangePasswordModalProps) {
+}: Readonly<ChangePasswordModalProps>) {
   if (!isOpen) return null;
 
   return <ChangePasswordModalContent onClose={onClose} username={username} />;
@@ -22,10 +22,10 @@ export default function ChangePasswordModal({
 function ChangePasswordModalContent({
   onClose,
   username,
-}: {
+}: Readonly<{
   onClose: () => void;
   username: string;
-}) {
+}>) {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -37,7 +37,7 @@ function ChangePasswordModalContent({
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     setError("");
 
@@ -82,7 +82,6 @@ function ChangePasswordModalContent({
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
       <div 
         className="bg-white rounded-2xl shadow-2xl border border-slate-100 w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200"
-        onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="px-6 py-5 bg-gradient-to-r from-indigo-900 to-indigo-800 text-white flex items-center justify-between">
@@ -119,11 +118,12 @@ function ChangePasswordModalContent({
 
           {/* Contraseña Actual */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+            <label htmlFor="cp-current-password" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
               Contraseña Actual
             </label>
             <div className="relative">
               <input
+                id="cp-current-password"
                 type={showCurrent ? "text" : "password"}
                 required
                 value={currentPassword}
@@ -143,11 +143,12 @@ function ChangePasswordModalContent({
 
           {/* Nueva Contraseña */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+            <label htmlFor="cp-new-password" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
               Nueva Contraseña (mínimo 6 caracteres)
             </label>
             <div className="relative">
               <input
+                id="cp-new-password"
                 type={showNew ? "text" : "password"}
                 required
                 value={newPassword}
@@ -167,11 +168,12 @@ function ChangePasswordModalContent({
 
           {/* Confirmar Nueva Contraseña */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+            <label htmlFor="cp-confirm-password" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
               Confirmar Nueva Contraseña
             </label>
             <div className="relative">
               <input
+                id="cp-confirm-password"
                 type={showConfirm ? "text" : "password"}
                 required
                 value={confirmPassword}

@@ -15,6 +15,8 @@ from app.security import verify_api_key
 
 logger = logging.getLogger("eventos_calendario")
 
+_SQL_INSERT_NOTIFICACION = "INSERT INTO notificaciones (reclutador_id, mensaje) VALUES ($1, $2)"
+
 router = APIRouter(
     prefix="/internal/eventos-calendario",
     dependencies=[Depends(verify_api_key)],
@@ -106,13 +108,35 @@ async def crear_evento(payload: CrearEventoRequest) -> dict:
         msg_cita = f"📅 Cita agendada: {nombre_c} para {vac_c}"
         try:
             await pool.execute(
-                "INSERT INTO notificaciones (reclutador_id, mensaje) VALUES ($1, $2)",
+                _SQL_INSERT_NOTIFICACION,
                 row["asignado_a_id"], msg_cita,
             )
         except Exception:
             logger.exception("crear_evento: error insertando notificacion en CRM")
 
     return {"success": True, "event_id": event_id}
+
+
+async def _notificar_cancelacion_crm(
+    pool,
+    cancel_count: int,
+    candidato_nombre: str,
+    vacante: str,
+    reclutador_id: str | None,
+) -> None:
+    if not reclutador_id:
+        return
+    if cancel_count == 3:
+        msg_notif = f"⚠️ 3 cancelaciones/reagendamientos: {candidato_nombre} ({vacante})"
+    elif cancel_count >= 4:
+        msg_notif = f"🚫 Candidato bloqueado (4 cancelaciones): {candidato_nombre} ({vacante})"
+    else:
+        return
+
+    try:
+        await pool.execute(_SQL_INSERT_NOTIFICACION, reclutador_id, msg_notif)
+    except Exception:
+        logger.exception("eliminar_evento: error insertando notificacion en CRM")
 
 
 @router.post("/eliminar")
@@ -154,27 +178,7 @@ async def eliminar_evento(payload: EliminarEventoRequest) -> dict:
     vacante = row["vacante_interes"] or "General"
     reclutador_id = row["asignado_a_id"]
 
-    # Notificaciones en la campana del CRM
-    if cancel_count == 3:
-        msg_notif = f"⚠️ 3 cancelaciones/reagendamientos: {candidato_nombre} ({vacante})"
-        if reclutador_id:
-            try:
-                await pool.execute(
-                    "INSERT INTO notificaciones (reclutador_id, mensaje) VALUES ($1, $2)",
-                    reclutador_id, msg_notif,
-                )
-            except Exception:
-                logger.exception("eliminar_evento: error insertando notificacion de 3 cancelaciones")
-    elif cancel_count >= 4:
-        msg_notif = f"🚫 Candidato bloqueado (4 cancelaciones): {candidato_nombre} ({vacante})"
-        if reclutador_id:
-            try:
-                await pool.execute(
-                    "INSERT INTO notificaciones (reclutador_id, mensaje) VALUES ($1, $2)",
-                    reclutador_id, msg_notif,
-                )
-            except Exception:
-                logger.exception("eliminar_evento: error insertando notificacion de bloqueo")
+    await _notificar_cancelacion_crm(pool, cancel_count, candidato_nombre, vacante, reclutador_id)
 
     return {
         "success": True, 

@@ -26,6 +26,174 @@ type Empresa = {
   naves: Nave[];
 };
 
+type NaveCardProps = {
+  nave: Nave;
+  grupoActualId: string;
+  empresaId: string;
+  empGrupos: Grupo[];
+  onEditNave: (nave: Nave) => void;
+  onDeleteNave: (id: string) => void;
+  onChangeNaveGrupo: (naveId: string, empresaId: string, nuevoGrupoId: string) => void;
+};
+
+function NaveCard({
+  nave,
+  grupoActualId,
+  empresaId,
+  empGrupos,
+  onEditNave,
+  onDeleteNave,
+  onChangeNaveGrupo,
+}: Readonly<NaveCardProps>) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow group relative overflow-hidden">
+      <div className="absolute top-0 left-0 w-1 h-full bg-indigo-400" />
+      <div className="flex justify-between items-start mb-3">
+        <h4 className="font-bold text-slate-800 text-base leading-tight pr-14">{nave.nombre}</h4>
+        <span className="text-xs font-semibold text-slate-400 block mt-1">RFC: {nave.rfc || 'Sin RFC'}</span>
+        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity absolute top-3 right-3">
+          <button onClick={() => onEditNave(nave)} className="p-1.5 text-slate-400 hover:text-indigo-600 bg-slate-50 rounded"><Edit size={14} /></button>
+          <button onClick={() => onDeleteNave(nave.id)} className="p-1.5 text-slate-400 hover:text-red-600 bg-slate-50 rounded"><Trash2 size={14} /></button>
+        </div>
+      </div>
+      {nave.ubicacion_maps ? (
+        <a href={nave.ubicacion_maps} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-sm text-indigo-600 font-medium hover:underline bg-indigo-50 px-2.5 py-1 rounded-md mb-3">
+          <MapPin size={14} /> Ver en Maps
+        </a>
+      ) : (
+        <span className="inline-flex items-center gap-1.5 text-sm text-slate-400 font-medium bg-slate-50 px-2.5 py-1 rounded-md mb-3">
+          <MapPin size={14} /> Sin ubicación
+        </span>
+      )}
+      {empGrupos.length > 0 && (
+        <select
+          id={`nave-grupo-${nave.id}`}
+          name="nave_grupo"
+          value={grupoActualId}
+          onChange={(e) => onChangeNaveGrupo(nave.id, empresaId, e.target.value)}
+          className="w-full text-xs font-semibold p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-violet-500 text-slate-600 cursor-pointer"
+        >
+          <option value="">Sin grupo asignado</option>
+          {empGrupos.map((g: Grupo) => <option key={g.id} value={g.id}>{g.nombre}</option>)}
+        </select>
+      )}
+    </div>
+  );
+}
+
+type EmpresaNavesExpandedProps = {
+  emp: Empresa;
+  grupos: Grupo[];
+  onAddGrupo: (emp: Empresa) => void;
+  onEditGrupo: (emp: Empresa, grupo: Grupo) => void;
+  onDeleteGrupo: (grupoId: string) => void;
+  onEditNave: (empresaId: string, nave: Nave) => void;
+  onDeleteNave: (id: string) => void;
+  onChangeNaveGrupo: (naveId: string, empresaId: string, nuevoGrupoId: string) => void;
+};
+
+function EmpresaNavesExpanded({
+  emp,
+  grupos,
+  onAddGrupo,
+  onEditGrupo,
+  onDeleteGrupo,
+  onEditNave,
+  onDeleteNave,
+  onChangeNaveGrupo,
+}: Readonly<EmpresaNavesExpandedProps>) {
+  const empGrupos = grupos.filter(g => g.empresa_id === emp.id);
+  const navesEnGrupo = new Set(empGrupos.flatMap((g: Grupo) => g.naves_asignadas || []));
+  const navesSinGrupo = (emp.naves || []).filter(n => !navesEnGrupo.has(n.id));
+
+  return (
+    <div className="border-t border-slate-100 p-6 bg-slate-50/50">
+      <div className="mb-5 flex items-center justify-between">
+        <div className="text-sm font-bold text-slate-400 uppercase tracking-wider">Sub-Empresas (Naves) por Grupo</div>
+        <button
+          onClick={(e) => { e.stopPropagation(); onAddGrupo(emp); }}
+          className="px-3 py-1.5 bg-violet-50 text-violet-700 hover:bg-violet-100 font-semibold rounded-lg text-xs transition-colors flex items-center gap-1.5"
+        >
+          <Plus size={14} /> Nuevo Grupo
+        </button>
+      </div>
+
+      {(!emp.naves || emp.naves.length === 0) ? (
+        <div className="text-center py-10 border-2 border-dashed border-slate-200 rounded-xl bg-white">
+          <MapPin size={32} className="mx-auto text-slate-300 mb-3" />
+          <h3 className="text-slate-500 font-medium mb-1">Esta empresa no tiene Naves.</h3>
+          <p className="text-sm text-slate-400">Registra al menos una nave para poder asignar vacantes.</p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-6">
+          {empGrupos.map((grupo: Grupo) => {
+            const navesDelGrupo = (emp.naves || []).filter(n => (grupo.naves_asignadas || []).includes(n.id));
+            return (
+              <div key={grupo.id}>
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 rounded-full bg-violet-500"></div>
+                    <span className="text-sm font-bold text-slate-700">{grupo.nombre}</span>
+                    <span className="text-xs text-slate-400">({navesDelGrupo.length} naves)</span>
+                  </div>
+                  <div className="flex-1 h-px bg-slate-200"></div>
+                  <button onClick={() => onEditGrupo(emp, grupo)} className="p-1 text-slate-300 hover:text-violet-500 transition-colors"><Edit size={13} /></button>
+                  <button onClick={() => onDeleteGrupo(grupo.id)} className="p-1 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={13} /></button>
+                </div>
+                {navesDelGrupo.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic ml-5">Sin naves asignadas a este grupo.</p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 ml-5">
+                    {navesDelGrupo.map(nave => (
+                      <NaveCard
+                        key={nave.id}
+                        nave={nave}
+                        grupoActualId={grupo.id}
+                        empresaId={emp.id}
+                        empGrupos={empGrupos}
+                        onEditNave={(n) => onEditNave(emp.id, n)}
+                        onDeleteNave={onDeleteNave}
+                        onChangeNaveGrupo={onChangeNaveGrupo}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {navesSinGrupo.length > 0 && (
+            <div>
+              <div className="flex items-center gap-3 mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-slate-300"></div>
+                  <span className="text-sm font-bold text-slate-400">Sin grupo asignado</span>
+                  <span className="text-xs text-slate-400">({navesSinGrupo.length} naves)</span>
+                </div>
+                <div className="flex-1 h-px bg-slate-200"></div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 ml-5">
+                {navesSinGrupo.map(nave => (
+                  <NaveCard
+                    key={nave.id}
+                    nave={nave}
+                    grupoActualId=""
+                    empresaId={emp.id}
+                    empGrupos={empGrupos}
+                    onEditNave={(n) => onEditNave(emp.id, n)}
+                    onDeleteNave={onDeleteNave}
+                    onChangeNaveGrupo={onChangeNaveGrupo}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SaasAdminPage() {
   const router = useRouter();
   const hidratado = useIsHydrated();
@@ -59,6 +227,24 @@ export default function SaasAdminPage() {
     setToast({ msg, isError });
     setTimeout(() => setToast(null), 3000);
   };
+
+  const handleOpenEditNave = useCallback((empresaId: string, nave: Nave) => {
+    setSelectedEmpresaForNave(empresaId);
+    setEditingNave(nave);
+    setShowNaveModal(true);
+  }, []);
+
+  const handleOpenAddGrupo = useCallback((emp: Empresa) => {
+    setSelectedEmpresaForGrupo(emp);
+    setEditingGrupo(null);
+    setShowGrupoModal(true);
+  }, []);
+
+  const handleOpenEditGrupo = useCallback((emp: Empresa, grupo: Grupo) => {
+    setSelectedEmpresaForGrupo(emp);
+    setEditingGrupo(grupo);
+    setShowGrupoModal(true);
+  }, []);
 
   const fetchGrupos = useCallback(async () => {
     try {
@@ -223,10 +409,13 @@ export default function SaasAdminPage() {
             <div key={emp.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all duration-300 hover:shadow-md">
               {/* Company Header Row */}
               <div 
-                className={`p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 cursor-pointer transition-colors ${isExpanded ? 'bg-slate-50/50' : 'hover:bg-slate-50'}`}
-                onClick={() => setExpandedEmpresa(isExpanded ? null : emp.id)}
+                className={`p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-colors ${isExpanded ? 'bg-slate-50/50' : 'hover:bg-slate-50'}`}
               >
-                <div className="flex items-center gap-4">
+                <button
+                  type="button"
+                  onClick={() => setExpandedEmpresa(isExpanded ? null : emp.id)}
+                  className="flex items-center gap-4 text-left flex-1 cursor-pointer focus:outline-none"
+                >
                   <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-colors ${isExpanded ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600'}`}>
                     <Building2 size={24} />
                   </div>
@@ -237,18 +426,18 @@ export default function SaasAdminPage() {
                       <span className="flex items-center gap-1.5"><MapPin size={14} /> {(emp.naves || []).length} Naves activas</span>
                     </div>
                   </div>
-                </div>
+                </button>
                 
                 <div className="flex items-center gap-3">
                   <button 
-                    onClick={(e) => { e.stopPropagation(); setEditingEmpresa(emp); setShowEmpresaModal(true); }}
+                    onClick={() => { setEditingEmpresa(emp); setShowEmpresaModal(true); }}
                     className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
                     title="Editar Empresa"
                   >
                     <Edit size={18} />
                   </button>
                   <button 
-                    onClick={(e) => { e.stopPropagation(); handleDeleteEmpresa(emp.id); }}
+                    onClick={() => handleDeleteEmpresa(emp.id)}
                     className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                     title="Eliminar Empresa"
                   >
@@ -256,132 +445,41 @@ export default function SaasAdminPage() {
                   </button>
                   <div className="w-px h-6 bg-slate-200 mx-1"></div>
                   <button 
-                    onClick={(e) => { e.stopPropagation(); setSelectedEmpresaForAdmin(emp); setShowAdminModal(true); }}
+                    onClick={() => { setSelectedEmpresaForAdmin(emp); setShowAdminModal(true); }}
                     className="px-4 py-2 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-semibold rounded-lg text-sm transition-colors flex items-center gap-2"
                   >
                     <Plus size={16} /> Crear Admin
                   </button>
                   <button 
-                    onClick={(e) => { e.stopPropagation(); setSelectedEmpresaForNave(emp.id); setEditingNave(null); setShowNaveModal(true); }}
+                    onClick={() => { setSelectedEmpresaForNave(emp.id); setEditingNave(null); setShowNaveModal(true); }}
                     className="px-4 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-semibold rounded-lg text-sm transition-colors flex items-center gap-2"
                   >
                     <Plus size={16} /> Añadir Nave
                   </button>
-                  <div className={`p-1 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedEmpresa(isExpanded ? null : emp.id)}
+                    className={`p-1 transition-transform duration-300 cursor-pointer ${isExpanded ? 'rotate-180' : ''}`}
+                    aria-label="Expandir o colapsar empresa"
+                  >
                     <ChevronDown size={20} className="text-slate-400" />
-                  </div>
+                  </button>
                 </div>
               </div>
 
               {/* Naves (Expanded View) */}
-              {isExpanded && (() => {
-                const empGrupos = grupos.filter(g => g.empresa_id === emp.id);
-                const navesEnGrupo = new Set(empGrupos.flatMap((g: Grupo) => g.naves_asignadas || []));
-                const navesSinGrupo = (emp.naves || []).filter(n => !navesEnGrupo.has(n.id));
-
-                const NaveCard = ({ nave, grupoActualId }: { nave: Nave; grupoActualId: string }) => (
-                  <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow group relative overflow-hidden">
-                    <div className="absolute top-0 left-0 w-1 h-full bg-indigo-400"></div>
-                    <div className="flex justify-between items-start mb-3">
-                      <h4 className="font-bold text-slate-800 text-base leading-tight pr-14">{nave.nombre}</h4>
-                      <span className="text-xs font-semibold text-slate-400 block mt-1">RFC: {nave.rfc || 'Sin RFC'}</span>
-                      <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity absolute top-3 right-3">
-                        <button onClick={() => { setSelectedEmpresaForNave(emp.id); setEditingNave(nave); setShowNaveModal(true); }} className="p-1.5 text-slate-400 hover:text-indigo-600 bg-slate-50 rounded"><Edit size={14} /></button>
-                        <button onClick={() => handleDeleteNave(nave.id)} className="p-1.5 text-slate-400 hover:text-red-600 bg-slate-50 rounded"><Trash2 size={14} /></button>
-                      </div>
-                    </div>
-                    {nave.ubicacion_maps ? (
-                      <a href={nave.ubicacion_maps} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 text-sm text-indigo-600 font-medium hover:underline bg-indigo-50 px-2.5 py-1 rounded-md mb-3">
-                        <MapPin size={14} /> Ver en Maps
-                      </a>
-                    ) : (
-                      <span className="inline-flex items-center gap-1.5 text-sm text-slate-400 font-medium bg-slate-50 px-2.5 py-1 rounded-md mb-3">
-                        <MapPin size={14} /> Sin ubicación
-                      </span>
-                    )}
-                    {empGrupos.length > 0 && (
-                      <select
-                        id={`nave-grupo-${nave.id}`}
-                        name="nave_grupo"
-                        value={grupoActualId}
-                        onChange={(e) => handleChangeNaveGrupo(nave.id, emp.id, e.target.value)}
-                        className="w-full text-xs font-semibold p-2 bg-slate-50 border border-slate-200 rounded-lg outline-none focus:border-violet-500 text-slate-600 cursor-pointer"
-                      >
-                        <option value="">Sin grupo asignado</option>
-                        {empGrupos.map((g: Grupo) => <option key={g.id} value={g.id}>{g.nombre}</option>)}
-                      </select>
-                    )}
-                  </div>
-                );
-
-                return (
-                  <div className="border-t border-slate-100 p-6 bg-slate-50/50">
-                    {/* Header section */}
-                    <div className="mb-5 flex items-center justify-between">
-                      <div className="text-sm font-bold text-slate-400 uppercase tracking-wider">Sub-Empresas (Naves) por Grupo</div>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setSelectedEmpresaForGrupo(emp); setEditingGrupo(null); setShowGrupoModal(true); }}
-                        className="px-3 py-1.5 bg-violet-50 text-violet-700 hover:bg-violet-100 font-semibold rounded-lg text-xs transition-colors flex items-center gap-1.5"
-                      >
-                        <Plus size={14} /> Nuevo Grupo
-                      </button>
-                    </div>
-
-                    {(!emp.naves || emp.naves.length === 0) ? (
-                      <div className="text-center py-10 border-2 border-dashed border-slate-200 rounded-xl bg-white">
-                        <MapPin size={32} className="mx-auto text-slate-300 mb-3" />
-                        <h3 className="text-slate-500 font-medium mb-1">Esta empresa no tiene Naves.</h3>
-                        <p className="text-sm text-slate-400">Registra al menos una nave para poder asignar vacantes.</p>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col gap-6">
-                        {/* Grupos con naves */}
-                        {empGrupos.map((grupo: Grupo) => {
-                          const navesDelGrupo = (emp.naves || []).filter(n => (grupo.naves_asignadas || []).includes(n.id));
-                          return (
-                            <div key={grupo.id}>
-                              <div className="flex items-center gap-3 mb-3">
-                                <div className="flex items-center gap-2">
-                                  <div className="w-3 h-3 rounded-full bg-violet-500"></div>
-                                  <span className="text-sm font-bold text-slate-700">{grupo.nombre}</span>
-                                  <span className="text-xs text-slate-400">({navesDelGrupo.length} naves)</span>
-                                </div>
-                                <div className="flex-1 h-px bg-slate-200"></div>
-                                <button onClick={() => { setSelectedEmpresaForGrupo(emp); setEditingGrupo(grupo); setShowGrupoModal(true); }} className="p-1 text-slate-300 hover:text-violet-500 transition-colors"><Edit size={13} /></button>
-                                <button onClick={() => handleDeleteGrupo(grupo.id)} className="p-1 text-slate-300 hover:text-red-500 transition-colors"><Trash2 size={13} /></button>
-                              </div>
-                              {navesDelGrupo.length === 0 ? (
-                                <p className="text-xs text-slate-400 italic ml-5">Sin naves asignadas a este grupo.</p>
-                              ) : (
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 ml-5">
-                                  {navesDelGrupo.map(nave => <NaveCard key={nave.id} nave={nave} grupoActualId={grupo.id} />)}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-
-                        {/* Naves sin grupo */}
-                        {navesSinGrupo.length > 0 && (
-                          <div>
-                            <div className="flex items-center gap-3 mb-3">
-                              <div className="flex items-center gap-2">
-                                <div className="w-3 h-3 rounded-full bg-slate-300"></div>
-                                <span className="text-sm font-bold text-slate-400">Sin grupo asignado</span>
-                                <span className="text-xs text-slate-400">({navesSinGrupo.length} naves)</span>
-                              </div>
-                              <div className="flex-1 h-px bg-slate-200"></div>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 ml-5">
-                              {navesSinGrupo.map(nave => <NaveCard key={nave.id} nave={nave} grupoActualId="" />)}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
+              {isExpanded && (
+                <EmpresaNavesExpanded
+                  emp={emp}
+                  grupos={grupos}
+                  onAddGrupo={handleOpenAddGrupo}
+                  onEditGrupo={handleOpenEditGrupo}
+                  onDeleteGrupo={handleDeleteGrupo}
+                  onEditNave={handleOpenEditNave}
+                  onDeleteNave={handleDeleteNave}
+                  onChangeNaveGrupo={handleChangeNaveGrupo}
+                />
+              )}
             </div>
           );
         })}

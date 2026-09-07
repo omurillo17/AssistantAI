@@ -6,7 +6,7 @@ import { getSession } from '@/lib/auth';
 import { getCandidateDisplayName } from '@/lib/formatters';
 
 const bodySchema = z.object({
-  candidato_ids: z.array(z.string().uuid()).min(1).max(200),
+  candidato_ids: z.array(z.uuid()).min(1).max(200),
 });
 
 /**

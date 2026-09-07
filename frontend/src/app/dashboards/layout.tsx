@@ -4,6 +4,6 @@ export const metadata: Metadata = {
   title: "Dashboard Candidatos | TCi",
 };
 
-export default function Layout({ children }: { children: React.ReactNode }) {
+export default function Layout({ children }: Readonly<{ children: React.ReactNode }>) {
   return <>{children}</>;
 }

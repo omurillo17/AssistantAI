@@ -10,7 +10,7 @@ logger = logging.getLogger("meta_whatsapp_router")
 router = APIRouter()
 
 
-@router.get("/webhook/meta")
+@router.get("/webhook/meta", responses={403: {"description": "Verification failed"}})
 async def verify_meta_webhook(
     hub_mode: str | None = Query(None, alias="hub.mode"),
     hub_verify_token: str | None = Query(None, alias="hub.verify_token"),

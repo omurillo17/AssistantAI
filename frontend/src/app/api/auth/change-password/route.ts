@@ -12,7 +12,7 @@ const changePasswordSchema = z.object({
 export async function POST(request: Request) {
   try {
     const session = await getSession(request);
-    if (!session || !session.usuario) {
+    if (!session?.usuario) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
 

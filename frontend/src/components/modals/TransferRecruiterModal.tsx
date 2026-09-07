@@ -21,7 +21,7 @@ export default function TransferRecruiterModal({
   onCancel,
   onDeletePermanently,
   onTransferAndDelete,
-}: Props) {
+}: Readonly<Props>) {
   const recToDelete = recruiters[transferRecruiterIndex];
   if (!recToDelete) return null;
 
@@ -66,7 +66,7 @@ export default function TransferRecruiterModal({
 
           {availableTargets.length > 0 ? (
             <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+              <label htmlFor="transfer-recruiter-target" className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                 Transferir a:
               </label>
               <select

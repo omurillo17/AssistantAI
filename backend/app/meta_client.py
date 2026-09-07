@@ -2,6 +2,8 @@
 Permite enviar mensajes de texto y descargar multimedia usando las credenciales
 oficiales de Meta."""
 
+from __future__ import annotations
+
 import logging
 import httpx
 

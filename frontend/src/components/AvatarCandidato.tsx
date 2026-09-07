@@ -14,13 +14,13 @@ export default function AvatarCandidato({
   escalado = false,
   size = 48,
   className = "",
-}: {
+}: Readonly<{
   telefono?: string | null;
   nombre?: string | null;
   escalado?: boolean;
   size?: number;
   className?: string;
-}) {
+}>) {
   // Se guarda de QUIÉN falló la foto, no un booleano: así, al cambiar de
   // candidato, el nuevo vuelve a intentarlo sin necesitar un efecto que
   // reinicie el estado.

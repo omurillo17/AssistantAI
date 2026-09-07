@@ -124,7 +124,7 @@ export function TopNavbar() {
   useEffect(() => {
     if (toasts.length === 0) return;
     const timer = setTimeout(() => {
-      setToasts(prev => prev.slice(0, prev.length - 1));
+      setToasts(prev => prev.slice(0, -1));
     }, 8000);
     return () => clearTimeout(timer);
   }, [toasts]);
@@ -169,27 +169,34 @@ export function TopNavbar() {
 
   const getNotifDisplay = (msg: string = "") => {
     const lower = msg.toLowerCase();
-    const phoneMatch = msg.match(/(?:wa\.me\/|tel:|phone:)?(\d{10,13})/i);
+    const phoneMatch = /(?:wa\.me\/|tel:|phone:)?(\d{10,13})/i.exec(msg);
     const tel = phoneMatch ? phoneMatch[1] : "";
-    const nameMatch = msg.match(/Candidato:\s*([^\n]+)/i);
+    const nameMatch = /Candidato:\s*([^\n]+)/i.exec(msg);
     const nombre = nameMatch ? nameMatch[1].trim() : "";
+    const telSuffix = tel ? ` (${tel})` : "";
+    let info = "";
+    if (nombre) {
+      info = `${nombre}${telSuffix}`;
+    } else if (tel) {
+      info = `Tel: ${tel}`;
+    }
 
     if (lower.includes("verificación") || lower.includes("identidad") || lower.includes("ocr") || lower.includes("curp")) {
       return {
         titulo: "Alerta de Identidad",
-        subtitulo: nombre ? `${nombre}${tel ? ` (${tel})` : ''}` : (tel ? `Tel: ${tel}` : "Revisión de expediente requerida"),
+        subtitulo: info || "Revisión de expediente requerida",
       };
     }
     if (lower.includes("cita") || lower.includes("agendada") || lower.includes("📅")) {
       return {
         titulo: "Cita Agendada",
-        subtitulo: nombre ? `${nombre}${tel ? ` (${tel})` : ''}` : (tel ? `Tel: ${tel}` : "Nueva entrevista programada"),
+        subtitulo: info || "Nueva entrevista programada",
       };
     }
     if (lower.includes("atención humana") || lower.includes("escalado") || lower.includes("🚨")) {
       return {
         titulo: "Atención Humana Requerida",
-        subtitulo: nombre ? `${nombre}${tel ? ` (${tel})` : ''}` : (tel ? `Tel: ${tel}` : "Conversación escalada"),
+        subtitulo: info || "Conversación escalada",
       };
     }
     return {
@@ -300,6 +307,19 @@ export function TopNavbar() {
 
   const showBackButton = pathname !== "/";
 
+  const getCurrentContextName = (): string => {
+    if (grupoId) {
+      return empresas.flatMap(e => e.grupos || []).find((g: Grupo) => g.id === grupoId)?.nombre || "Grupo Desconocido";
+    }
+    if (naveId) {
+      return empresas.flatMap(e => e.naves || []).find(n => n.id === naveId)?.nombre || "Nave Desconocida";
+    }
+    if (empresaId) {
+      return empresas.find(e => e.id === empresaId)?.nombre || "Empresa Desconocida";
+    }
+    return role === "ROOT" ? "Vista Global" : "Selecciona Empresa";
+  };
+
   return (
     <nav className="h-16 bg-primary flex items-center justify-between px-6 shadow-sm z-40 sticky top-0 flex-shrink-0">
       {/* Title / Back Button */}
@@ -331,13 +351,7 @@ export function TopNavbar() {
             >
               <Building2 size={18} className={!empresaId ? 'text-amber-400' : ''} />
               <div className="text-sm font-semibold hidden md:block max-w-[150px] truncate">
-                {grupoId
-                  ? (empresas.flatMap(e => e.grupos || []).find((g: Grupo) => g.id === grupoId)?.nombre || "Grupo Desconocido")
-                  : naveId
-                    ? (empresas.flatMap(e => e.naves || []).find(n => n.id === naveId)?.nombre || "Nave Desconocida")
-                    : empresaId
-                      ? (empresas.find(e => e.id === empresaId)?.nombre || "Empresa Desconocida")
-                      : role === "ROOT" ? "Vista Global" : "Selecciona Empresa"}
+                {getCurrentContextName()}
               </div>
               <ChevronDown size={16} className="opacity-70" />
             </button>
@@ -458,10 +472,13 @@ export function TopNavbar() {
                   return (
                     <div 
                       key={n.id} 
-                      onClick={() => handleNotifClick(n)}
-                      className={`px-4 py-3 text-sm border-b last:border-0 hover:bg-slate-50 transition-colors cursor-pointer flex items-start justify-between gap-3 ${!n.leida ? 'bg-indigo-50/60 font-medium' : ''}`}
+                      className={`px-4 py-3 text-sm border-b last:border-0 hover:bg-slate-50 transition-colors flex items-start justify-between gap-3 ${!n.leida ? 'bg-indigo-50/60 font-medium' : ''}`}
                     >
-                      <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                      <button
+                        type="button"
+                        onClick={() => handleNotifClick(n)}
+                        className="flex items-start gap-2.5 flex-1 min-w-0 text-left cursor-pointer focus:outline-none"
+                      >
                         <div className="mt-0.5 shrink-0">{meta.icon}</div>
                         <div className="flex-1 min-w-0">
                           <p className="text-slate-800 font-bold text-xs leading-tight truncate">{display.titulo}</p>
@@ -472,11 +489,11 @@ export function TopNavbar() {
                             {n.created_at ? new Date(n.created_at).toLocaleString('es-MX', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ""}
                           </span>
                         </div>
-                      </div>
+                      </button>
                       <button
                         onClick={(e) => deleteNotif(n.id, e)}
                         title="Eliminar notificación"
-                        className="text-slate-300 hover:text-red-500 p-1 rounded transition-colors shrink-0"
+                        className="text-slate-300 hover:text-red-500 p-1 rounded transition-colors shrink-0 cursor-pointer"
                       >
                         <Trash2 size={15} />
                       </button>

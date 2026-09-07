@@ -11,6 +11,70 @@ import { getSession, verifyInternalApiKey } from "@/lib/auth";
  * y para calcular turnos de asignación de candidatos.
  * Acepta sesión de usuario (CRM) o x-api-key = N8N_API_KEY (n8n).
  */
+function parseExpandedNaves(vacanteNaves: unknown, naveMap: Map<string, string>): string[] {
+  let navesArr: string[] = [];
+  if (typeof vacanteNaves === "string") {
+    try {
+      navesArr = JSON.parse(vacanteNaves);
+    } catch {
+      navesArr = [];
+    }
+  } else if (Array.isArray(vacanteNaves)) {
+    navesArr = vacanteNaves;
+  }
+
+  return Array.from(
+    new Set([
+      ...navesArr,
+      ...navesArr.map((id) => naveMap.get(id)).filter((n): n is string => Boolean(n)),
+    ])
+  );
+}
+
+function buildReclutadoresVacantesMap(rows: Record<string, unknown>[], naveMap: Map<string, string>) {
+  const recMap = new Map<string, {
+    reclutador_id: string;
+    nombre: string;
+    activo: boolean;
+    telefono: string;
+    calendar_id: string;
+    color: string;
+    usuario: string;
+    es_encargado: boolean;
+    vacantes: Record<string, unknown>[];
+  }>();
+
+  for (const row of rows) {
+    const recId = row.reclutador_id as string;
+    if (!recMap.has(recId)) {
+      recMap.set(recId, {
+        reclutador_id: recId,
+        nombre: (row.nombre as string) || "",
+        activo: true,
+        telefono: (row.telefono as string) || "",
+        calendar_id: (row.calendar_id as string) || "",
+        color: (row.color as string) || "#6366f1",
+        usuario: (row.usuario as string) || "",
+        es_encargado: row.usuario_rol === "ENCARGADO",
+        vacantes: [],
+      });
+    }
+
+    if (row.vacante_id) {
+      recMap.get(recId)!.vacantes.push({
+        id: row.vacante_id,
+        nombre: row.vacante_nombre,
+        naves: parseExpandedNaves(row.vacante_naves, naveMap),
+        detalles: row.detalles || "",
+        palabras_clave: row.palabras_clave || "",
+        filtros: row.filtros || [],
+      });
+    }
+  }
+
+  return Array.from(recMap.values());
+}
+
 export async function GET(request: Request) {
   const session = await getSession(request);
   if (!session && !verifyInternalApiKey(request)) {
@@ -56,49 +120,7 @@ export async function GET(request: Request) {
       naveMap.set(r.id, r.nombre);
     }
 
-    const recMap = new Map<string, { reclutador_id: string; nombre: string; activo: boolean; telefono: string; calendar_id: string; color: string; usuario: string; es_encargado: boolean; vacantes: Record<string, unknown>[] }>();
-    for (const row of res.rows) {
-      if (!recMap.has(row.reclutador_id)) {
-        recMap.set(row.reclutador_id, {
-          reclutador_id: row.reclutador_id,
-          nombre: row.nombre,
-          activo: true,
-          telefono: row.telefono || "",
-          calendar_id: row.calendar_id || "",
-          color: row.color || "#6366f1",
-          usuario: row.usuario || "",
-          // Jefe de grupo real (ver frontend/src/app/api/db/usuarios/route.ts) --
-          // usado por definir_agenda (backend) para elegir un fallback
-          // determinista en vez de "el ultimo reclutador creado".
-          es_encargado: row.usuario_rol === "ENCARGADO",
-          vacantes: [],
-        });
-      }
-      if (row.vacante_id) {
-        let navesArr: string[] = [];
-        if (typeof row.vacante_naves === "string") {
-          try { navesArr = JSON.parse(row.vacante_naves); } catch { navesArr = []; }
-        } else {
-          navesArr = row.vacante_naves || [];
-        }
-        const expandedNaves = Array.from(
-          new Set([
-            ...navesArr,
-            ...navesArr.map((id) => naveMap.get(id)).filter((n): n is string => Boolean(n)),
-          ])
-        );
-        recMap.get(row.reclutador_id)!.vacantes.push({
-          id: row.vacante_id,
-          nombre: row.vacante_nombre,
-          naves: expandedNaves,
-          detalles: row.detalles || "",
-          palabras_clave: row.palabras_clave || "",
-          filtros: row.filtros || [],
-        });
-      }
-    }
-
-    return NextResponse.json(Array.from(recMap.values()));
+    return NextResponse.json(buildReclutadoresVacantesMap(res.rows, naveMap));
   } catch (error) {
     console.error("Error fetching reclutador_vacantes from DB:", error);
     return NextResponse.json({ success: false, error: "Error al consultar reclutadores" }, { status: 500 });

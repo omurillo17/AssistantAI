@@ -8,79 +8,85 @@ import {
   LayoutGrid, List, MessageSquare, Search
 } from "lucide-react";
 import { ESTADOS, ESTADOS_CRM, GRUPOS, getEstado, KANBAN_COLUMNAS, type EstadoKey } from "@/lib/estados";
-import type { Candidato } from "@/types";
+import type { Candidato, Conversacion, Recruiter, Vacante, Empresa, Nave } from "@/types";
 import { CandidateModal } from "@/components/CandidateModal";
 import { getCandidateDisplayName as getNombre, formatNaveName } from "@/lib/formatters";
 import { useTenantChange } from "@/hooks/useTenant";
-import type { Conversacion, Recruiter, Vacante, Empresa, Nave } from "@/types";
 
 // ─── COMPONENTE: TARJETA KANBAN ────────────────────────────────
-function KanbanCard({ cand, onClick, onStatusChange }: { cand: Candidato, onClick: () => void, onStatusChange: (t: string, s: string) => void }) {
+function KanbanCard({ cand, onClick, onStatusChange }: Readonly<{ cand: Candidato; onClick: () => void; onStatusChange: (t: string, s: string) => void }>) {
   const hasCV = cand.tiene_cv || !!cand.cv_manual || !!cand.link_cv;
   const hasINE = !!cand.datos_ine;
-  const needsReview = cand.alerta_identidad_estado === 'PENDIENTE' || cand.estado === 'DOCUMENTOS_NO_COINCIDEN' || (cand.resumen_ia && cand.resumen_ia.toLowerCase().includes('revisión'));
+  const needsReview = cand.alerta_identidad_estado === 'PENDIENTE' || cand.estado === 'DOCUMENTOS_NO_COINCIDEN' || (cand.resumen_ia?.toLowerCase().includes('revisión') ?? false);
 
   return (
     <div
-      onClick={onClick}
-      className={`bg-white p-3 rounded-xl border transition-all cursor-pointer group flex flex-col relative ${
+      className={`bg-white p-3 rounded-xl border transition-all group flex flex-col relative ${
         needsReview ? 'border-amber-300 shadow-amber-100 ring-2 ring-amber-400/30' : 'border-slate-200 shadow-sm hover:shadow-md hover:border-indigo-300'
       }`}
     >
-      <div className="flex justify-between items-start mb-1.5 gap-1">
-        <div className="font-bold text-slate-800 text-sm leading-tight group-hover:text-indigo-600 transition-colors line-clamp-2">
-          {getNombre(cand)}
+      <button
+        type="button"
+        onClick={onClick}
+        className="w-full text-left cursor-pointer focus:outline-none"
+      >
+        <div className="flex justify-between items-start mb-1.5 gap-1">
+          <div className="font-bold text-slate-800 text-sm leading-tight group-hover:text-indigo-600 transition-colors line-clamp-2">
+            {getNombre(cand)}
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            {needsReview && (
+              <span className="bg-amber-500 text-white font-extrabold text-[9px] px-1.5 py-0.5 rounded shadow-2xs animate-pulse flex items-center gap-0.5">
+                🚩 REVISAR
+              </span>
+            )}
+            {cand.escalado && (
+              <div className="bg-rose-100 text-rose-600 p-1 rounded-full animate-pulse" title="¡Requiere atención humana!">
+                <AlertTriangle size={12} />
+              </div>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          {needsReview && (
-            <span className="bg-amber-500 text-white font-extrabold text-[9px] px-1.5 py-0.5 rounded shadow-2xs animate-pulse flex items-center gap-0.5">
-              🚩 REVISAR
+
+        <div className="text-[10px] text-slate-500 font-mono mb-2">{cand.telefono}</div>
+
+        <div className="flex flex-wrap gap-1 mb-2">
+          {cand.vacante_interes && (
+            <span className="text-[9px] font-bold bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-100 uppercase tracking-wider">
+              {cand.vacante_interes}
             </span>
           )}
-          {cand.escalado && (
-            <div className="bg-rose-100 text-rose-600 p-1 rounded-full animate-pulse" title="¡Requiere atención humana!">
-              <AlertTriangle size={12} />
-            </div>
+          {cand.nave_interes && (
+            <span className="text-[9px] font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
+              {formatNaveName(cand.nave_interes)}
+            </span>
           )}
         </div>
-      </div>
 
-      <div className="text-[10px] text-slate-500 font-mono mb-2">{cand.telefono}</div>
-
-      <div className="flex flex-wrap gap-1 mb-2">
-        {cand.vacante_interes && (
-          <span className="text-[9px] font-bold bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-100 uppercase tracking-wider">
-            {cand.vacante_interes}
+        <div className="flex flex-wrap gap-1.5 items-center mb-2">
+          <EstadoBadge estado={cand.estado} />
+          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 ${hasCV ? "bg-cyan-50 text-cyan-700 border border-cyan-100" : "bg-slate-50 text-slate-400 border border-slate-100"}`}>
+            📄 CV
           </span>
-        )}
-        {cand.nave_interes && (
-          <span className="text-[9px] font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
-            {formatNaveName(cand.nave_interes)}
+          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 ${hasINE ? "bg-violet-50 text-violet-700 border border-violet-100" : "bg-slate-50 text-slate-400 border border-slate-100"}`}>
+            🪪 INE
           </span>
-        )}
-      </div>
-
-      <div className="flex flex-wrap gap-1.5 items-center mb-2">
-        <EstadoBadge estado={cand.estado} />
-        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 ${hasCV ? "bg-cyan-50 text-cyan-700 border border-cyan-100" : "bg-slate-50 text-slate-400 border border-slate-100"}`}>
-          📄 CV
-        </span>
-        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 ${hasINE ? "bg-violet-50 text-violet-700 border border-violet-100" : "bg-slate-50 text-slate-400 border border-slate-100"}`}>
-          🪪 INE
-        </span>
-      </div>
-
-      {cand.fecha_entrevista && (
-        <div className="text-[10px] text-amber-600 font-bold">
-          📅 {new Date(cand.fecha_entrevista).toLocaleString("es-MX", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
         </div>
-      )}
-      <div className="mt-2 pt-2 border-t border-slate-50 flex gap-1" onClick={e => e.stopPropagation()}>
+
+        {cand.fecha_entrevista && (
+          <div className="text-[10px] text-amber-600 font-bold">
+            📅 {new Date(cand.fecha_entrevista).toLocaleString("es-MX", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+          </div>
+        )}
+      </button>
+
+      <div className="mt-2 pt-2 border-t border-slate-50 flex gap-1">
         <select
           id={`kanban-status-${cand.telefono}`}
           name="kanban_status"
           className="text-[9px] font-bold px-1.5 py-0.5 rounded-full cursor-pointer appearance-none bg-slate-50 text-slate-600 border border-slate-200 hover:border-slate-300 transition-colors flex-1"
           value={cand.estado}
+          onClick={(e) => e.stopPropagation()}
           onChange={(e) => onStatusChange(cand.telefono, e.target.value)}
         >
           <option value={cand.estado}>{getEstado(cand.estado).emoji} {getEstado(cand.estado).labelCorto}</option>
@@ -95,13 +101,65 @@ function KanbanCard({ cand, onClick, onStatusChange }: { cand: Candidato, onClic
 }
 
 // ─── BADGE ESTADO ──────────────────────────────────────────────
-function EstadoBadge({ estado }: { estado: string }) {
+function EstadoBadge({ estado }: Readonly<{ estado: string }>) {
   const def = getEstado(estado);
   return (
     <span className={`inline-flex items-center gap-1.5 font-bold rounded-full px-3 py-1 text-xs ${def.bg} ${def.color}`}>
       <span>{def.emoji}</span>
       <span>{def.label}</span>
     </span>
+  );
+}
+
+function buildExpedientesQueries(
+  storedEmpresaId: string | null,
+  storedNaveId: string | null,
+  storedGrupoId: string | null
+) {
+  const common = new URLSearchParams();
+  if (storedEmpresaId) common.set("empresa_id", storedEmpresaId);
+  if (storedGrupoId) common.set("grupo_id", storedGrupoId);
+  else if (storedNaveId) common.set("nave_id", storedNaveId);
+
+  const queryCand = common.toString() ? `&${common.toString()}` : "";
+  const queryParam = common.toString() ? `?${common.toString()}` : "";
+
+  return { queryCand, queryMensajes: queryParam, queryVac: queryParam };
+}
+
+function extractDbNaves(empData: { empresas?: Empresa[] } | null, storedEmpresaId: string | null) {
+  const empList = empData?.empresas || [];
+  const scopedEmpresas = storedEmpresaId
+    ? empList.filter((e: Empresa) => e.id === storedEmpresaId)
+    : empList;
+  const naves: { id: string; nombre: string }[] = [];
+  scopedEmpresas.forEach((e: Empresa) => {
+    (e.naves || []).forEach((n: Nave) => {
+      if (n.nombre) naves.push({ id: n.id, nombre: n.nombre });
+    });
+  });
+  return naves;
+}
+
+function matchesVacante(candVacante: string, vacanteFilter: string, normVacante: string): boolean {
+  if (vacanteFilter === "TODAS") return true;
+  const isVacanteSinSeleccionar = !candVacante || candVacante === "general" || candVacante === "ninguna" || candVacante === "pendiente";
+  if (vacanteFilter === "SIN_SELECCIONAR") return isVacanteSinSeleccionar;
+  return !isVacanteSinSeleccionar && (
+    candVacante === normVacante ||
+    candVacante.includes(normVacante) ||
+    normVacante.includes(candVacante)
+  );
+}
+
+function matchesNave(candNave: string, naveFilter: string, normNave: string): boolean {
+  if (naveFilter === "TODAS") return true;
+  const isNaveSinSeleccionar = !candNave || candNave === "pendiente" || candNave === "sin sucursal";
+  if (naveFilter === "SIN_SELECCIONAR") return isNaveSinSeleccionar;
+  return !isNaveSinSeleccionar && (
+    candNave === normNave ||
+    candNave.includes(normNave) ||
+    normNave.includes(candNave)
   );
 }
 
@@ -141,20 +199,11 @@ function ExpedientesPageInner() {
       const storedNaveId = localStorage.getItem("tci_nave_id");
       const storedGrupoId = localStorage.getItem("tci_grupo_id");
 
-      let queryCand = "";
-      if (storedEmpresaId) queryCand += `&empresa_id=${storedEmpresaId}`;
-      if (storedGrupoId) queryCand += `&grupo_id=${storedGrupoId}`;
-      else if (storedNaveId) queryCand += `&nave_id=${storedNaveId}`;
-
-      let queryMensajes = "";
-      if (storedEmpresaId) queryMensajes += `?empresa_id=${storedEmpresaId}`;
-      if (storedGrupoId) queryMensajes += (queryMensajes ? `&` : `?`) + `grupo_id=${storedGrupoId}`;
-      else if (storedNaveId) queryMensajes += (queryMensajes ? `&` : `?`) + `nave_id=${storedNaveId}`;
-
-      let queryVac = "";
-      if (storedEmpresaId) queryVac += `?empresa_id=${storedEmpresaId}`;
-      if (storedGrupoId) queryVac += (queryVac ? `&` : `?`) + `grupo_id=${storedGrupoId}`;
-      else if (storedNaveId) queryVac += (queryVac ? `&` : `?`) + `nave_id=${storedNaveId}`;
+      const { queryCand, queryMensajes, queryVac } = buildExpedientesQueries(
+        storedEmpresaId,
+        storedNaveId,
+        storedGrupoId
+      );
 
       const [candRes, msgsRes, empRes, vacRes] = await Promise.all([
         fetch(`/api/db/candidatos?limit=2000${queryCand}`),
@@ -168,11 +217,6 @@ function ExpedientesPageInner() {
       setCandidatos(newCandidatos);
       setMensajes(Array.isArray(msgsData) ? msgsData : []);
 
-      // Si hay un expediente abierto y llegó información nueva para ese
-      // candidato (p.ej. desde un webhook de WhatsApp), refrescamos el modal
-      // con los datos frescos para que muestre el aviso de actualización.
-      // No tocamos selectedCandidate si no hay cambios reales, para no
-      // disparar el aviso sin motivo en cada poll silencioso.
       const openCand = selectedCandidateRef.current;
       if (openCand) {
         const fresh = newCandidatos.find((c) => c.telefono === openCand.telefono);
@@ -183,17 +227,7 @@ function ExpedientesPageInner() {
 
       if (empRes.ok) {
         const empData = await empRes.json();
-        const empList = empData.empresas || [];
-        const scopedEmpresas = storedEmpresaId
-          ? empList.filter((e: Empresa) => e.id === storedEmpresaId)
-          : empList;
-        const naves: { id: string; nombre: string }[] = [];
-        scopedEmpresas.forEach((e: Empresa) => {
-          (e.naves || []).forEach((n: Nave) => {
-            if (n.nombre) naves.push({ id: n.id, nombre: n.nombre });
-          });
-        });
-        setDbNaves(naves);
+        setDbNaves(extractDbNaves(empData, storedEmpresaId));
       }
 
       if (vacRes.ok) {
@@ -377,41 +411,17 @@ function ExpedientesPageInner() {
         const matchStatus = statusFilter === "TODOS" || candStatus === normStatus;
 
         const candVacante = normalizeStr(c.vacante_interes || "");
-        const isVacanteSinSeleccionar = !candVacante || candVacante === "general" || candVacante === "ninguna" || candVacante === "pendiente";
-
-        let matchVacante = false;
-        if (vacanteFilter === "TODAS") {
-          matchVacante = true;
-        } else if (vacanteFilter === "SIN_SELECCIONAR") {
-          matchVacante = isVacanteSinSeleccionar;
-        } else {
-          matchVacante = !isVacanteSinSeleccionar && (
-            candVacante === normVacante ||
-            candVacante.includes(normVacante) ||
-            normVacante.includes(candVacante)
-          );
-        }
+        const matchVacante = matchesVacante(candVacante, vacanteFilter, normVacante);
 
         const candNave = normalizeStr(c.nave_interes || "");
-        const isNaveSinSeleccionar = !candNave || candNave === "pendiente" || candNave === "sin sucursal";
+        const matchNave = matchesNave(candNave, naveFilter, normNave);
 
-        let matchNave = false;
-        if (naveFilter === "TODAS") {
-          matchNave = true;
-        } else if (naveFilter === "SIN_SELECCIONAR") {
-          matchNave = isNaveSinSeleccionar;
-        } else {
-          matchNave = !isNaveSinSeleccionar && (
-            candNave === normNave ||
-            candNave.includes(normNave) ||
-            normNave.includes(candNave)
-          );
-        }
+        const candNaveId = c.nave_id || "";
+        const isNaveSinSeleccionar = !candNave || candNave === "pendiente" || candNave === "sin sucursal";
+        const isVacanteSinSeleccionar = !candVacante || candVacante === "general" || candVacante === "ninguna" || candVacante === "pendiente";
 
         // Control de permisos por Grupo/Reclutador
         if (allowedNaveIds && allowedNaveIds.size > 0 && userRole !== "ADMIN" && userRole !== "ROOT") {
-          // Candidato ya declara nave_id; el cast que había aquí no hacía falta.
-    const candNaveId = c.nave_id || "";
           const isUnassigned = !candNaveId && isNaveSinSeleccionar && isVacanteSinSeleccionar;
           const isMyNaveId = candNaveId && allowedNaveIds.has(candNaveId);
           const isMyNaveName =
@@ -451,7 +461,7 @@ function ExpedientesPageInner() {
 
   const todayInterviews = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
-    return candidatos.filter(c => c.fecha_entrevista && c.fecha_entrevista.startsWith(today));
+    return candidatos.filter(c => c.fecha_entrevista?.startsWith(today));
   }, [candidatos]);
 
   return (
@@ -561,7 +571,7 @@ function ExpedientesPageInner() {
                         <tr><td colSpan={5} className="p-10 text-center text-slate-400">No hay candidatos con esos filtros.</td></tr>
                       ) : (
                         filteredTable.map((cand, idx) => {
-                          const needsReview = cand.alerta_identidad_estado === 'PENDIENTE' || cand.estado === 'DOCUMENTOS_NO_COINCIDEN' || (cand.resumen_ia && cand.resumen_ia.toLowerCase().includes('revisión'));
+                          const needsReview = cand.alerta_identidad_estado === 'PENDIENTE' || cand.estado === 'DOCUMENTOS_NO_COINCIDEN' || (cand.resumen_ia?.toLowerCase().includes('revisión') ?? false);
                           return (
                             <tr key={cand.telefono + idx} onClick={() => setSelectedCandidate(cand)} className={`border-b border-slate-50 hover:bg-indigo-50/50 cursor-pointer transition-colors group ${needsReview ? 'bg-amber-50/40' : ''}`}>
                               <td className="p-4">
@@ -586,8 +596,8 @@ function ExpedientesPageInner() {
                             </td>
                             <td className="p-4">
                               <div className="flex gap-1.5 items-center">
-                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 ${(cand.tiene_cv || !!cand.cv_manual || !!cand.link_cv) ? "bg-cyan-50 text-cyan-700" : "bg-slate-50 text-slate-400"}`}>📄 CV</span>
-                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 ${!!cand.datos_ine ? "bg-violet-50 text-violet-700" : "bg-slate-50 text-slate-400"}`}>🪪 INE</span>
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 ${(cand.tiene_cv || cand.cv_manual || cand.link_cv) ? "bg-cyan-50 text-cyan-700" : "bg-slate-50 text-slate-400"}`}>📄 CV</span>
+                                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1 ${cand.datos_ine ? "bg-violet-50 text-violet-700" : "bg-slate-50 text-slate-400"}`}>🪪 INE</span>
                               </div>
                             </td>
                             <td className="p-4">

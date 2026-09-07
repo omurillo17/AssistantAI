@@ -15,7 +15,7 @@ interface DeleteUserModalProps {
 // Wrapper: al cerrarse desmonta el contenido, y con el desmontaje se reinicia
 // el formulario. Reiniciarlo desde un useEffect provocaba un render en cascada
 // (react-hooks/set-state-in-effect).
-export default function DeleteUserModal(props: DeleteUserModalProps) {
+export default function DeleteUserModal(props: Readonly<DeleteUserModalProps>) {
   if (!props.isOpen || props.userId === null) return null;
   return <DeleteUserModalContent {...props} />;
 }
@@ -27,7 +27,7 @@ function DeleteUserModalContent({
   username,
   usuarios,
   showToast,
-}: DeleteUserModalProps) {
+}: Readonly<DeleteUserModalProps>) {
   const backdropHandlers = useBackdropClose(onClose);
   const [deleteTransferTo, setDeleteTransferTo] = useState("");
   const [deleting, setDeleting] = useState(false);
@@ -61,7 +61,9 @@ function DeleteUserModalContent({
       className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1500]"
       {...backdropHandlers}
     >
-      <div className="bg-white w-[90%] max-w-md rounded-2xl p-7 shadow-2xl relative" onClick={e => e.stopPropagation()}>
+      <div
+        className="bg-white w-[90%] max-w-md rounded-2xl p-7 shadow-2xl relative"
+      >
         <h2 className="text-xl font-bold text-slate-800 mb-2">Eliminar Usuario</h2>
         <p className="text-slate-600 text-sm mb-5">
           Estás a punto de eliminar el acceso para <strong>{username}</strong>. 

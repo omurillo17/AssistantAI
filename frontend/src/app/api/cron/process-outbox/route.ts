@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { NextResponse } from 'next/server';
 
 import { pool } from '@/lib/db';
@@ -69,7 +70,7 @@ export async function GET(request: Request) {
 
     for (const [i, msg] of mensajes.entries()) {
       // Pausa ANTES de cada envío salvo el primero, con algo de aleatoriedad
-      if (i > 0) await dormir(PAUSA_MS + Math.random() * 3000);
+      if (i > 0) await dormir(PAUSA_MS + crypto.randomInt(0, 3000));
 
       const resEnvio = await enviarMensajeDirecto(msg.telefono, msg.texto);
 

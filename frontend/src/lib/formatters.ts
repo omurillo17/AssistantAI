@@ -16,6 +16,9 @@ const PLACEHOLDERS = new Set([
   "usuario",
 ]);
 
+const LEADING_NAME_SYMBOLS = new Set('{}[])()<>"\'`~*_.,;:!¡¿?@#/\\|-');
+const TRAILING_NAME_SYMBOLS = new Set('{}[])()<>"\'`~*_,;:!¡¿?@#/\\|-');
+
 /**
  * Deja el pushname de WhatsApp en algo presentable, o cadena vacía si no queda
  * nada que parezca el nombre de una persona.
@@ -43,11 +46,16 @@ export function cleanName(str?: string | null): string {
     .replace(/[\uFE0F\uFE0E\u200B-\u200D\u200E\u200F\uFEFF]/g, "");
 
   // Puntuación envolvente y espacios repetidos que deja la limpieza anterior.
-  cleaned = cleaned
-    .replace(/^[\s{}[\]()<>"'`~*_.,;:!¡¿?@#/\\|-]+/, "")
-    .replace(/[\s{}[\]()<>"'`~*_,;:!¡¿?@#/\\|-]+$/, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  cleaned = cleaned.trim();
+  let start = 0;
+  while (start < cleaned.length && LEADING_NAME_SYMBOLS.has(cleaned[start])) {
+    start++;
+  }
+  let end = cleaned.length;
+  while (end > start && TRAILING_NAME_SYMBOLS.has(cleaned[end - 1])) {
+    end--;
+  }
+  cleaned = cleaned.slice(start, end).replace(/\s+/g, " ").trim();
 
   if (!cleaned) return "";
   if (PLACEHOLDERS.has(cleaned.toLowerCase())) return "";
@@ -164,7 +172,7 @@ export function proxyMediaUrl(url?: string | null): string {
  */
 export function detectMediaUrl(content?: string | null): string | null {
   if (!content) return null;
-  const match = content.match(/https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp|mp4|ogg|opus|mp3|m4a|pdf|doc|docx)/i);
+  const match = /https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp|mp4|ogg|opus|mp3|m4a|pdf|doc|docx)/i.exec(content);
   return match ? match[0] : null;
 }
 

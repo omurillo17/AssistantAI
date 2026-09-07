@@ -9,6 +9,19 @@ import DeleteUserModal from "@/components/usuarios/DeleteUserModal";
 import { useLocalStorageValue } from "@/hooks/useLocalStorageValue";
 import type { Usuario, Nave, Grupo, Empresa } from "@/types";
 
+function getRolBadgeClass(rol: string): string {
+  switch (rol) {
+    case "ADMIN":
+      return "bg-indigo-100 text-indigo-700";
+    case "ROOT":
+      return "bg-amber-100 text-amber-700";
+    case "ENCARGADO":
+      return "bg-sky-100 text-sky-700";
+    default:
+      return "bg-slate-100 text-slate-700";
+  }
+}
+
 export default function UsuariosPage() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [naves, setNaves] = useState<Nave[]>([]);
@@ -170,12 +183,7 @@ export default function UsuariosPage() {
                   )}
                 </td>
                 <td className="px-6 py-4">
-                  <span className={`px-2.5 py-1 text-xs font-bold rounded-full ${
-                    u.rol === 'ADMIN' ? 'bg-indigo-100 text-indigo-700' :
-                    u.rol === 'ROOT' ? 'bg-amber-100 text-amber-700' :
-                    u.rol === 'ENCARGADO' ? 'bg-sky-100 text-sky-700' :
-                    'bg-slate-100 text-slate-700'
-                  }`}>
+                  <span className={`px-2.5 py-1 text-xs font-bold rounded-full ${getRolBadgeClass(u.rol)}`}>
                     {u.rol}
                   </span>
                 </td>

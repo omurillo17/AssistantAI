@@ -319,10 +319,13 @@ async def _prompt_context_api(empresa_id: str | None) -> dict | None:
                         _prompt_ctx_cache[cache_key] = (now, ctx)
                         # Actualizar caché en disco como respaldo ante caídas de la BD
                         try:
-                            ctx_path = os.path.join(ENV.VIRGO_FILES_DIR, "data", "prompt_context.json")
-                            os.makedirs(os.path.dirname(ctx_path), exist_ok=True)
-                            with open(ctx_path, "w", encoding="utf-8") as f:
-                                json.dump(ctx, f, ensure_ascii=False, indent=2)
+                            def _guardar_disco_sync(data=ctx):
+                                ctx_path = os.path.join(ENV.VIRGO_FILES_DIR, "data", "prompt_context.json")
+                                os.makedirs(os.path.dirname(ctx_path), exist_ok=True)
+                                with open(ctx_path, "w", encoding="utf-8") as f:
+                                    json.dump(data, f, ensure_ascii=False, indent=2)
+
+                            await asyncio.to_thread(_guardar_disco_sync)
                         except Exception:
                             logger.debug("no se pudo guardar caché local de prompt_context.json")
                         return ctx
@@ -402,11 +405,11 @@ def separar_json(
         if m:
             edad_calculada = f"{datetime.now().year - int(m.group(0))} años"
 
-    dbData = candidato or {}
+    db_data = candidato or {}
     msg_usuario = datos.get("mensaje_usuario") or ""
 
     if not msg_usuario or msg_usuario == "null":
-        if tipo == "SOLICITUD" and dbData.get("estado") != "CV_RECIBIDO":
+        if tipo == "SOLICITUD" and db_data.get("estado") != "CV_RECIBIDO":
             msg_usuario = (
                 "El candidato acaba de enviar su solicitud de empleo. Agradécele e indícale "
                 "que si tiene parte trasera la envíe, o si ya mandó ambas caras responda 'Listo'."
@@ -419,26 +422,25 @@ def separar_json(
         elif tipo == "AMBOS_DOCS":
             msg_usuario = "[SISTEMA: AMBOS DOCUMENTOS COMPLETOS. El candidato entregó INE y RFC simultáneamente. Revisa INMEDIATAMENTE tu calendario y ofrécele fechas de entrevista.]"
         elif tipo == "INE":
-            if dbData.get("datos_rfc") or dbData.get("curp_rfc"):
+            if db_data.get("datos_rfc") or db_data.get("curp_rfc"):
                 msg_usuario = "[SISTEMA: AMBOS DOCUMENTOS COMPLETOS. El candidato entregó INE y RFC. Revisa INMEDIATAMENTE tu calendario y ofrécele fechas de entrevista.]"
             else:
                 msg_usuario = "[SISTEMA: El candidato entregó su INE, pero FALTA SU CONSTANCIA. Agradécele por el INE y pídele obligatoriamente su Constancia de Situación Fiscal (RFC). TIENES ESTRICTAMENTE PROHIBIDO AGENDAR CITA AÚN.]"
         elif tipo in ("CONSTANCIA", "CSF", "RFC"):
-            if dbData.get("datos_ine") or dbData.get("curp_ine"):
+            if db_data.get("datos_ine") or db_data.get("curp_ine"):
                 msg_usuario = "[SISTEMA: AMBOS DOCUMENTOS COMPLETOS. El candidato entregó INE y RFC. Revisa INMEDIATAMENTE tu calendario y ofrécele fechas de entrevista.]"
             else:
                 msg_usuario = "[SISTEMA: El candidato entregó su Constancia (RFC), pero FALTA SU INE. Agradécele por la Constancia y pídele obligatoriamente la foto frontal de su INE. TIENES ESTRICTAMENTE PROHIBIDO AGENDAR CITA AÚN.]"
-        elif tipo == "CV" or (tipo == "SOLICITUD" and dbData.get("estado") == "CV_RECIBIDO"):
+        elif tipo == "CV" or (tipo == "SOLICITUD" and db_data.get("estado") == "CV_RECIBIDO"):
             if not datos.get("correo"):
-                msg_usuario = "[SISTEMA: CV Recibido. Pregunta ÚNICAMENTE: '¡Recibí tu documento y tu perfil está súper bien! 👏 Antes de continuar, ¿me podrías proporcionar tu correo electrónico, por favor? 📧']"
+                msg_usuario = "Recibí tu CV pero no pude encontrar tu correo. ¿Me lo podrías escribir?"
+            elif not datos.get("experiencia"):
+                msg_usuario = "Recibí tu CV pero no viene tu experiencia. ¿En qué has trabajado?"
+            elif not datos.get("edad"):
+                msg_usuario = "Recibí tu CV pero falta tu edad. ¿Cuántos años tienes?"
             else:
-                msg_usuario = "[SISTEMA: CV Recibido. Pregunta ÚNICAMENTE: '¡Recibí tu documento y tu perfil está súper bien! 👏 Antes de continuar, me gustaría hacerte una pregunta rápida: ¿Te encuentras laborando actualmente? 💼']"
-        else:
-            msg_usuario = "El candidato envió un documento. Confírmale de recibido de forma amable."
-    elif tipo == "ANUNCIO":
-        msg_usuario = f'[SISTEMA: El candidato te envió una foto del anuncio de la vacante: *{vacante_anuncio}*. Mensaje: "{caption_usuario}". Atiéndelo.]'
+                msg_usuario = "Excelente, tengo tu información completa. ¿A qué vacante te gustaría postularte?"
 
-    identidad_bloqueada = False
     identidad_alerta = False
     identidad_motivo = ""
     curp_eval = {"tipo": "OK"}
@@ -447,13 +449,13 @@ def separar_json(
 
     if tipo == "AMBOS_DOCS":
         curp_ine_comp = curp_ine_salida
-        curp_rfc_comp = curp_rfc_salida or dbData.get("curp_rfc")
+        curp_rfc_comp = curp_rfc_salida or db_data.get("curp_rfc")
         if curp_ine_comp and curp_rfc_comp:
             curp_eval = _evaluar_curps(curp_ine_comp, curp_rfc_comp)
-    elif tipo == "INE" and dbData.get("curp_rfc") and datos.get("curp"):
-        curp_eval = _evaluar_curps(datos.get("curp"), dbData.get("curp_rfc"))
-    elif tipo in ("CONSTANCIA", "CSF", "RFC") and dbData.get("curp_ine") and datos.get("curp"):
-        curp_eval = _evaluar_curps(datos.get("curp"), dbData.get("curp_ine"))
+    elif tipo == "INE" and db_data.get("curp_rfc") and datos.get("curp"):
+        curp_eval = _evaluar_curps(datos.get("curp"), db_data.get("curp_rfc"))
+    elif tipo in ("CONSTANCIA", "CSF", "RFC") and db_data.get("curp_ine") and datos.get("curp"):
+        curp_eval = _evaluar_curps(datos.get("curp"), db_data.get("curp_ine"))
 
     if curp_eval["tipo"] == "REVISION_HUMANA":
         identidad_alerta = True
@@ -498,7 +500,12 @@ def separar_json(
 
 async def subir_cv(telefono: str, data: bytes, mime_type: str) -> str | None:
     url = f"{ENV.FRONTEND_API_BASE}/api/upload-cv"
-    ext = ".pdf" if "pdf" in mime_type else (".png" if "png" in mime_type else ".jpg")
+    if "pdf" in mime_type:
+        ext = ".pdf"
+    elif "png" in mime_type:
+        ext = ".png"
+    else:
+        ext = ".jpg"
     files = {"data": (f"documento{ext}", data, mime_type)}
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(url, params={"telefono": telefono}, files=files, headers=auth_headers())
@@ -517,6 +524,7 @@ async def actualizar_expediente(payload: dict) -> None:
 # --- DefinirAgenda -----------------------------------------------------------
 
 _CLEAN_STR_RE = re.compile(r"[̀-ͯ]")
+_NOMBRE_GERENTE = "Gerente de Reclutamiento"
 
 
 def _clean_str(s) -> str:
@@ -552,7 +560,7 @@ def _reclutador_asignado(
 
 
 def _elegir_gerente(equipo: list[dict], calendarios_ok: set[str]) -> dict:
-    explicito = next((r for r in equipo if r.get("nombre") == "Gerente de Reclutamiento"), None)
+    explicito = next((r for r in equipo if r.get("nombre") == _NOMBRE_GERENTE), None)
     if explicito:
         return explicito
 
@@ -565,7 +573,9 @@ def _elegir_gerente(equipo: list[dict], calendarios_ok: set[str]) -> dict:
         logger.warning("_elegir_gerente: ningun reclutador del equipo tiene OAuth de calendario configurado")
         return equipo[0]
 
-    return {"nombre": "Gerente de Reclutamiento", "telefono": "", "calendar_id": "talreclutamiento01@gmail.com"}
+    tel_respaldo = ENV.DEFAULT_RECRUITER_PHONE or ENV.TEST_DEV_PHONE or "5213323379399"
+    cal_respaldo = ENV.DEFAULT_CALENDAR_ID or "talreclutamiento01@gmail.com"
+    return {"nombre": _NOMBRE_GERENTE, "telefono": tel_respaldo, "calendar_id": cal_respaldo}
 
 
 async def definir_agenda(
@@ -754,10 +764,10 @@ def _leer_prompt_archivo() -> str:
 
 
 async def cargar_prompt(webhook_payload: dict, contacto: dict, candidato: dict) -> str:
-    dbData = candidato or {}
+    db_data = candidato or {}
 
-    nave_actual = dbData.get("nave_interes") or "Pendiente"
-    estado_actual = dbData.get("estado") or "NUEVO"
+    nave_actual = db_data.get("nave_interes") or "Pendiente"
+    estado_actual = db_data.get("estado") or "NUEVO"
 
     now_mx = datetime.now(_MX_TZ)
     fecha_actual = _formatear_fecha_hora_larga(now_mx)
@@ -765,7 +775,7 @@ async def cargar_prompt(webhook_payload: dict, contacto: dict, candidato: dict) 
     manana = now_mx + timedelta(days=1)
     fecha_manana = _formatear_fecha_corta(manana)
 
-    ctx = await obtener_prompt_context(dbData.get("empresa_id"))
+    ctx = await obtener_prompt_context(db_data.get("empresa_id"))
 
     prompt_cand = (ctx.get("prompt_base") or "").strip()
     if not prompt_cand or prompt_cand.startswith("Error:"):
@@ -793,7 +803,7 @@ async def cargar_prompt(webhook_payload: dict, contacto: dict, candidato: dict) 
     if not detalle_txt:
         detalle_txt = "Informacion no disponible."
 
-    nombre_candidato = dbData.get("nombre_chat") or dbData.get("nombre_ine") or dbData.get("nombre_solicitud") or dbData.get("nombre") or ""
+    nombre_candidato = db_data.get("nombre_chat") or db_data.get("nombre_ine") or db_data.get("nombre_solicitud") or db_data.get("nombre") or ""
     nombre_candidato = re.sub(r"[{}\[\]\"'|]", "", str(nombre_candidato)).strip()
     if not nombre_candidato or nombre_candidato.upper() in ("CANDIDATO", "DESCONOCIDO", "NO REGISTRADO", "PENDIENTE", "USUARIO", "SIN REGISTRAR", "NONE", "NULL"):
         notify_name = ((webhook_payload.get("_data") or {}).get("notifyName")) or ""
@@ -806,15 +816,15 @@ async def cargar_prompt(webhook_payload: dict, contacto: dict, candidato: dict) 
         nombre_real = nombre_candidato
 
     semaforo_ine = "PENDIENTE"
-    if dbData.get("estado") == "INE_VALIDADA" or dbData.get("curp_ine") or dbData.get("datos_ine"):
+    if db_data.get("estado") == "INE_VALIDADA" or db_data.get("curp_ine") or db_data.get("datos_ine"):
         semaforo_ine = "VERIFICADO"
 
-    semaforo_privacidad = "ACEPTADA" if dbData.get("privacidad_aceptada") else "PENDIENTE"
+    semaforo_privacidad = "ACEPTADA" if db_data.get("privacidad_aceptada") else "PENDIENTE"
 
-    vacante_interes = limpiar_vacante(dbData.get("vacante_interes"))
+    vacante_interes = limpiar_vacante(db_data.get("vacante_interes"))
     if es_placeholder_vacante(vacante_interes):
         vacante_interes = ""
-        resumen_prev = dbData.get("resumen_ia") or ""
+        resumen_prev = db_data.get("resumen_ia") or ""
         vac_match = re.search(r'Vacante:\s*([^.\n|]+)', resumen_prev, re.IGNORECASE)
         if vac_match and vac_match.group(1):
             cand_vac = limpiar_vacante(vac_match.group(1)).upper()
@@ -834,10 +844,10 @@ async def cargar_prompt(webhook_payload: dict, contacto: dict, candidato: dict) 
         "STATUS_PRIVACIDAD": semaforo_privacidad,
         "STATUS_INE": semaforo_ine,
         "NOMBRE_REGISTRADO": nombre_real,
-        "LUGAR_RESIDENCIA": dbData.get("lugar_residencia") or "Pendiente",
+        "LUGAR_RESIDENCIA": db_data.get("lugar_residencia") or "Pendiente",
         "ESTADO_ACTUAL": estado_actual,
         "VACANTE_INTERES": vacante_interes or "Ninguna",
-        "RESUMEN_ANTERIOR": dbData.get("resumen_ia") or "Conversacion nueva.",
+        "RESUMEN_ANTERIOR": db_data.get("resumen_ia") or "Conversacion nueva.",
     }
     for key, value in replacements.items():
         # `re.sub` con una función de reemplazo: el valor puede traer barras
@@ -977,7 +987,7 @@ async def analizar_mensaje(webhook_payload: dict, contacto: dict, candidato: dic
     await waha_client.start_typing(session, chat_id)
 
     # 4. PROCESAR AUDIO
-    if any("audio" in ((r.get("message_type") or "")).lower() for r in temp_rows) or tipo == "audio":
+    if any("audio" in (r.get("message_type") or "").lower() for r in temp_rows) or tipo == "audio":
         audio_url = media_urls[0]
         data, mime_type = await waha_client.download_media(audio_url)
         texto_transcrito = await gemini_client.transcribir_audio(data, "audio/ogg")

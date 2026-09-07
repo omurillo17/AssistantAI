@@ -1,11 +1,47 @@
 import { NextResponse } from 'next/server';
-import { writeFile, mkdir } from 'fs/promises';
-import path from 'path';
-import fs from 'fs';
+import { writeFile, mkdir } from 'node:fs/promises';
+import path from 'node:path';
+import fs from 'node:fs';
 import { verifyInternalApiKey } from '@/lib/auth';
 import { sniffDocumentType } from '@/lib/file-validation';
 
 const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15 MB
+
+async function extractBufferFromRequest(request: Request): Promise<{ buffer: Buffer; telefonoFromForm?: string | null }> {
+  const contentType = request.headers.get('content-type') || '';
+  if (contentType.includes('multipart/form-data')) {
+    const formData = await request.formData();
+    const fileData = formData.get('data');
+    const telefonoFromForm = formData.get('telefono') as string | null;
+
+    if (!fileData) {
+      throw new Error("NO_FILE");
+    }
+
+    if (typeof fileData === 'string') {
+      if (fileData === 'undefined' || fileData === 'null' || !fileData.trim()) {
+        throw new Error("INVALID_DATA");
+      }
+      const cleanStr = fileData.replace(/^data:application\/pdf;base64,/, '');
+      return { buffer: Buffer.from(cleanStr, 'base64'), telefonoFromForm };
+    }
+    const file = fileData as File;
+    return { buffer: Buffer.from(await file.arrayBuffer()), telefonoFromForm };
+  }
+
+  const arrayBuffer = await request.arrayBuffer();
+  return { buffer: Buffer.from(arrayBuffer) };
+}
+
+function validateFileBuffer(buffer: Buffer): string | null {
+  if (buffer.length === 0 || (buffer.length <= 20 && buffer.toString().includes('undefined'))) {
+    return "El archivo enviado está vacío o corrupto";
+  }
+  if (buffer.length > MAX_FILE_SIZE) {
+    return "El archivo excede el límite máximo de 15 MB";
+  }
+  return null;
+}
 
 export async function POST(request: Request) {
   if (!verifyInternalApiKey(request)) {
@@ -17,41 +53,23 @@ export async function POST(request: Request) {
     let telefono = searchParams.get('telefono');
 
     let buffer: Buffer;
-
-    const contentType = request.headers.get('content-type') || '';
-    if (contentType.includes('multipart/form-data')) {
-      const formData = await request.formData();
-
-      const fileData = formData.get('data');
-      if (!telefono) telefono = formData.get('telefono') as string;
-
-      if (!fileData) {
+    try {
+      const extracted = await extractBufferFromRequest(request);
+      buffer = extracted.buffer;
+      if (!telefono) telefono = extracted.telefonoFromForm || null;
+    } catch (extractErr) {
+      if (extractErr instanceof Error && extractErr.message === "NO_FILE") {
         return NextResponse.json({ error: "No file provided" }, { status: 400 });
       }
-
-      if (typeof fileData === 'string') {
-        if (fileData === 'undefined' || fileData === 'null' || !fileData.trim()) {
-          return NextResponse.json({ error: "Datos de archivo inválidos" }, { status: 400 });
-        }
-        // Si viene en base64 o texto
-        const cleanStr = fileData.replace(/^data:application\/pdf;base64,/, '');
-        buffer = Buffer.from(cleanStr, 'base64');
-      } else {
-        const file = fileData as File;
-        buffer = Buffer.from(await file.arrayBuffer());
+      if (extractErr instanceof Error && extractErr.message === "INVALID_DATA") {
+        return NextResponse.json({ error: "Datos de archivo inválidos" }, { status: 400 });
       }
-    } else {
-      // If sent as raw binary body
-      const arrayBuffer = await request.arrayBuffer();
-      buffer = Buffer.from(arrayBuffer);
+      throw extractErr;
     }
 
-    if (buffer.length === 0 || (buffer.length <= 20 && buffer.toString().includes('undefined'))) {
-      return NextResponse.json({ error: "El archivo enviado está vacío o corrupto" }, { status: 400 });
-    }
-
-    if (buffer.length > MAX_FILE_SIZE) {
-      return NextResponse.json({ error: "El archivo excede el límite máximo de 15 MB" }, { status: 400 });
+    const validationError = validateFileBuffer(buffer);
+    if (validationError) {
+      return NextResponse.json({ error: validationError }, { status: 400 });
     }
 
     // La extensión se decide por el CONTENIDO real del archivo (magic bytes),
@@ -71,7 +89,7 @@ export async function POST(request: Request) {
     }
 
     const safeTelefono = telefono.replace(/[^a-zA-Z0-9]/g, "");
-    const timestamp = new Date().getTime();
+    const timestamp = Date.now();
 
     // Example: 5213323379399_17300000000.pdf
     const finalFilename = `${safeTelefono}_${timestamp}${ext}`;

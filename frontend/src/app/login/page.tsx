@@ -3,6 +3,29 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+function guardarSesionEnStorage(data: Record<string, unknown>, usuarioInput: string) {
+  const nombre = typeof data.nombre === "string" ? data.nombre : null;
+  const usuario = typeof data.usuario === "string" ? data.usuario : null;
+  const rol = typeof data.rol === "string" ? data.rol : "USER";
+
+  localStorage.setItem("tci_username", nombre || usuario || usuarioInput);
+  localStorage.setItem("tci_login", usuario || usuarioInput);
+  localStorage.setItem("tci_role", rol);
+
+  const setOrRemove = (key: string, val: unknown) => {
+    if (val) {
+      localStorage.setItem(key, typeof val === "string" ? val : JSON.stringify(val));
+    } else {
+      localStorage.removeItem(key);
+    }
+  };
+
+  setOrRemove("tci_reclutador_id", data.reclutador_id);
+  setOrRemove("tci_empresa_id", data.empresa_id);
+  setOrRemove("tci_grupo_id", data.grupo_id);
+  setOrRemove("tci_naves_asignadas", Array.isArray(data.naves_asignadas) ? data.naves_asignadas : null);
+}
+
 export default function LoginPage() {
   const [usuarioInput, setUsuarioInput] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
@@ -10,7 +33,7 @@ export default function LoginPage() {
 
   const [loading, setLoading] = useState(false);
 
-  const checkLogin = async (e: React.FormEvent) => {
+  const checkLogin = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     setLoading(true);
 
@@ -24,34 +47,7 @@ export default function LoginPage() {
       const data = await res.json();
 
       if (data.success) {
-        // En lugar de localStorage, el token ya se guardó como Cookie HttpOnly
-        // Guardamos información inofensiva para renderizado de UI
-        // Guardamos información inofensiva para renderizado de UI
-        // `tci_username` es lo que se PINTA en la interfaz, así que guarda el
-        // nombre de la persona; la credencial de login queda aparte.
-        localStorage.setItem("tci_username", data.nombre || data.usuario || usuarioInput);
-        localStorage.setItem("tci_login", data.usuario || usuarioInput);
-        localStorage.setItem("tci_role", data.rol || "USER");
-        if (data.reclutador_id) {
-          localStorage.setItem("tci_reclutador_id", data.reclutador_id);
-        } else {
-          localStorage.removeItem("tci_reclutador_id");
-        }
-        if (data.empresa_id) {
-          localStorage.setItem("tci_empresa_id", data.empresa_id);
-        } else {
-          localStorage.removeItem("tci_empresa_id");
-        }
-        if (data.grupo_id) {
-          localStorage.setItem("tci_grupo_id", data.grupo_id);
-        } else {
-          localStorage.removeItem("tci_grupo_id");
-        }
-        if (data.naves_asignadas && Array.isArray(data.naves_asignadas)) {
-          localStorage.setItem("tci_naves_asignadas", JSON.stringify(data.naves_asignadas));
-        } else {
-          localStorage.removeItem("tci_naves_asignadas");
-        }
+        guardarSesionEnStorage(data, usuarioInput);
         router.push("/");
       } else {
         alert(data.error || "Credenciales incorrectas");

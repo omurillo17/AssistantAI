@@ -37,7 +37,7 @@ function separarTelefono(fullPhone: string): { prefix: string; num: string } {
 // y se limpia al cerrar. Antes eso se hacía copiando el prop al estado desde un
 // useEffect, lo que provoca un render en cascada
 // (react-hooks/set-state-in-effect).
-export default function EditUserModal(props: EditUserModalProps) {
+export default function EditUserModal(props: Readonly<EditUserModalProps>) {
   const { user } = props;
   if (!props.isOpen || !user) return null;
   // Se pasa `user` aparte para que TypeScript conserve el estrechamiento que
@@ -58,7 +58,7 @@ function EditUserModalContent({
   grupos,
   naves,
   showToast,
-}: EditUserModalContentProps) {
+}: Readonly<EditUserModalContentProps>) {
   const creatorRole = typeof window !== 'undefined' ? localStorage.getItem("tci_role") : "USER";
   const creatorEmpresaId = typeof window !== 'undefined' ? localStorage.getItem("tci_empresa_id") : null;
 
@@ -75,7 +75,7 @@ function EditUserModalContent({
   const [editingSelectedGrupo, setEditingSelectedGrupo] = useState(user.grupo_id || "");
   const [updating, setUpdating] = useState(false);
 
-  const guardarEdicion = async (e: React.FormEvent) => {
+  const guardarEdicion = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     setUpdating(true);
 
@@ -120,7 +120,9 @@ function EditUserModalContent({
     >
       {/* Formato apaisado, igual que el alta: rejilla de 2 columnas desde
           pantallas medianas, una sola columna en móvil. */}
-      <div className="bg-white w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl p-6 md:p-8 shadow-2xl relative" onClick={e => e.stopPropagation()}>
+      <div
+        className="bg-white w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl p-6 md:p-8 shadow-2xl relative"
+      >
         <div className="flex justify-between items-center mb-6 pb-4 border-b border-black/10">
           <div>
             <h3 className="text-xl font-bold text-slate-800">Editar Usuario</h3>
@@ -254,7 +256,7 @@ function EditUserModalContent({
                       ))}
                     </optgroup>
                   ))}
-                {creatorRole !== "ENCARGADO" && grupos.filter(g => !g.empresa_id).length > 0 && (
+                {creatorRole !== "ENCARGADO" && grupos.some(g => !g.empresa_id) && (
                   <optgroup label="Sin Empresa Asignada (Legacy)">
                     {grupos.filter(g => !g.empresa_id).map(g => (
                       <option key={g.id} value={g.id}>

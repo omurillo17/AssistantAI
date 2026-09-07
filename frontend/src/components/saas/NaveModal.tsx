@@ -17,7 +17,7 @@ interface NaveModalProps {
 // prop y se limpia al cerrar. Antes eso se hacía copiando el prop al estado
 // desde un useEffect, lo que provoca un render en cascada
 // (react-hooks/set-state-in-effect).
-export default function NaveModal(props: NaveModalProps) {
+export default function NaveModal(props: Readonly<NaveModalProps>) {
   if (!props.isOpen) return null;
   return <NaveModalContent key={props.nave?.id ?? "nueva"} {...props} />;
 }
@@ -28,7 +28,7 @@ function NaveModalContent({
   nave,
   empresaId,
   showToast,
-}: NaveModalProps) {
+}: Readonly<NaveModalProps>) {
   const backdropHandlers = useBackdropClose(onClose);
   const [nombre, setNombre] = useState(nave?.nombre || "");
   const [rfc, setRfc] = useState(nave?.rfc || "");
@@ -73,12 +73,21 @@ function NaveModalContent({
     }
   };
 
+  let submitLabel = "Guardar Nave";
+  if (saving) {
+    submitLabel = "Guardando...";
+  } else if (nave?.id) {
+    submitLabel = "Actualizar";
+  }
+
   return (
     <div
       className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4 opacity-100 animate-in fade-in"
       {...backdropHandlers}
     >
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95"
+      >
         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
           <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
             <MapPin size={20} className="text-indigo-600" />
@@ -131,7 +140,7 @@ function NaveModalContent({
             Cancelar
           </button>
           <button onClick={handleSaveNave} disabled={saving} className="px-5 py-2.5 font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md shadow-indigo-600/20 flex items-center gap-2 transition-all disabled:opacity-65">
-            <Save size={18} /> {saving ? "Guardando..." : (nave?.id ? "Actualizar" : "Guardar Nave")}
+            <Save size={18} /> {submitLabel}
           </button>
         </div>
       </div>

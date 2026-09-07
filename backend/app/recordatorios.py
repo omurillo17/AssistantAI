@@ -34,7 +34,7 @@ _MX_TZ = ZoneInfo("America/Mexico_City")
 
 # --- Branch A: RecordatorioEntrevista -------------------------------------
 
-_TEL_RE = re.compile(r"Tel[:\s]*([0-9]{10,13})", re.IGNORECASE)
+_TEL_RE = re.compile(r"Tel[:\s]*(\d{10,13})", re.IGNORECASE)
 _NOMBRE_RE = re.compile(r"Nombre[:\s]*([^\n]+)", re.IGNORECASE)
 
 _DEFAULT_NOMBRE_RECLUTADOR = "Tu equipo"
@@ -163,6 +163,29 @@ def _ventana_de_manana() -> tuple[datetime, datetime]:
     return time_min, time_max
 
 
+async def _recolectar_eventos_manana(
+    reclutadores: list[dict], time_min: datetime, time_max: datetime
+) -> list[dict]:
+    eventos: list[dict] = []
+    vistos: set[str] = set()
+    for r in reclutadores:
+        try:
+            items = await list_events(r["calendar_id"], time_min, time_max, max_results=20)
+        except Exception:
+            logger.exception(
+                "job_recordatorio_entrevista: list_events falló para calendar_id=%s",
+                r["calendar_id"],
+            )
+            continue
+        for evento in items:
+            evento_id = evento.get("id")
+            if not evento_id or evento_id in vistos:
+                continue
+            vistos.add(evento_id)
+            eventos.append(evento)
+    return eventos
+
+
 async def job_recordatorio_entrevista() -> None:
     try:
         pool = get_pool()
@@ -170,24 +193,7 @@ async def job_recordatorio_entrevista() -> None:
         reclutadores = [dict(r) for r in rows]
 
         time_min, time_max = _ventana_de_manana()
-
-        eventos: list[dict] = []
-        vistos: set[str] = set()
-        for r in reclutadores:
-            try:
-                items = await list_events(r["calendar_id"], time_min, time_max, max_results=20)
-            except Exception:
-                logger.exception(
-                    "job_recordatorio_entrevista: list_events falló para calendar_id=%s",
-                    r["calendar_id"],
-                )
-                continue
-            for evento in items:
-                evento_id = evento.get("id")
-                if not evento_id or evento_id in vistos:
-                    continue
-                vistos.add(evento_id)
-                eventos.append(evento)
+        eventos = await _recolectar_eventos_manana(reclutadores, time_min, time_max)
 
         enviados = 0
         for evento in eventos:

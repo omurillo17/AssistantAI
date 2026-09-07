@@ -67,13 +67,13 @@ function GrupoArchivos({
   archivos,
   color,
   vacio,
-}: {
+}: Readonly<{
   titulo: string;
   icono: string;
   archivos: ArchivoCandidato[];
   color: "violet" | "emerald";
   vacio: string;
-}) {
+}>) {
   const estilos = {
     violet: {
       caja: "border-violet-200 bg-violet-50/70 text-violet-800",
@@ -212,19 +212,24 @@ export function IdentityAlertModal() {
 
     await Promise.all(
       aPosponer.map((a) =>
-        fetch("/api/db/notificaciones", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            // `clave` evita duplicados: si ya hay una notificación sin leer de
-            // este candidato, el endpoint no inserta otra.
-            clave: a.telefono,
-            mensaje:
-              `⚠️ Verificación de identidad pendiente — ${a.nombre_ine || a.nombre_constancia || "Candidato"} ` +
-              `(wa.me/${a.telefono})${a.vacante_interes ? ` · ${a.vacante_interes}` : ""}. ` +
-              `${a.alerta_identidad_motivo || "La CURP del INE y de la Constancia no coinciden."}`,
-          }),
-        }).catch(() => {})
+        {
+          const vacanteText = a.vacante_interes ? " · " + a.vacante_interes : "";
+          const motivoText = a.alerta_identidad_motivo || "La CURP del INE y de la Constancia no coinciden.";
+          const nombreText = a.nombre_ine || a.nombre_constancia || "Candidato";
+          return fetch("/api/db/notificaciones", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              // `clave` evita duplicados: si ya hay una notificación sin leer de
+              // este candidato, el endpoint no inserta otra.
+              clave: a.telefono,
+              mensaje:
+                `⚠️ Verificación de identidad pendiente — ${nombreText} ` +
+                `(wa.me/${a.telefono})${vacanteText}. ` +
+                motivoText,
+            }),
+          }).catch(() => {});
+        }
       )
     );
     window.dispatchEvent(new CustomEvent("refrescar-notificaciones"));

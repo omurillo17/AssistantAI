@@ -31,6 +31,11 @@ async def close_client() -> None:
         _client = None
 
 
+META_SESSION_PREFIX = "meta:"
+META_SUFFIX = "@meta"
+C_US_SUFFIX = "@c.us"
+
+
 def _headers() -> dict[str, str]:
     return {"X-Api-Key": ENV.WAHA_API_KEY}
 
@@ -38,13 +43,13 @@ def _headers() -> dict[str, str]:
 async def send_text(session: str, chat_id: str, text: str) -> None:
     """Único punto de salida de mensajes de WhatsApp vía Meta Cloud API Oficial."""
     from app import meta_client
-    pid = session.split("meta:", 1)[1] if session.startswith("meta:") else ENV.META_WA_PHONE_NUMBER_ID
-    clean_to = chat_id.replace("@c.us", "").replace("@meta", "")
+    pid = session.split(META_SESSION_PREFIX, 1)[1] if session.startswith(META_SESSION_PREFIX) else ENV.META_WA_PHONE_NUMBER_ID
+    clean_to = chat_id.replace(C_US_SUFFIX, "").replace(META_SUFFIX, "")
     await meta_client.send_text(pid, clean_to, text)
 
 
 async def start_typing(session: str, chat_id: str) -> None:
-    if session.startswith("meta:") or chat_id.endswith("@meta"):
+    if session.startswith(META_SESSION_PREFIX) or chat_id.endswith(META_SUFFIX):
         return
 
     url = f"{ENV.WAHA_BASE_URL}/api/startTyping"
@@ -88,9 +93,9 @@ async def get_chats(session: str = "default", limit: int = 10000) -> list[dict]:
 
 async def download_media(media_url: str) -> tuple[bytes, str]:
     """Descarga el binario de un adjunto de WAHA o Meta Cloud API."""
-    if media_url.startswith("meta:"):
+    if media_url.startswith(META_SESSION_PREFIX):
         from app import meta_client
-        media_id = media_url.split("meta:", 1)[1]
+        media_id = media_url.split(META_SESSION_PREFIX, 1)[1]
         return await meta_client.download_media(media_id)
 
     fixed_url = media_url.replace("localhost", "waha")

@@ -44,7 +44,7 @@ async def _fake_build_service(_calendar_id):
 
 async def test_create_event_declara_la_zona_horaria(monkeypatch):
     registro = {}
-    _fake_build_service.registro = registro
+    monkeypatch.setattr(_fake_build_service, "registro", registro, raising=False)
     monkeypatch.setattr(gcal, "_build_service", _fake_build_service)
 
     event_id = await gcal.create_event(
@@ -64,7 +64,7 @@ async def test_create_event_declara_la_zona_horaria(monkeypatch):
 async def test_update_event_tambien_declara_la_zona(monkeypatch):
     """Reagendar pasa por patch() y sufría exactamente el mismo 400."""
     registro = {}
-    _fake_build_service.registro = registro
+    monkeypatch.setattr(_fake_build_service, "registro", registro, raising=False)
     monkeypatch.setattr(gcal, "_build_service", _fake_build_service)
 
     await gcal.update_event(
@@ -82,7 +82,7 @@ async def test_update_event_tambien_declara_la_zona(monkeypatch):
 async def test_no_se_pisan_summary_ni_description_al_reagendar(monkeypatch):
     """Se usa patch y no update justamente para no perder esos campos."""
     registro = {}
-    _fake_build_service.registro = registro
+    monkeypatch.setattr(_fake_build_service, "registro", registro, raising=False)
     monkeypatch.setattr(gcal, "_build_service", _fake_build_service)
 
     await gcal.update_event("cal@gmail.com", "evt-1", "2026-08-10T09:00:00", "2026-08-10T09:30:00")

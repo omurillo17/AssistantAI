@@ -113,7 +113,7 @@ _MENSAJE_4_CANCELACIONES = (
 
 
 # Remitentes que no son un candidato escribiéndole al bot. WhatsApp entrega
-# todo por el mismo webhook, así que sin este filtro los estados/historias que
+# la totalidad de eventos por el mismo webhook, así que sin este filtro los estados/historias que
 # publican los contactos entraban al pipeline como si fueran mensajes: se
 # gastaba una llamada a Gemini por cada uno (que además reventaba con
 # "Unsupported MIME type: application/mp4" en los estados de video) y se creaba
@@ -276,7 +276,12 @@ def _fix_lid(get_info_result: dict, payload: dict | None = None) -> dict:
         clean_digits = lid_val
 
     result["number"] = clean_digits
-    result["chat_id"] = remitente if "@" in remitente else (f"{clean_digits}@c.us" if clean_digits.isdigit() else f"{clean_digits}@lid")
+    if "@" in remitente:
+        result["chat_id"] = remitente
+    elif clean_digits.isdigit():
+        result["chat_id"] = f"{clean_digits}@c.us"
+    else:
+        result["chat_id"] = f"{clean_digits}@lid"
     return result
 
 

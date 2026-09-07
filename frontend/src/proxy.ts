@@ -11,6 +11,48 @@ const adminOnlyRoutes = ["/reclutadores"];
 // Rutas exclusivas para ADMIN y ENCARGADO
 const adminAndEncargadoRoutes = ["/usuarios", "/api/db/usuarios", "/api/db/grupos"];
 
+const publicRoutePrefixes = [
+  "/_next",
+  "/login",
+  "/api/auth/login",
+  "/api/webhook",
+  "/api/upload-cv",
+  "/api/prompt-context",
+  "/api/cron",
+  "/api/db/reclutador_vacantes",
+  "/api/db/encargados-por-nave",
+  "/api/waha-status",
+  "/portal",
+  "/api/portal",
+];
+
+function isPublicRoute(pathname: string): boolean {
+  if (pathname === "/api/health" || pathname === "/favicon.ico") {
+    return true;
+  }
+  return publicRoutePrefixes.some((prefix) => pathname.startsWith(prefix));
+}
+
+function checkRoleAccess(pathname: string, userRole: string, requestUrl: string): NextResponse | null {
+  const isAdminRoute = adminOnlyRoutes.some(r => pathname.startsWith(r));
+  if (isAdminRoute && userRole !== "ADMIN" && userRole !== "ROOT") {
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
+    }
+    return NextResponse.redirect(new URL("/", requestUrl));
+  }
+
+  const isAdminEncargadoRoute = adminAndEncargadoRoutes.some(r => pathname.startsWith(r));
+  if (isAdminEncargadoRoute && userRole !== "ADMIN" && userRole !== "ENCARGADO" && userRole !== "ROOT") {
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
+    }
+    return NextResponse.redirect(new URL("/", requestUrl));
+  }
+
+  return null;
+}
+
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -29,25 +71,7 @@ export async function proxy(request: NextRequest) {
   }
 
   // Rutas públicas que no requieren autenticación
-  if (
-    pathname.startsWith("/_next") || // Archivos estáticos de Next.js
-    pathname.startsWith("/login") || // Página de Login
-    pathname.startsWith("/api/auth/login") || // Endpoint de Login
-    // Rutas internas: las llama el backend Python server-to-server, sin sesión
-    // de navegador. No llevan JWT; se protegen con x-api-key = INTERNAL_API_KEY
-    // (ver verifyInternalApiKey en src/lib/auth.ts).
-    pathname.startsWith("/api/webhook") ||
-    pathname.startsWith("/api/upload-cv") ||
-    pathname.startsWith("/api/prompt-context") ||
-    pathname.startsWith("/api/cron") || // Disparado por el scheduler de backend
-    pathname.startsWith("/api/db/reclutador_vacantes") || // La ruta valida sesión o x-api-key
-    pathname.startsWith("/api/db/encargados-por-nave") || // La ruta valida sesión o x-api-key
-    pathname.startsWith("/api/waha-status") || // Chequeo de estado de WAHA
-    pathname === "/api/health" || // Sonda del healthcheck de Docker (sin cookie)
-    pathname.startsWith("/portal") || // Portal público de candidatos
-    pathname.startsWith("/api/portal") || // API pública del portal de candidatos
-    pathname === "/favicon.ico"
-  ) {
+  if (isPublicRoute(pathname)) {
     return NextResponse.next();
   }
 
@@ -79,22 +103,9 @@ export async function proxy(request: NextRequest) {
     // Check roles
     const userRole = payload.rol as string;
 
-    // Si es una ruta protegida solo para ADMIN
-    const isAdminRoute = adminOnlyRoutes.some(r => pathname.startsWith(r));
-    if (isAdminRoute && userRole !== "ADMIN" && userRole !== "ROOT") {
-      if (pathname.startsWith("/api/")) {
-        return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
-      }
-      return NextResponse.redirect(new URL("/", request.url));
-    }
-
-    // Si es ruta para ADMIN o ENCARGADO
-    const isAdminEncargadoRoute = adminAndEncargadoRoutes.some(r => pathname.startsWith(r));
-    if (isAdminEncargadoRoute && userRole !== "ADMIN" && userRole !== "ENCARGADO" && userRole !== "ROOT") {
-      if (pathname.startsWith("/api/")) {
-        return NextResponse.json({ error: "Permisos insuficientes" }, { status: 403 });
-      }
-      return NextResponse.redirect(new URL("/", request.url));
+    const accessDenied = checkRoleAccess(pathname, userRole, request.url);
+    if (accessDenied) {
+      return accessDenied;
     }
 
     const requestHeaders = new Headers(request.headers);

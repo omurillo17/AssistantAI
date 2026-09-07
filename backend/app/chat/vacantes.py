@@ -43,17 +43,24 @@ _SUFFIX_RE = re.compile(
     re.IGNORECASE,
 )
 
+_AUX_CREDITO_Y_COBRANZA = "AUXILIAR DE CREDITO Y COBRANZA"
+_OPERADOR_ALMACEN = "OPERADOR DE ALMACEN"
+_OPERADOR_REPARTO = "OPERADOR DE REPARTO"
+_MATERIAS_PRIMAS = "MATERIAS PRIMAS"
+_TOKEN_RE = re.compile(r"[A-Z0-9]+")
+_STOPWORDS = frozenset({"DE", "Y", "LA", "EL", "EN", "PARA", "UN", "UNA"})
+
 # Catálogo base de respaldo en caso de fallo de BD
 CATALOGO_DEFAULT = [
-    "AUXILIAR DE CREDITO Y COBRANZA",
+    _AUX_CREDITO_Y_COBRANZA,
     "AUXILIAR DE MERCADOTECNIA",
     "AUXILIAR DE SISTEMAS",
-    "OPERADOR DE ALMACEN",
+    _OPERADOR_ALMACEN,
     "BECARIO DE MERCADOTECNIA",
     "OPERADOR DE MANTENIMIENTO",
     "OPERADOR DE ESTACIONAMIENTO",
     "CAJERO/A",
-    "OPERADOR DE REPARTO",
+    _OPERADOR_REPARTO,
     "OPERADOR DE VEHICULO",
     "OPERADOR DE RECIBO",
 ]
@@ -61,16 +68,16 @@ CATALOGO_DEFAULT = [
 # Sinónimos y aliases comunes hacia el catálogo estándar
 SINONIMOS_VACANTES = {
     "CHOFER": "OPERADOR DE VEHICULO",
-    "CHOFER DE REPARTO": "OPERADOR DE REPARTO",
-    "REPARTIDOR": "OPERADOR DE REPARTO",
-    "REPARTIDORA": "OPERADOR DE REPARTO",
-    "ALMACENISTA": "OPERADOR DE ALMACEN",
-    "ALMACEN": "OPERADOR DE ALMACEN",
+    "CHOFER DE REPARTO": _OPERADOR_REPARTO,
+    "REPARTIDOR": _OPERADOR_REPARTO,
+    "REPARTIDORA": _OPERADOR_REPARTO,
+    "ALMACENISTA": _OPERADOR_ALMACEN,
+    "ALMACEN": _OPERADOR_ALMACEN,
     "ESTACIONAMIENTO": "OPERADOR DE ESTACIONAMIENTO",
     "MANTENIMIENTO": "OPERADOR DE MANTENIMIENTO",
     "SISTEMAS": "AUXILIAR DE SISTEMAS",
-    "COBRANZA": "AUXILIAR DE CREDITO Y COBRANZA",
-    "CREDITO": "AUXILIAR DE CREDITO Y COBRANZA",
+    "COBRANZA": _AUX_CREDITO_Y_COBRANZA,
+    "CREDITO": _AUX_CREDITO_Y_COBRANZA,
     "MERCADOTECNIA": "AUXILIAR DE MERCADOTECNIA",
     "RECIBO": "OPERADOR DE RECIBO",
 }
@@ -102,6 +109,53 @@ def es_placeholder_vacante(valor: object, extra: frozenset[str] | set[str] | Non
     return bool(extra) and limpio in extra
 
 
+def _limpiar_texto_vacante(texto: str | None) -> str | None:
+    if not texto:
+        return None
+    norm = normalizar_texto(texto)
+    if not norm or es_placeholder_vacante(norm):
+        return None
+    cur = _PREFIX_RE.sub("", norm).strip()
+    cur = _SUFFIX_RE.sub("", cur).strip()
+    cur = normalizar_texto(cur)
+    if not cur or es_placeholder_vacante(cur):
+        return None
+    return cur
+
+
+def _buscar_por_tokens(cur: str, cur_tokens: set[str], cat_map: dict[str, str]) -> str | None:
+    # Coincidencia por tokens exactos
+    for cat_norm, cat_orig in cat_map.items():
+        cat_tokens = set(_TOKEN_RE.findall(cat_norm)) - _STOPWORDS
+        if cur_tokens == cat_tokens:
+            return cat_orig
+
+    # Inclusión de substring
+    for cat_norm, cat_orig in cat_map.items():
+        if cur in cat_norm or cat_norm in cur:
+            return cat_orig
+
+    # Tokens subset (ej. "OPERADOR ALMACEN" en "OPERADOR DE ALMACEN")
+    for cat_norm, cat_orig in cat_map.items():
+        cat_tokens = set(_TOKEN_RE.findall(cat_norm)) - _STOPWORDS
+        if cur_tokens.issubset(cat_tokens) and len(cur_tokens) >= 2:
+            return cat_orig
+        # Alias singular/plural especial (ej. CAJERO -> CAJERO/A)
+        if len(cur_tokens) == 1 and next(iter(cur_tokens)) in ("CAJERO", "CAJERA") and "CAJERO" in cat_norm:
+            return cat_orig
+
+    return None
+
+
+def _buscar_por_sinonimos_tokens(cur_tokens: set[str], sins: dict[str, str], cat_map: dict[str, str]) -> str | None:
+    for tok in cur_tokens:
+        if tok in sins:
+            sin_target = normalizar_texto(sins[tok])
+            if sin_target in cat_map:
+                return cat_map[sin_target]
+    return None
+
+
 def emparejar_vacante(
     texto: str | None,
     catalogo: list[str] | set[str] | None = None,
@@ -113,18 +167,8 @@ def emparejar_vacante(
     devuelve el nombre canónico exacto registrado. Si es basura o genérico,
     devuelve None.
     """
-    if not texto:
-        return None
-
-    norm = normalizar_texto(texto)
-    if not norm or es_placeholder_vacante(norm):
-        return None
-
-    # Limpiar prefijos y sufijos conversacionales
-    cur = _PREFIX_RE.sub("", norm).strip()
-    cur = _SUFFIX_RE.sub("", cur).strip()
-    cur = normalizar_texto(cur)
-    if not cur or es_placeholder_vacante(cur):
+    cur = _limpiar_texto_vacante(texto)
+    if not cur:
         return None
 
     cats = catalogo if catalogo is not None else CATALOGO_DEFAULT
@@ -139,42 +183,35 @@ def emparejar_vacante(
         if sin_target in cat_map:
             return cat_map[sin_target]
 
-    cur_tokens = set(re.findall(r"[A-Z0-9]+", cur)) - {"DE", "Y", "LA", "EL", "EN", "PARA", "UN", "UNA"}
+    cur_tokens = set(_TOKEN_RE.findall(cur)) - _STOPWORDS
     if not cur_tokens:
         return None
 
-    # Coincidencia por tokens exactos
-    for cat_norm, cat_orig in cat_map.items():
-        cat_tokens = set(re.findall(r"[A-Z0-9]+", cat_norm)) - {"DE", "Y", "LA", "EL", "EN", "PARA", "UN", "UNA"}
-        if cur_tokens == cat_tokens:
-            return cat_orig
+    matched = _buscar_por_tokens(cur, cur_tokens, cat_map)
+    if matched:
+        return matched
 
-    # Inclusión de substring
-    for cat_norm, cat_orig in cat_map.items():
-        if cur in cat_norm or cat_norm in cur:
-            return cat_orig
-
-    # Tokens subset (ej. "OPERADOR ALMACEN" en "OPERADOR DE ALMACEN")
-    for cat_norm, cat_orig in cat_map.items():
-        cat_tokens = set(re.findall(r"[A-Z0-9]+", cat_norm)) - {"DE", "Y", "LA", "EL", "EN", "PARA", "UN", "UNA"}
-        if cur_tokens.issubset(cat_tokens) and len(cur_tokens) >= 2:
-            return cat_orig
-        # Alias singular/plural especial (ej. CAJERO -> CAJERO/A)
-        if len(cur_tokens) == 1 and list(cur_tokens)[0] in ("CAJERO", "CAJERA") and "CAJERO" in cat_norm:
-            return cat_orig
-
-    # Cotejar sinónimos por token
-    for tok in cur_tokens:
-        if tok in sins:
-            sin_target = normalizar_texto(sins[tok])
-            if sin_target in cat_map:
-                return cat_map[sin_target]
-
-    return None
+    return _buscar_por_sinonimos_tokens(cur_tokens, sins, cat_map)
 
 
 _CATALOGO_CACHE: dict[str, tuple[float, list[str], dict[str, str]]] = {}
 _CACHE_TTL_SEGUNDOS = 60
+
+
+def _procesar_rows_catalogo(rows: list) -> tuple[list[str], dict[str, str]]:
+    nombres = [r["nombre"] for r in rows if r.get("nombre")]
+    sinonimos: dict[str, str] = dict(SINONIMOS_VACANTES)
+    for r in rows:
+        nombre = r.get("nombre")
+        palabras = r.get("palabras_clave") or ""
+        if nombre and palabras:
+            for kw in palabras.split(","):
+                kw_clean = normalizar_texto(kw)
+                if kw_clean:
+                    sinonimos[kw_clean] = nombre
+    if not nombres:
+        nombres = list(CATALOGO_DEFAULT)
+    return nombres, sinonimos
 
 
 async def obtener_catalogo_vacantes_db(empresa_id: str | None = None) -> tuple[list[str], dict[str, str]]:
@@ -198,20 +235,7 @@ async def obtener_catalogo_vacantes_db(empresa_id: str | None = None) -> tuple[l
                 "SELECT nombre, palabras_clave FROM vacantes_def WHERE activa = true"
             )
 
-        nombres = [r["nombre"] for r in rows if r.get("nombre")]
-        sinonimos: dict[str, str] = dict(SINONIMOS_VACANTES)
-        for r in rows:
-            nombre = r.get("nombre")
-            palabras = r.get("palabras_clave") or ""
-            if nombre and palabras:
-                for kw in palabras.split(","):
-                    kw_clean = normalizar_texto(kw)
-                    if kw_clean:
-                        sinonimos[kw_clean] = nombre
-
-        if not nombres:
-            nombres = list(CATALOGO_DEFAULT)
-
+        nombres, sinonimos = _procesar_rows_catalogo(rows)
         _CATALOGO_CACHE[cache_key] = (now, nombres, sinonimos)
         return nombres, sinonimos
     except Exception as e:
@@ -225,7 +249,7 @@ PLACEHOLDERS_NAVE = frozenset({
     "{NINGUNA}", "{GENERAL}", "{PENDIENTE}",
 })
 
-NAVES_DEFAULT = ["DULCERIA", "CEDIS", "MATERIAS PRIMAS", "MATRIZ", "SUCURSAL", "VITALI"]
+NAVES_DEFAULT = ["DULCERIA", "CEDIS", _MATERIAS_PRIMAS, "MATRIZ", "SUCURSAL", "VITALI"]
 
 SINONIMOS_NAVES = {
     "1": "DULCERIA",
@@ -234,8 +258,8 @@ SINONIMOS_NAVES = {
     "MANDARINA": "DULCERIA",
     "2": "CEDIS",
     "NAVE 2": "CEDIS",
-    "3": "MATERIAS PRIMAS",
-    "NAVE 3": "MATERIAS PRIMAS",
+    "3": _MATERIAS_PRIMAS,
+    "NAVE 3": _MATERIAS_PRIMAS,
 }
 
 
