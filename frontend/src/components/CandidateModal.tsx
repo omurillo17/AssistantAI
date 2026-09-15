@@ -113,9 +113,9 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
           const cv = parseDatosDocumento(prev.cv_manual);
           return {
             ...prev,
-            datos_ine: ine ? { ...ine, archivos: data.archivos } : prev.datos_ine,
-            datos_rfc: rfc ? JSON.stringify({ ...rfc, archivos: data.archivos }) : prev.datos_rfc,
-            cv_manual: cv ? { ...cv, archivos: data.archivos } : prev.cv_manual,
+            datos_ine: ine ? { ...ine, archivos: data.archivos } : { archivos: data.archivos },
+            datos_rfc: rfc ? JSON.stringify({ ...rfc, archivos: data.archivos }) : JSON.stringify({ archivos: data.archivos }),
+            cv_manual: cv ? { ...cv, archivos: data.archivos } : { archivos: data.archivos },
           };
         });
       }
@@ -543,16 +543,18 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                       </div>
                     )}
 
-                    {documentos.sinClasificar && (
+                    {documentos.total > 0 && (
                       <button
                         onClick={handleClasificarArchivos}
                         disabled={clasificando}
-                        className="col-span-1 sm:col-span-2 flex items-center justify-center gap-2 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl py-2.5 transition-colors disabled:opacity-60"
+                        className="col-span-1 sm:col-span-2 flex items-center justify-center gap-2 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl py-2.5 transition-colors disabled:opacity-60 cursor-pointer shadow-xs"
                       >
                         <Sparkles size={14} className={clasificando ? 'animate-pulse' : ''} />
                         {clasificando
-                          ? 'Identificando documentos…'
-                          : 'Este expediente llegó sin clasificar · Identificar INE y constancia con IA'}
+                          ? 'Identificando documentos con IA…'
+                          : documentos.sinClasificar
+                            ? 'Este expediente llegó sin clasificar · Identificar INE y constancia con IA'
+                            : 'Reclasificar documentos con IA (identificar archivos)'}
                       </button>
                     )}
 

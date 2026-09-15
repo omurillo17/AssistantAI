@@ -391,16 +391,18 @@ export function IdentityAlertModal() {
             </div>
           )}
 
-          {documentos.sinClasificar && (
+          {documentos.total > 0 && (
             <button
               onClick={clasificarConIA}
               disabled={clasificando}
-              className="w-full flex items-center justify-center gap-2 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl py-2.5 transition-colors disabled:opacity-60"
+              className="w-full flex items-center justify-center gap-2 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl py-2.5 transition-colors disabled:opacity-60 cursor-pointer shadow-xs"
             >
               {clasificando ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
               {clasificando
-                ? "Identificando documentos…"
-                : "Este expediente llegó sin clasificar · Identificar INE y constancia con IA"}
+                ? "Identificando documentos con IA…"
+                : documentos.sinClasificar
+                  ? "Este expediente llegó sin clasificar · Identificar INE y constancia con IA"
+                  : "Reclasificar documentos con IA (identificar archivos)"}
             </button>
           )}
 

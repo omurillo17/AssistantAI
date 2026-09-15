@@ -20,19 +20,66 @@ export interface EnvioResult {
   ok: boolean;
   messageId?: string;
   error?: string;
-  provider: 'meta' | 'none';
+  provider: 'meta' | 'waha' | 'none';
+}
+
+export function normalizarChatIdWaha(telefono: string): string {
+  let raw = telefono.trim();
+  let suffix = '@c.us';
+  if (raw.includes('@')) {
+    const parts = raw.split('@');
+    raw = parts[0];
+    suffix = `@${parts[1]}`;
+  }
+  const digits = raw.replace(/\D/g, '');
+  if (suffix === '@lid' || digits.length > 13) {
+    return `${digits}@lid`;
+  }
+  if (digits.length === 10) {
+    return `521${digits}@c.us`;
+  }
+  if (digits.startsWith('52') && digits.length === 12 && !digits.startsWith('521')) {
+    return `521${digits.slice(2)}@c.us`;
+  }
+  return `${digits}@c.us`;
 }
 
 /**
- * Envío de bajo nivel de mensaje de texto a cualquier destinatario vía Meta Cloud API.
+ * Envío de bajo nivel de mensaje de texto a cualquier destinatario (WAHA o Meta Cloud API).
  */
 export async function enviarMensajeDirecto(
   telefono: string,
   texto: string,
-  options?: { phoneNumberId?: string }
+  options?: { phoneNumberId?: string; preferWaha?: boolean }
 ): Promise<EnvioResult> {
   const textoLimpio = texto.trim();
   const cleanTo = normalizarNumeroMexico(telefono);
+  const chatId = normalizarChatIdWaha(telefono);
+
+  const provider = (process.env.WHATSAPP_PROVIDER || 'waha').toLowerCase();
+  const useWahaFirst = options?.preferWaha || provider === 'waha' || !process.env.META_WA_ACCESS_TOKEN;
+
+  if (useWahaFirst && WAHA_BASE) {
+    try {
+      const wahaRes = await fetch(`${WAHA_BASE}/api/sendText`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-Key': WAHA_API_KEY,
+        },
+        body: JSON.stringify({ session: WAHA_SESSION, chatId, text: textoLimpio }),
+      });
+
+      if (wahaRes.ok) {
+        const data = await wahaRes.json().catch(() => ({}));
+        return { ok: true, messageId: data?.id, provider: 'waha' };
+      }
+      const errText = await wahaRes.text().catch(() => '');
+      console.warn('[messagingService] WAHA sendText error:', errText);
+    } catch (wahaErr) {
+      console.warn('[messagingService] WAHA sendText fetch error:', wahaErr);
+    }
+  }
 
   if (process.env.META_WA_ACCESS_TOKEN && (options?.phoneNumberId || process.env.META_WA_PHONE_NUMBER_ID)) {
     const metaRes = await enviarMensajeMeta(cleanTo, textoLimpio, options?.phoneNumberId);
@@ -40,22 +87,47 @@ export async function enviarMensajeDirecto(
       return { ok: true, messageId: metaRes.messageId, provider: 'meta' };
     }
     console.error(`[messagingService] Meta error enviando texto a ${cleanTo}:`, metaRes.error);
-    return { ok: false, error: metaRes.error, provider: 'meta' };
+    if (useWahaFirst) {
+      return { ok: false, error: metaRes.error, provider: 'meta' };
+    }
   }
 
-  return { ok: false, error: 'Credenciales de Meta Cloud API no configuradas', provider: 'none' };
+  if (!useWahaFirst && WAHA_BASE) {
+    try {
+      const wahaRes = await fetch(`${WAHA_BASE}/api/sendText`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-Key': WAHA_API_KEY,
+        },
+        body: JSON.stringify({ session: WAHA_SESSION, chatId, text: textoLimpio }),
+      });
+
+      if (wahaRes.ok) {
+        const data = await wahaRes.json().catch(() => ({}));
+        return { ok: true, messageId: data?.id, provider: 'waha' };
+      }
+      const errText = await wahaRes.text().catch(() => '');
+      console.warn('[messagingService] WAHA fallback sendText error:', errText);
+    } catch (wahaErr) {
+      console.warn('[messagingService] WAHA fallback fetch error:', wahaErr);
+    }
+  }
+
+  return { ok: false, error: 'Credenciales no configuradas o servicio de mensajería no disponible', provider: 'none' };
 }
 
 /**
- * Envío de bajo nivel de imagen con caption a cualquier destinatario vía Meta Cloud API.
+ * Envío de bajo nivel de imagen con caption a cualquier destinatario vía WAHA o Meta Cloud API.
  */
 export async function enviarImagenDirecta(
   telefono: string,
   mediaUrl: string,
   caption?: string,
-  options?: { phoneNumberId?: string }
+  options?: { phoneNumberId?: string; preferWaha?: boolean }
 ): Promise<EnvioResult> {
   const cleanTo = normalizarNumeroMexico(telefono);
+  const chatId = normalizarChatIdWaha(telefono);
 
   let fullMediaUrl = mediaUrl;
   if (mediaUrl.startsWith('/')) {
@@ -67,16 +139,77 @@ export async function enviarImagenDirecta(
     fullMediaUrl = `${publicBase}${mediaUrl}?t=${encodeURIComponent(token)}`;
   }
 
+  const provider = (process.env.WHATSAPP_PROVIDER || 'waha').toLowerCase();
+  const useWahaFirst = options?.preferWaha || provider === 'waha' || !process.env.META_WA_ACCESS_TOKEN;
+
+  if (useWahaFirst && WAHA_BASE) {
+    try {
+      const wahaMediaUrl = mediaUrl.startsWith('/') ? `http://frontend:3001${mediaUrl}` : mediaUrl;
+      const wahaRes = await fetch(`${WAHA_BASE}/api/sendImage`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-Key': WAHA_API_KEY,
+        },
+        body: JSON.stringify({
+          session: WAHA_SESSION,
+          chatId,
+          file: { url: wahaMediaUrl },
+          caption: caption || '',
+        }),
+      });
+
+      if (wahaRes.ok) {
+        const data = await wahaRes.json().catch(() => ({}));
+        return { ok: true, messageId: data?.id, provider: 'waha' };
+      }
+      const errText = await wahaRes.text().catch(() => '');
+      console.warn('[messagingService] WAHA sendImage error:', errText);
+    } catch (wahaErr) {
+      console.warn('[messagingService] WAHA sendImage fetch error:', wahaErr);
+    }
+  }
+
   if (process.env.META_WA_ACCESS_TOKEN && (options?.phoneNumberId || process.env.META_WA_PHONE_NUMBER_ID)) {
     const metaRes = await enviarImagenMeta(cleanTo, fullMediaUrl, caption, options?.phoneNumberId);
     if (metaRes.ok) {
       return { ok: true, messageId: metaRes.messageId, provider: 'meta' };
     }
     console.error(`[messagingService] Meta sendImage error para ${cleanTo}:`, metaRes.error);
-    return { ok: false, error: metaRes.error, provider: 'meta' };
+    if (useWahaFirst) {
+      return { ok: false, error: metaRes.error, provider: 'meta' };
+    }
   }
 
-  return { ok: false, error: 'Credenciales de Meta Cloud API no configuradas para enviar imagen', provider: 'none' };
+  if (!useWahaFirst && WAHA_BASE) {
+    try {
+      const wahaMediaUrl = mediaUrl.startsWith('/') ? `http://frontend:3001${mediaUrl}` : mediaUrl;
+      const wahaRes = await fetch(`${WAHA_BASE}/api/sendImage`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-Key': WAHA_API_KEY,
+        },
+        body: JSON.stringify({
+          session: WAHA_SESSION,
+          chatId,
+          file: { url: wahaMediaUrl },
+          caption: caption || '',
+        }),
+      });
+
+      if (wahaRes.ok) {
+        const data = await wahaRes.json().catch(() => ({}));
+        return { ok: true, messageId: data?.id, provider: 'waha' };
+      }
+      const errText = await wahaRes.text().catch(() => '');
+      console.warn('[messagingService] WAHA fallback sendImage error:', errText);
+    } catch (wahaErr) {
+      console.warn('[messagingService] WAHA fallback sendImage fetch error:', wahaErr);
+    }
+  }
+
+  return { ok: false, error: 'Credenciales de mensajería no disponibles para enviar imagen', provider: 'none' };
 }
 
 /**
@@ -112,8 +245,7 @@ export async function enviarNotificacionReclutador(
  */
 export async function enviarMensajeCandidato(telefono: string, texto: string, asignadoA?: string | null) {
   const textoLimpio = texto.trim();
-  const cleanTo = normalizarNumeroMexico(telefono);
-  const chatId = `${cleanTo}@c.us`;
+  const chatId = normalizarChatIdWaha(telefono);
 
   const candRes = await pool.query(
     `SELECT id FROM candidatos WHERE telefono = $1 ORDER BY updated_at DESC LIMIT 1`,

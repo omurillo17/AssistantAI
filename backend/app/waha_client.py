@@ -41,11 +41,20 @@ def _headers() -> dict[str, str]:
 
 
 async def send_text(session: str, chat_id: str, text: str) -> None:
-    """Único punto de salida de mensajes de WhatsApp vía Meta Cloud API Oficial."""
-    from app import meta_client
-    pid = session.split(META_SESSION_PREFIX, 1)[1] if session.startswith(META_SESSION_PREFIX) else ENV.META_WA_PHONE_NUMBER_ID
-    clean_to = chat_id.replace(C_US_SUFFIX, "").replace(META_SUFFIX, "")
-    await meta_client.send_text(pid, clean_to, text)
+    """Único punto de salida de mensajes de WhatsApp, aplicando el regulador de ritmo."""
+    await throttle.esperar_turno()
+    if session.startswith(META_SESSION_PREFIX) or chat_id.endswith(META_SUFFIX):
+        from app import meta_client
+        pid = session.split(META_SESSION_PREFIX, 1)[1] if session.startswith(META_SESSION_PREFIX) else ENV.META_WA_PHONE_NUMBER_ID
+        clean_to = chat_id.replace(C_US_SUFFIX, "").replace(META_SUFFIX, "")
+        await meta_client.send_text(pid, clean_to, text)
+        return
+
+    url = f"{ENV.WAHA_BASE_URL}/api/sendText"
+    client = _get_client()
+    target_id = chat_id if ("@" in chat_id) else f"{chat_id}@c.us"
+    resp = await client.post(url, headers=_headers(), json={"session": session, "chatId": target_id, "text": text})
+    resp.raise_for_status()
 
 
 async def start_typing(session: str, chat_id: str) -> None:

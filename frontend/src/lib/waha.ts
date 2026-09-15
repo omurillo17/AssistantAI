@@ -12,4 +12,5 @@ export {
   enviarNotificacionReclutador,
   enviarMensajeCandidato,
   enviarImagenCandidato,
+  normalizarChatIdWaha,
 } from '@/lib/messagingService';

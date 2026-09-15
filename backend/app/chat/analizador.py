@@ -441,6 +441,7 @@ def separar_json(
             else:
                 msg_usuario = "Excelente, tengo tu información completa. ¿A qué vacante te gustaría postularte?"
 
+    identidad_bloqueada = False
     identidad_alerta = False
     identidad_motivo = ""
     curp_eval = {"tipo": "OK"}

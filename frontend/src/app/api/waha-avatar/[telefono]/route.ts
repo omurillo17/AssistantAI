@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { WAHA_BASE, WAHA_API_KEY, WAHA_SESSION } from "@/lib/waha";
+import { WAHA_BASE, WAHA_API_KEY, WAHA_SESSION, normalizarChatIdWaha } from "@/lib/waha";
 
 /**
  * Foto de perfil de WhatsApp de un candidato, sin almacenarla en ningún lado.
@@ -51,17 +51,8 @@ function guardarCache(clave: string, url: string | null) {
   });
 }
 
-/**
- * Los contactos sin número visible se guardan con su LID (identificador largo
- * de WhatsApp), igual que hace formatPhoneNumber() en src/lib/formatters.ts.
- */
-function aChatId(telefono: string): string {
-  if (telefono.includes("@")) return telefono;
-  return telefono.length > 13 ? `${telefono}@lid` : `${telefono}@c.us`;
-}
-
 async function obtenerUrlFoto(chatId: string): Promise<string | null> {
-  if (process.env.META_WA_ACCESS_TOKEN && process.env.META_WA_PHONE_NUMBER_ID) {
+  if (!WAHA_BASE) {
     return null;
   }
   const enCache = leerCache(chatId);
@@ -71,21 +62,26 @@ async function obtenerUrlFoto(chatId: string): Promise<string | null> {
     WAHA_SESSION
   )}&contactId=${encodeURIComponent(chatId)}`;
 
-  const res = await fetch(endpoint, {
-    headers: { "X-Api-Key": WAHA_API_KEY, Accept: "application/json" },
-    signal: AbortSignal.timeout(8000),
-  });
+  try {
+    const res = await fetch(endpoint, {
+      headers: { "X-Api-Key": WAHA_API_KEY, Accept: "application/json" },
+      signal: AbortSignal.timeout(8000),
+    });
 
-  if (!res.ok) {
-    // No se cachea el fallo: puede ser WAHA reiniciándose o sesión caída.
-    console.error(`[waha-avatar] WAHA respondió ${res.status} para ${chatId}`);
+    if (!res.ok) {
+      console.warn(`[waha-avatar] WAHA respondió ${res.status} para ${chatId}`);
+      guardarCache(chatId, null);
+      return null;
+    }
+
+    const data = (await res.json()) as { profilePictureURL?: string | null };
+    const url = data?.profilePictureURL || null;
+    guardarCache(chatId, url);
+    return url;
+  } catch (fetchErr) {
+    console.warn(`[waha-avatar] error contactando WAHA para ${chatId}:`, fetchErr);
     return null;
   }
-
-  const data = (await res.json()) as { profilePictureURL?: string | null };
-  const url = data?.profilePictureURL || null;
-  guardarCache(chatId, url);
-  return url;
 }
 
 export async function GET(
@@ -99,7 +95,8 @@ export async function GET(
       return new NextResponse("Teléfono inválido", { status: 400 });
     }
 
-    const url = await obtenerUrlFoto(aChatId(telefono));
+    const chatId = normalizarChatIdWaha(telefono);
+    const url = await obtenerUrlFoto(chatId);
     // 404 = "sin foto"; el componente cae a las iniciales.
     if (!url) return new NextResponse("Sin foto de perfil", { status: 404 });
 
@@ -122,7 +119,7 @@ export async function GET(
     const imagen = await fetch(destino, { signal: AbortSignal.timeout(8000) });
     if (!imagen.ok || !imagen.body) {
       // La firma pudo caducar antes que el cache; se fuerza a repedirla.
-      cacheUrls.delete(aChatId(telefono));
+      cacheUrls.delete(chatId);
       return new NextResponse("No se pudo obtener la foto", { status: 502 });
     }
 
