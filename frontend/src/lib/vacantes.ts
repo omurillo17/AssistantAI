@@ -31,3 +31,21 @@ export function esPlaceholderVacante(valor: unknown): boolean {
   const limpio = limpiarVacante(valor).toUpperCase();
   return !limpio || PLACEHOLDERS_VACANTE.includes(limpio);
 }
+
+/**
+ * Normaliza una vacante al nombre canónico oficial en mayúsculas sin acentos,
+ * unificando variaciones tipográficas comunes.
+ */
+export function normalizarVacante(valor: unknown): string {
+  if (!valor || typeof valor !== 'string') return '';
+  const limpio = limpiarVacante(valor);
+  if (esPlaceholderVacante(limpio)) return '';
+  const sinAcentos = limpio.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+  if (sinAcentos.includes('CAJER') || sinAcentos.includes('ESCAN')) {
+    return 'CAJERA O ESCANER';
+  }
+  if (sinAcentos.includes('OPERADOR') && sinAcentos.includes('GENERAL')) {
+    return 'OPERADOR GENERAL';
+  }
+  return sinAcentos;
+}

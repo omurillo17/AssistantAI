@@ -5,7 +5,7 @@ import { createActor } from 'xstate';
 import { verifyInternalApiKey } from '@/lib/auth';
 import { resolveEmpresaYGrupo } from '@/lib/empresaResolution';
 import { asignarReclutadorPorVacante } from '@/lib/asignacionReclutador';
-import { esPlaceholderVacante, limpiarVacante } from '@/lib/vacantes';
+import { esPlaceholderVacante, limpiarVacante, normalizarVacante } from '@/lib/vacantes';
 import type { CandidatoEvent } from "@/lib/stateMachine";
 
 /**
@@ -117,7 +117,7 @@ function extractIncomingVacante(vacante: string | undefined, resumen: unknown): 
       finalVacante = limpiarVacante(vacMatch[1]);
     }
   }
-  return finalVacante;
+  return normalizarVacante(finalVacante);
 }
 
 function parseFiltrosVeredicto(filtros: unknown): { veredicto: string | null; motivo_analisis: string | null } {

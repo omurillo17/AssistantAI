@@ -176,3 +176,139 @@ async def test_es_reclutador_detecta_por_clave_10_digitos(monkeypatch):
     # Candidato normal no coincide
     assert not await ingesta._es_reclutador("5213399999999", "123456@lid")
 
+
+async def test_fallback_error_envia_mensaje_amable_si_falla_analizador(monkeypatch):
+    mensajes_enviados = []
+    asistente_guardado = []
+
+    async def fake_send_text(session, chat_id, texto):
+        mensajes_enviados.append((chat_id, texto))
+
+    async def fake_guardar_asistente(telefono, texto):
+        asistente_guardado.append((telefono, texto))
+
+    async def fake_analizador_y_chat(body, contacto, candidato):
+        raise RuntimeError("Simulated Gemini API error")
+
+    async def fake_juntar_mensajes(telefono):
+        return {"mensaje_completo": "Hola vacante"}
+
+    async def fake_guardar_usuario(telefono, juntado):
+        pass
+
+    async def fake_obtener_candidato(tel):
+        return {"telefono": tel, "escalado": False}
+
+    async def fake_dedup(message_id):
+        return True
+
+    async def fake_false(*args):
+        return False
+
+    async def fake_async_noop(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(ingesta, "_dedup", fake_dedup)
+    monkeypatch.setattr(ingesta.waha_client, "send_text", fake_send_text)
+    monkeypatch.setattr(ingesta.agente, "_guardar_mensaje_asistente", fake_guardar_asistente)
+    monkeypatch.setattr(ingesta.agente, "_juntar_mensajes", fake_juntar_mensajes)
+    monkeypatch.setattr(ingesta.agente, "_guardar_mensaje_usuario", fake_guardar_usuario)
+    monkeypatch.setattr(ingesta, "analizador_y_chat", fake_analizador_y_chat)
+    monkeypatch.setattr(ingesta, "_obtener_candidato", fake_obtener_candidato)
+    monkeypatch.setattr(ingesta, "_es_reclutador", fake_false)
+    monkeypatch.setattr(ingesta, "_es_numero_ignorado", fake_false)
+    monkeypatch.setattr(ingesta, "_migrar_lid", fake_async_noop)
+    monkeypatch.setattr(ingesta, "_actualizar_rate_limiting", fake_async_noop)
+    monkeypatch.setattr(ingesta, "_guardar_mensaje_temporal", fake_async_noop)
+
+    class FakePool:
+        async def execute(self, *args, **kwargs):
+            return None
+
+    monkeypatch.setattr(ingesta, "get_pool", lambda: FakePool())
+
+    # Ejecutar tarea directamente mockeando debounce
+    async def fake_debounce(tel, tarea, al_primero=None):
+        await tarea()
+
+    monkeypatch.setattr(ingesta, "_procesar_con_debounce", fake_debounce)
+
+    body = {
+        "event": "message",
+        "session": "default",
+        "payload": {
+            "id": "msg_test_123",
+            "from": "5213323379399@c.us",
+            "type": "chat",
+            "body": "Hola vacante",
+            "timestamp": time.time(),
+            "fromMe": False,
+        }
+    }
+    await ingesta.procesar_webhook(body)
+
+    assert len(mensajes_enviados) == 1
+    assert "Disculpa, tuve un inconveniente momentáneo" in mensajes_enviados[0][1]
+    assert len(asistente_guardado) == 1
+    assert asistente_guardado[0][0] == "5213323379399"
+
+
+async def test_fallback_error_no_responde_si_candidato_escalado(monkeypatch):
+    mensajes_enviados = []
+
+    async def fake_send_text(session, chat_id, texto):
+        mensajes_enviados.append((chat_id, texto))
+
+    async def fake_analizador_y_chat(body, contacto, candidato):
+        raise RuntimeError("Simulated Gemini API error")
+
+    async def fake_obtener_candidato_escalado(tel):
+        return {"telefono": tel, "escalado": True}
+
+    async def fake_async_noop(*args, **kwargs):
+        return None
+
+    async def fake_dedup(message_id):
+        return True
+
+    async def fake_false(*args):
+        return False
+
+    monkeypatch.setattr(ingesta, "_dedup", fake_dedup)
+    monkeypatch.setattr(ingesta.waha_client, "send_text", fake_send_text)
+    monkeypatch.setattr(ingesta, "analizador_y_chat", fake_analizador_y_chat)
+    monkeypatch.setattr(ingesta, "_obtener_candidato", fake_obtener_candidato_escalado)
+    monkeypatch.setattr(ingesta, "_es_reclutador", fake_false)
+    monkeypatch.setattr(ingesta, "_es_numero_ignorado", fake_false)
+    monkeypatch.setattr(ingesta, "_migrar_lid", fake_async_noop)
+    monkeypatch.setattr(ingesta, "_actualizar_rate_limiting", fake_async_noop)
+    monkeypatch.setattr(ingesta, "_guardar_mensaje_temporal", fake_async_noop)
+
+    class FakePool:
+        async def execute(self, *args, **kwargs):
+            return None
+
+    monkeypatch.setattr(ingesta, "get_pool", lambda: FakePool())
+
+    async def fake_debounce(tel, tarea, al_primero=None):
+        await tarea()
+
+    monkeypatch.setattr(ingesta, "_procesar_con_debounce", fake_debounce)
+
+    body = {
+        "event": "message",
+        "session": "default",
+        "payload": {
+            "id": "msg_test_456",
+            "from": "5213323379399@c.us",
+            "type": "chat",
+            "body": "Hola vacante",
+            "timestamp": time.time(),
+            "fromMe": False,
+        }
+    }
+    await ingesta.procesar_webhook(body)
+
+    # NO debe enviar ningún mensaje al candidato si está escalado
+    assert len(mensajes_enviados) == 0
+

@@ -113,6 +113,7 @@ async def test_send_text_pasa_por_el_regulador(monkeypatch):
     monkeypatch.setattr(type(ENV), "META_WA_PHONE_NUMBER_ID", property(lambda self: "123456789"))
     monkeypatch.setattr(throttle, "esperar_turno", _fake_esperar_turno)
     monkeypatch.setattr(meta_client, "_get_client", lambda: _FakeClient())
+    monkeypatch.setattr(waha_client, "_get_client", lambda: _FakeClient())
     monkeypatch.setattr(waha_client.httpx, "AsyncClient", lambda **k: _FakeClient())
 
     await waha_client.send_text("default", "521@c.us", "hola")

@@ -13,6 +13,7 @@ valor correcto."""
 
 import logging
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -68,6 +69,11 @@ class CrearBloqueoRequest(BaseModel):
 
 @router.get("/google-calendar")
 async def google_calendar(start: datetime, end: datetime) -> list[dict]:
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=ZoneInfo("America/Mexico_City"))
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=ZoneInfo("America/Mexico_City"))
+
     pool = get_pool()
     rows = await pool.fetch(_SELECT_CALENDAR_IDS_SQL)
 
@@ -84,6 +90,116 @@ async def google_calendar(start: datetime, end: datetime) -> list[dict]:
 
     return eventos
 
+async def _resolver_destino_notificacion(pool, telefono: str | None) -> str | None:
+    if not telefono or telefono.strip() == "No registrado":
+        return None
+    digitos = "".join(filter(str.isdigit, telefono))
+    if len(digitos) < 10:
+        return None
+    if len(digitos) > 13:
+        return f"{digitos}@lid"
+    alt = (
+        "52" + digitos[3:]
+        if digitos.startswith("521") and len(digitos) == 13
+        else ("521" + digitos[2:] if digitos.startswith("52") and len(digitos) == 12 else digitos)
+    )
+    diez = digitos[-10:]
+    row = await pool.fetchrow(
+        "SELECT lid FROM lid_telefono WHERE telefono = $1 OR telefono = $2 OR telefono = $3 ORDER BY updated_at DESC LIMIT 1",
+        digitos,
+        alt,
+        diez,
+    )
+    if row and row["lid"]:
+        return f"{row['lid']}@lid"
+    return f"{digitos}@c.us"
+
+
+async def _registrar_notificacion_en_historial(pool, telefono: str, texto: str) -> None:
+    try:
+        cand_id = await pool.fetchval(
+            "SELECT id FROM candidatos WHERE telefono = $1 ORDER BY updated_at DESC LIMIT 1",
+            telefono,
+        )
+        if cand_id:
+            await pool.execute(
+                "INSERT INTO conversation_history (telefono, candidato_id, role, content, message_type, timestamp) "
+                "VALUES ($1, $2, 'assistant', $3, 'text', NOW())",
+                telefono,
+                cand_id,
+                texto,
+            )
+            await pool.execute(
+                """
+                INSERT INTO mensajes_bandeja (candidato_id, telefono, ultimo_mensaje, ultimo_mensaje_rol, mensajes_no_leidos, activo, ultimo_mensaje_at)
+                VALUES ($1, $2, $3, 'assistant', 0, TRUE, NOW())
+                ON CONFLICT (candidato_id) DO UPDATE SET
+                    ultimo_mensaje = EXCLUDED.ultimo_mensaje,
+                    ultimo_mensaje_rol = 'assistant',
+                    ultimo_mensaje_at = NOW(),
+                    updated_at = NOW()
+                """,
+                cand_id,
+                telefono,
+                texto,
+            )
+    except Exception:
+        logger.exception("Error guardando aviso de cita en conversation_history para telefono=%s", telefono)
+
+
+async def _resolver_telefono_reclutador(
+    pool, telefono_candidato: str | None, calendar_id: str | None = None, tel_fallback: str | None = None
+) -> str | None:
+    if telefono_candidato:
+        # 1. Por reclutador asignado directamente al candidato
+        tel = await pool.fetchval(
+            """
+            SELECT r.telefono 
+            FROM candidatos c
+            JOIN reclutadores r ON c.asignado_a_id = r.id
+            WHERE c.telefono = $1 AND r.activo = TRUE AND r.telefono IS NOT NULL AND r.telefono != ''
+            ORDER BY c.updated_at DESC LIMIT 1
+            """,
+            telefono_candidato,
+        )
+        if tel:
+            return tel
+
+        # 2. Por vacante de interés del candidato
+        tel = await pool.fetchval(
+            """
+            SELECT r.telefono 
+            FROM candidatos c
+            JOIN vacantes_def v ON UPPER(TRIM(c.vacante_interes)) = UPPER(TRIM(v.nombre))
+            JOIN reclutadores r ON v.reclutador_id = r.id
+            WHERE c.telefono = $1 AND r.activo = TRUE AND r.telefono IS NOT NULL AND r.telefono != ''
+            ORDER BY c.updated_at DESC LIMIT 1
+            """,
+            telefono_candidato,
+        )
+        if tel:
+            return tel
+
+    # 3. Por calendar_id del reclutador
+    if calendar_id:
+        tel = await pool.fetchval(
+            """
+            SELECT telefono 
+            FROM reclutadores 
+            WHERE LOWER(calendar_id) = LOWER($1) AND activo = TRUE AND telefono IS NOT NULL AND telefono != ''
+            LIMIT 1
+            """,
+            calendar_id,
+        )
+        if tel:
+            return tel
+
+    # 4. Fallback si se pasó un teléfono explícito y no es el número de dev/admin
+    if tel_fallback and "3323379399" not in tel_fallback:
+        return tel_fallback
+
+    return None
+
 
 @router.post("/cancelar")
 async def cancelar(payload: CancelarCitaRequest) -> dict:
@@ -97,11 +213,12 @@ async def cancelar(payload: CancelarCitaRequest) -> dict:
             )
 
     pool = get_pool()
-    await pool.execute(
-        "UPDATE candidatos SET estado = 'CITA_CANCELADA', fecha_entrevista = NULL, "
-        "ultima_interaccion = NOW() WHERE telefono = $1",
-        payload.telefono,
-    )
+    if payload.telefono and payload.telefono != "No registrado":
+        await pool.execute(
+            "UPDATE candidatos SET estado = 'CITA_CANCELADA', fecha_entrevista = NULL, "
+            "ultima_interaccion = NOW() WHERE telefono = $1",
+            payload.telefono,
+        )
 
     # El CRM le promete al reclutador que la cancelación "le enviará un
     # mensaje de WhatsApp al candidato con el motivo y tu número de
@@ -112,13 +229,20 @@ async def cancelar(payload: CancelarCitaRequest) -> dict:
     lineas = [f"Hola {nombre_candidato}, tu entrevista ha sido CANCELADA."]
     if motivo:
         lineas.append(f"Motivo: {motivo}")
-    if payload.telefono_reclutador:
-        lineas.append(f"Cualquier duda, contáctanos al {payload.telefono_reclutador}.")
-    await pool.execute(
-        "INSERT INTO cola_mensajes (telefono, texto) VALUES ($1, $2)",
-        f"{payload.telefono}@c.us",
-        "\n\n".join(lineas),
+    tel_reclutador = await _resolver_telefono_reclutador(
+        pool, payload.telefono, payload.calendar_id, payload.telefono_reclutador
     )
+    if tel_reclutador:
+        lineas.append(f"Cualquier duda, contáctanos al {tel_reclutador}.")
+    destino = await _resolver_destino_notificacion(pool, payload.telefono)
+    if destino:
+        texto_notif = "\n\n".join(lineas)
+        await pool.execute(
+            "INSERT INTO cola_mensajes (telefono, texto) VALUES ($1, $2)",
+            destino,
+            texto_notif,
+        )
+        await _registrar_notificacion_en_historial(pool, payload.telefono, texto_notif)
 
     return {"success": True, "message": "Cita cancelada correctamente", "telefono": payload.telefono}
 
@@ -150,13 +274,20 @@ async def reagendar(payload: ReagendarCitaRequest) -> dict:
     lineas = [f"Hola {nombre_candidato}, tu entrevista ha sido REAGENDADA para el {fecha} a las {hora}."]
     if motivo:
         lineas.append(f"Motivo: {motivo}")
-    if payload.telefono_reclutador:
-        lineas.append(f"Cualquier duda, contáctanos al {payload.telefono_reclutador}.")
-    await pool.execute(
-        "INSERT INTO cola_mensajes (telefono, texto) VALUES ($1, $2)",
-        f"{payload.telefono}@c.us",
-        "\n\n".join(lineas),
+    tel_reclutador = await _resolver_telefono_reclutador(
+        pool, payload.telefono, payload.calendar_id, payload.telefono_reclutador
     )
+    if tel_reclutador:
+        lineas.append(f"Cualquier duda, contáctanos al {tel_reclutador}.")
+    destino = await _resolver_destino_notificacion(pool, payload.telefono)
+    if destino:
+        texto_notif = "\n\n".join(lineas)
+        await pool.execute(
+            "INSERT INTO cola_mensajes (telefono, texto) VALUES ($1, $2)",
+            destino,
+            texto_notif,
+        )
+        await _registrar_notificacion_en_historial(pool, payload.telefono, texto_notif)
 
     return {"success": True}
 

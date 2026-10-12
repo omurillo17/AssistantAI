@@ -48,7 +48,7 @@ _OPERADOR_ALMACEN = "OPERADOR DE ALMACEN"
 _OPERADOR_REPARTO = "OPERADOR DE REPARTO"
 _MATERIAS_PRIMAS = "MATERIAS PRIMAS"
 _TOKEN_RE = re.compile(r"[A-Z0-9]+")
-_STOPWORDS = frozenset({"DE", "Y", "LA", "EL", "EN", "PARA", "UN", "UNA"})
+_STOPWORDS = frozenset({"DE", "Y", "O", "LA", "EL", "EN", "PARA", "UN", "UNA"})
 
 # Catálogo base de respaldo en caso de fallo de BD
 CATALOGO_DEFAULT = [
@@ -59,6 +59,8 @@ CATALOGO_DEFAULT = [
     "BECARIO DE MERCADOTECNIA",
     "OPERADOR DE MANTENIMIENTO",
     "OPERADOR DE ESTACIONAMIENTO",
+    "CAJERA O ESCANER",
+    "OPERADOR GENERAL",
     "CAJERO/A",
     _OPERADOR_REPARTO,
     "OPERADOR DE VEHICULO",
@@ -80,6 +82,17 @@ SINONIMOS_VACANTES = {
     "CREDITO": _AUX_CREDITO_Y_COBRANZA,
     "MERCADOTECNIA": "AUXILIAR DE MERCADOTECNIA",
     "RECIBO": "OPERADOR DE RECIBO",
+    "CAJERO": "CAJERA O ESCANER",
+    "CAJERA": "CAJERA O ESCANER",
+    "CAJEROS": "CAJERA O ESCANER",
+    "CAJERAS": "CAJERA O ESCANER",
+    "ESCANER": "CAJERA O ESCANER",
+    "ESCANISTA": "CAJERA O ESCANER",
+    "ESCANISTAS": "CAJERA O ESCANER",
+    "CAJERO/A": "CAJERA O ESCANER",
+    "CAJERA O ESCANER": "CAJERA O ESCANER",
+    "OPERADOR GENERAL": "OPERADOR GENERAL",
+    "OPERADORA GENERAL": "OPERADOR GENERAL",
 }
 
 
@@ -140,8 +153,8 @@ def _buscar_por_tokens(cur: str, cur_tokens: set[str], cat_map: dict[str, str]) 
         cat_tokens = set(_TOKEN_RE.findall(cat_norm)) - _STOPWORDS
         if cur_tokens.issubset(cat_tokens) and len(cur_tokens) >= 2:
             return cat_orig
-        # Alias singular/plural especial (ej. CAJERO -> CAJERO/A)
-        if len(cur_tokens) == 1 and next(iter(cur_tokens)) in ("CAJERO", "CAJERA") and "CAJERO" in cat_norm:
+        # Alias singular/plural especial (ej. CAJERO -> CAJERO/A o CAJERA O ESCANER)
+        if len(cur_tokens) == 1 and next(iter(cur_tokens)) in ("CAJERO", "CAJERA") and ("CAJERO" in cat_norm or "CAJERA" in cat_norm):
             return cat_orig
 
     return None
@@ -170,6 +183,15 @@ def emparejar_vacante(
     cur = _limpiar_texto_vacante(texto)
     if not cur:
         return None
+
+    if catalogo is None:
+        now = time.time()
+        for _ts, _nombres, _sins in _CATALOGO_CACHE.values():
+            if _nombres and (now - _ts) < _CACHE_TTL_SEGUNDOS:
+                catalogo = _nombres
+                if sinonimos is None:
+                    sinonimos = _sins
+                break
 
     cats = catalogo if catalogo is not None else CATALOGO_DEFAULT
     cat_map = {normalizar_texto(c): c for c in cats if c}

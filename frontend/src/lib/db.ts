@@ -12,6 +12,7 @@ export const pool =
     max: 25,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,
+    statement_timeout: 15000,
   });
 
 globalForPg.pgPool = pool;

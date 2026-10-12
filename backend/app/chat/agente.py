@@ -33,7 +33,7 @@ import httpx
 import google.generativeai as genai
 
 from app import gemini_client, waha_client
-from app.chat import memoria, parser
+from app.chat import memoria, parser, vacantes
 from app.chat.vacantes import es_placeholder_vacante, limpiar_vacante
 from app.config import ENV
 from app.db import get_pool
@@ -868,7 +868,8 @@ async def procesar_turno(webhook_body: dict, contacto: dict, candidato: dict, sy
     ejecucion = await _ejecutar_agente(system_prompt, historial, mensaje_para_ia, candidato, reclutador)
     texto_ia = ejecucion["texto"]
 
-    items = parser.procesar_respuesta_ia(texto_ia, candidato)
+    catalogo_vacs, sinonimos_vacs = await vacantes.obtener_catalogo_vacantes_db(candidato.get("empresa_id"))
+    items = parser.procesar_respuesta_ia(texto_ia, candidato, catalogo=catalogo_vacs, sinonimos=sinonimos_vacs)
     if not items:
         return
     primero = items[0]

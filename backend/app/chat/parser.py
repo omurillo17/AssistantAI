@@ -222,13 +222,21 @@ def _clean_message(text: str, detected_codes: list[dict]) -> str:
     return cleaned.strip()
 
 
-def _handle_single_action(action: str, value: Any, now_iso: str, updates: dict, actions: list[dict]) -> None:
+def _handle_single_action(
+    action: str,
+    value: Any,
+    now_iso: str,
+    updates: dict,
+    actions: list[dict],
+    catalogo: list[str] | set[str] | None = None,
+    sinonimos: dict[str, str] | None = None,
+) -> None:
     if action == "update_name":
         updates["nombre"] = value
         updates["nombre_confirmado"] = True
         actions.append({"type": "database_update", "table": "candidatos", "field": "nombre", "value": value})
     elif action == "update_vacante":
-        vac_pipe = emparejar_vacante(value)
+        vac_pipe = emparejar_vacante(value, catalogo=catalogo, sinonimos=sinonimos)
         if vac_pipe:
             updates["vacante_interes"] = vac_pipe
             updates["estado"] = "INTERESADO"
@@ -271,12 +279,16 @@ def _handle_single_action(action: str, value: Any, now_iso: str, updates: dict, 
             actions.append({"type": "database_update", "table": "candidatos", "field": "estado", "value": "OTRA_CIUDAD"})
 
 
-def _generate_database_updates(detected_codes: list[dict]) -> tuple[dict, list[dict]]:
+def _generate_database_updates(
+    detected_codes: list[dict],
+    catalogo: list[str] | set[str] | None = None,
+    sinonimos: dict[str, str] | None = None,
+) -> tuple[dict, list[dict]]:
     updates: dict = {}
     actions: list[dict] = []
     now_iso = datetime.now(timezone.utc).isoformat()
     for code in detected_codes:
-        _handle_single_action(code["action"], code["value"], now_iso, updates, actions)
+        _handle_single_action(code["action"], code["value"], now_iso, updates, actions, catalogo=catalogo, sinonimos=sinonimos)
     return updates, actions
 
 
@@ -296,7 +308,11 @@ def _extraer_json_y_texto(ai_response: Any) -> tuple[dict | None, str]:
     return None, str(ai_response)
 
 
-def _parse_special_codes(ai_response: Any) -> dict:
+def _parse_special_codes(
+    ai_response: Any,
+    catalogo: list[str] | set[str] | None = None,
+    sinonimos: dict[str, str] | None = None,
+) -> dict:
     if not ai_response:
         return {"message_to_user": "", "has_special_codes": False, "detected_codes": [], "pending_actions": []}
 
@@ -312,7 +328,7 @@ def _parse_special_codes(ai_response: Any) -> dict:
     if json_obj and json_obj.get("mensaje_al_usuario"):
         cleaned_message = json_obj["mensaje_al_usuario"]
 
-    updates, actions = _generate_database_updates(detected_codes)
+    updates, actions = _generate_database_updates(detected_codes, catalogo=catalogo, sinonimos=sinonimos)
 
     if json_obj and json_obj.get("memoria_update"):
         updates["resumen_ia"] = json_obj["memoria_update"]
@@ -338,7 +354,12 @@ def _parse_special_codes(ai_response: Any) -> dict:
     }
 
 
-def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
+def procesar_respuesta_ia(
+    raw_response: Any,
+    candidato: dict,
+    catalogo: list[str] | set[str] | None = None,
+    sinonimos: dict[str, str] | None = None,
+) -> list[dict]:
     """Procesa la respuesta del agente de IA. Soporta:
     1. Formato JSON estructurado (mensajes_al_usuario: list[str], memoria_update, etiquetas_internas).
     2. Formato JSON estándar (mensaje_al_usuario: str con [SPLIT]).
@@ -401,7 +422,7 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
                         except json.JSONDecodeError:
                             json_parsed = None
 
-    result = _parse_special_codes(json_parsed if json_parsed else raw_input)
+    result = _parse_special_codes(json_parsed if json_parsed else raw_input, catalogo=catalogo, sinonimos=sinonimos)
     mensajes_candidato: list[str] = []
 
     if json_parsed:
@@ -451,7 +472,7 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
             # Vacante
             vac = et.get("actualizar_vacante") or et.get("vacante_interes") or et.get("vacante")
             if vac:
-                vac_match = emparejar_vacante(vac)
+                vac_match = emparejar_vacante(vac, catalogo=catalogo, sinonimos=sinonimos)
                 if vac_match:
                     result["vacante_detectada"] = vac_match
                     result["database_updates"]["vacante_interes"] = vac_match
@@ -564,7 +585,7 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
     if not result.get("vacante_detectada"):
         vac_match = re.search(r'(?:ACTUALIZAR_VACANTE|"actualizar_vacante"|"vacante_interes")\s*[:|^"]\s*([^"|\n,}]+)', ai_response_str, re.IGNORECASE)
         if vac_match and vac_match.group(1):
-            val = emparejar_vacante(_strip_quotes_pipes(vac_match.group(1).strip()))
+            val = emparejar_vacante(_strip_quotes_pipes(vac_match.group(1).strip()), catalogo=catalogo, sinonimos=sinonimos)
             if val:
                 result["vacante_detectada"] = val
                 result["database_updates"]["vacante_interes"] = val
@@ -575,7 +596,7 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
         resumen_cand = result.get("resumen_generado") or ""
         vac_mem_match = re.search(r'Vacante:\s*([^.\n|]+)', resumen_cand, re.IGNORECASE)
         if vac_mem_match and vac_mem_match.group(1):
-            val_mem = emparejar_vacante(_strip_quotes_pipes(vac_mem_match.group(1).strip()))
+            val_mem = emparejar_vacante(_strip_quotes_pipes(vac_mem_match.group(1).strip()), catalogo=catalogo, sinonimos=sinonimos)
             if val_mem:
                 result["vacante_detectada"] = val_mem
                 result["database_updates"]["vacante_interes"] = val_mem
@@ -586,7 +607,7 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
         for texto_msg in (mensajes_candidato or [ai_response_str]):
             v_val = _extraer_mencion_vacante(texto_msg)
             if v_val:
-                val_phrase = emparejar_vacante(_strip_quotes_pipes(v_val.strip()))
+                val_phrase = emparejar_vacante(_strip_quotes_pipes(v_val.strip()), catalogo=catalogo, sinonimos=sinonimos)
                 if val_phrase:
                     result["vacante_detectada"] = val_phrase
                     result["database_updates"]["vacante_interes"] = val_phrase
@@ -594,7 +615,7 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
                     break
 
     if not result.get("vacante_detectada") and candidato.get("vacante_interes"):
-        cand_v = emparejar_vacante(candidato.get("vacante_interes"))
+        cand_v = emparejar_vacante(candidato.get("vacante_interes"), catalogo=catalogo, sinonimos=sinonimos)
         if cand_v:
             result["vacante_detectada"] = cand_v
 

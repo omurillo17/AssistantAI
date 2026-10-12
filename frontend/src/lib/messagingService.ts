@@ -44,6 +44,35 @@ export function normalizarChatIdWaha(telefono: string): string {
   return `${digits}@c.us`;
 }
 
+export async function resolverChatIdDestino(telefono: string): Promise<string> {
+  const base = normalizarChatIdWaha(telefono);
+  if (base.endsWith('@lid')) {
+    return base;
+  }
+  const digits = telefono.replace(/\D/g, '');
+  if (!digits || digits.length < 10) return base;
+
+  const alt = digits.startsWith('521') && digits.length === 13
+    ? '52' + digits.slice(3)
+    : digits.startsWith('52') && digits.length === 12
+    ? '521' + digits.slice(2)
+    : digits;
+  const diez = digits.slice(-10);
+
+  try {
+    const res = await pool.query(
+      `SELECT lid FROM lid_telefono WHERE telefono IN ($1, $2, $3) ORDER BY updated_at DESC LIMIT 1`,
+      [digits, alt, diez]
+    );
+    if (res.rows.length > 0 && res.rows[0].lid) {
+      return `${res.rows[0].lid}@lid`;
+    }
+  } catch (err) {
+    console.warn('[messagingService] Error consultando lid_telefono:', err);
+  }
+  return base;
+}
+
 /**
  * Envío de bajo nivel de mensaje de texto a cualquier destinatario (WAHA o Meta Cloud API).
  */
@@ -54,7 +83,7 @@ export async function enviarMensajeDirecto(
 ): Promise<EnvioResult> {
   const textoLimpio = texto.trim();
   const cleanTo = normalizarNumeroMexico(telefono);
-  const chatId = normalizarChatIdWaha(telefono);
+  const chatId = await resolverChatIdDestino(telefono);
 
   const provider = (process.env.WHATSAPP_PROVIDER || 'waha').toLowerCase();
   const useWahaFirst = options?.preferWaha || provider === 'waha' || !process.env.META_WA_ACCESS_TOKEN;
@@ -127,7 +156,7 @@ export async function enviarImagenDirecta(
   options?: { phoneNumberId?: string; preferWaha?: boolean }
 ): Promise<EnvioResult> {
   const cleanTo = normalizarNumeroMexico(telefono);
-  const chatId = normalizarChatIdWaha(telefono);
+  const chatId = await resolverChatIdDestino(telefono);
 
   let fullMediaUrl = mediaUrl;
   if (mediaUrl.startsWith('/')) {

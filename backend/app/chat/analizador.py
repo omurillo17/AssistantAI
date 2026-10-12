@@ -22,7 +22,7 @@ from app import gemini_client, waha_client
 from app.config import ENV
 from app.db import get_pool
 from app.chat.mensajes_comunes import DESCALIFICACION_CIUDAD_MSG
-from app.chat.vacantes import emparejar_vacante, es_placeholder_vacante, limpiar_vacante
+from app.chat.vacantes import emparejar_vacante, es_placeholder_vacante, limpiar_vacante, normalizar_texto
 from app.internal_api import auth_headers
 from app.utils.fechas_es import DIAS_ES, MESES_ES
 
@@ -938,6 +938,7 @@ async def analizar_mensaje(webhook_payload: dict, contacto: dict, candidato: dic
     if referral_info and referral_info.get("headline"):
         headline = referral_info["headline"]
         logger.info("Anuncio de Facebook Ads detectado para telefono=%s: %s", telefono, headline)
+        vacante_canon = emparejar_vacante(headline) or normalizar_texto(headline)
         pool = get_pool()
         await pool.execute(
             # El WHERE sólo contemplaba NULL/''/'General', así que un candidato
@@ -946,12 +947,12 @@ async def analizar_mensaje(webhook_payload: dict, contacto: dict, candidato: dic
             "UPDATE candidatos SET vacante_interes = $1 WHERE telefono = $2 "
             """AND UPPER(BTRIM(COALESCE(vacante_interes, ''), '{}[]"''| ')) """
             "IN ('', 'GENERAL', 'NINGUNA', 'PENDIENTE', 'DESCONOCIDA', 'X')",
-            headline,
+            vacante_canon,
             telefono,
         )
         mensaje_para_agente = (
-            f"[SISTEMA: El candidato ingresó a través de un anuncio de Facebook Ads para la vacante: *{headline}*. "
-            f"Salúdalo amablemente, dale la bienvenida a Talentos Creativos e Innovación, confírmale brevemente que el anuncio es para la vacante *{headline}* "
+            f"[SISTEMA: El candidato ingresó a través de un anuncio de Facebook Ads para la vacante: *{vacante_canon}*. "
+            f"Salúdalo amablemente, dale la bienvenida a Talentos Creativos e Innovación, confírmale brevemente que el anuncio es para la vacante *{vacante_canon}* "
             f"y pregúntale en qué municipio o ciudad radica actualmente para verificar su residencia presencial.]"
         )
     elif body_text.lower().startswith("¡hola! quiero más información") or body_text.lower().startswith("hola, quiero más información"):

@@ -172,13 +172,23 @@ function extractUniqueVacantes(equipo_reclutadores: PromptContext['equipo_reclut
   const todasLasVacantes: VacanteConFiltros[] = [];
   for (const rec of equipo_reclutadores) {
     for (const vac of rec.vacantes) {
-      if (!todasLasVacantes.some((v) => v.nombre === vac.nombre)) {
+      const existing = todasLasVacantes.find((v) => v.nombre === vac.nombre);
+      if (existing) {
+        const existingNaves = Array.isArray(existing.naves) ? existing.naves : [];
+        const incomingNaves = Array.isArray(vac.naves) ? vac.naves : [];
+        for (const n of incomingNaves) {
+          if (!existingNaves.includes(n)) {
+            existingNaves.push(n);
+          }
+        }
+        existing.naves = existingNaves;
+      } else {
         todasLasVacantes.push({
           nombre: vac.nombre,
           detalles: vac.detalles,
           funciones: vac.funciones,
           palabras_clave: vac.palabras_clave,
-          naves: vac.naves,
+          naves: Array.isArray(vac.naves) ? [...vac.naves] : [],
           filtros: vac.filtros || [],
         });
       }

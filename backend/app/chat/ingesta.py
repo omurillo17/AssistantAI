@@ -110,6 +110,11 @@ _MENSAJE_4_CANCELACIONES = (
     "una nueva entrevista en este momento. Agradecemos tu tiempo y te deseamos mucho éxito."
 )
 
+_MENSAJE_FALLBACK_ERROR = (
+    "Disculpa, tuve un inconveniente momentáneo de conexión al procesar tu mensaje. "
+    "¿Podrías enviármelo nuevamente en un momento, por favor? 🙏"
+)
+
 
 
 # Remitentes que no son un candidato escribiéndole al bot. WhatsApp entrega
@@ -530,6 +535,7 @@ async def procesar_webhook(body: dict) -> None:
         return
 
     async def _tarea():
+        candidato_fresco = candidato
         try:
             # Se relee el expediente AQUÍ, no el de arriba: entre aquel SELECT y
             # este punto pasaron el debounce y, si el candidato ya tenía un
@@ -543,6 +549,15 @@ async def procesar_webhook(body: dict) -> None:
             await analizador_y_chat(body, contacto, candidato_fresco)
         except Exception:
             logger.exception("procesar_webhook: fallo en analizador_y_chat para telefono=%s", number)
+            if not (candidato_fresco or {}).get("escalado"):
+                try:
+                    juntado = await agente._juntar_mensajes(number)
+                    if juntado.get("mensaje_completo"):
+                        await agente._guardar_mensaje_usuario(number, juntado)
+                    await waha_client.send_text(session, chat_id, _MENSAJE_FALLBACK_ERROR)
+                    await agente._guardar_mensaje_asistente(number, _MENSAJE_FALLBACK_ERROR)
+                except Exception:
+                    logger.exception("procesar_webhook: fallo enviando mensaje de error fallback a %s", number)
 
     async def _avisar_escribiendo():
         await waha_client.start_typing(session, chat_id)

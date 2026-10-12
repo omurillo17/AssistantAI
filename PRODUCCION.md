@@ -113,37 +113,29 @@ SELECT calendar_id, authorized_by, updated_at FROM google_calendar_credentials;
 Hoy **no hay ninguno configurado**. Toda la operación (candidatos, expedientes,
 credenciales de calendario) vive en un solo contenedor.
 
-### Respaldo manual
+### Respaldo y Restauración Automatizados
 
-```bash
-docker exec assistantai-postgres-1 pg_dump -U omurillo17 virgo_db \
-  | gzip > backup_virgo_$(date +%F).sql.gz
-```
+El proyecto cuenta con scripts automáticos en `scripts/`:
 
-### Restaurar
+1. **Ejecutar respaldo manual**:
+   ```bash
+   ./scripts/backup.sh
+   ```
+   Genera dump comprimido de PostgreSQL (`db_virgo_db_*.sql.gz`) y copia de archivos de candidatos (`uploads_*.tar.gz`) en `/home/sdvirgo/backups/assistantai/`, verifica la integridad (`gzip -t`) y rota respaldos con más de 14 días.
 
-```bash
-gunzip -c backup_virgo_2026-08-10.sql.gz \
-  | docker exec -i assistantai-postgres-1 psql -U omurillo17 -d virgo_db
-```
+2. **Automatización en producción (Crontab Linux)**:
+   Programado diariamente a las 03:00 AM en el usuario `sdvirgo`:
+   ```bash
+   0 3 * * * /home/sdvirgo/proyectos/AssistantAI/scripts/backup.sh >/dev/null 2>&1
+   ```
 
-### Automatizarlo (Windows, Programador de tareas)
+3. **Restaurar respaldo**:
+   ```bash
+   ./scripts/restore.sh /home/sdvirgo/backups/assistantai/db_virgo_db_YYYY-MM-DD_HHMMSS.sql.gz
+   ```
+   El script solicita confirmación explícita escribiendo `RESTAURAR` para evitar accidentes en producción.
 
-Crea `backup.bat`:
-
-```bat
-@echo off
-for /f "tokens=1-3 delims=/" %%a in ('date /t') do set HOY=%%c-%%b-%%a
-docker exec assistantai-postgres-1 pg_dump -U omurillo17 virgo_db > "C:\backups\virgo_%HOY%.sql"
-forfiles /p "C:\backups" /m *.sql /d -30 /c "cmd /c del @path" 2>nul
-```
-
-Programa una tarea diaria que lo ejecute. Guarda una copia **fuera** de este
-equipo (OneDrive, disco externo, otro servidor): un backup en el mismo disco no
-protege contra la falla más común, que es que muera el disco.
-
-> Prueba la restauración al menos una vez en una base de prueba. Un backup que
-> nunca se restauró no cuenta como backup.
+> Guarda periódicamente una copia **fuera** de este equipo (disco externo, nube, otro servidor) para proteger contra desastres a nivel de hardware.
 
 ---
 
@@ -261,6 +253,6 @@ npm run typecheck
   (antes el backend los descartaba en silencio)
 - ⏳ **Pendiente tuyo:** publicar la app OAuth (bloque 1)
 - ⏳ **Pendiente tuyo:** autorizar `rhumanossdvirgo@gmail.com` (bloque 2)
-- ⏳ **Pendiente tuyo:** configurar backups (bloque 3)
+- ✅ **Backups configurados:** automatizados en Linux (`scripts/backup.sh` + crontab diario a las 03:00 AM)
 - ⏳ **Pendiente tuyo:** probar en el servidor Debian 13 (GNOME) antes de
   darlo por definitivo — es la primera vez que corre fuera de desarrollo

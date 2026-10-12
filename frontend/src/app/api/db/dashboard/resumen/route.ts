@@ -63,7 +63,17 @@ export async function GET(request: Request) {
       WITH base AS (
         SELECT
           COALESCE(NULLIF(c.estado, ''), 'NUEVO') AS estado,
-          COALESCE(NULLIF(c.vacante_interes, ''), 'General') AS vacante,
+          COALESCE(
+            NULLIF(
+              CASE
+                WHEN UPPER(TRIM(c.vacante_interes)) LIKE '%CAJER%' OR UPPER(TRIM(c.vacante_interes)) LIKE '%ESCAN%' THEN 'CAJERA O ESCANER'
+                WHEN UPPER(TRIM(c.vacante_interes)) LIKE '%OPERADOR%GENERAL%' THEN 'OPERADOR GENERAL'
+                ELSE UPPER(TRIM(c.vacante_interes))
+              END,
+              ''
+            ),
+            'General'
+          ) AS vacante,
           c.nave_interes,
           COALESCE(c.escalado, FALSE) AS escalado,
           r.nombre AS asignado_a_nombre,

@@ -51,6 +51,15 @@ export async function GET(request: Request) {
         )
     `);
 
+    await pool.query(`
+      UPDATE cola_mensajes
+      SET estado = 'IGNORADO',
+          error_detalle = 'Numero invalido o no registrado (< 10 digitos)',
+          updated_at = NOW()
+      WHERE estado = 'PENDIENTE'
+        AND LENGTH(regexp_replace(telefono, '[^0-9]', '', 'g')) < 10
+    `);
+
     // Solo intentar los que tienen reintentos < 5
     const res = await pool.query(`
       SELECT id, telefono, texto

@@ -329,18 +329,17 @@ export function useVacantes() {
     }
 
     const updated = [...recruiters];
+    const recIndex = updated.findIndex((r) => r.reclutador_id === modalRecruiterId);
+    if (recIndex === -1) return;
 
-    const duplicateExists = updated.some((r) =>
-      r.vacantes.some((v) => v.nombre === normalizedName && v.id !== modalVacancyId)
+    const duplicateExists = updated[recIndex].vacantes.some(
+      (v) => v.nombre === normalizedName && v.id !== modalVacancyId
     );
 
     if (duplicateExists) {
-      showToast(`La vacante "${normalizedName}" ya existe. Búscala en tu lista y actívala si está inactiva.`, true);
+      showToast(`La vacante "${normalizedName}" ya existe en este reclutador. Búscala en su lista y actívala si está inactiva.`, true);
       return;
     }
-
-    const recIndex = updated.findIndex((r) => r.reclutador_id === modalRecruiterId);
-    if (recIndex === -1) return;
 
     if (modalVacancyId) {
       const vacIndex = updated[recIndex].vacantes.findIndex((v) => v.id === modalVacancyId);
