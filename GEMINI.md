@@ -1,6 +1,6 @@
 # REGLAS DE PRODUCCIÓN Y MEMORIA - ASSISTANTAI (VIRGO)
 
-> 🚨 **ENTORNO DE PRODUCCIÓN REAL**: Este sistema cuenta con candidatos, vacantes, conversaciones e información real en funcionamiento. 
+> **ENTORNO DE PRODUCCIÓN REAL**: Este sistema cuenta con candidatos, vacantes, conversaciones e información real en funcionamiento. 
 
 ---
 
@@ -31,7 +31,13 @@
 ---
 
 ## 2. ARQUITECTURA GENERAL
-- **PostgreSQL**: Base `virgo_db` (Puerto 5433 local).
+- **PostgreSQL**: Base `virgo_db` (Puerto 5433 local).def decode(self, s: str) -> List[str]:
+        recorer = 0
+        newList = []
+        for i in s:
+            if i == "#":
+                palabra = s[i-1]
+                newList.append(palabra)
 - **Backend**: FastAPI + Python (`http://backend:8000`).
 - **Frontend**: Next.js App Router (`http://frontend:3001`).
 - **WAHA**: WhatsApp Web Engine (`WEBJS`).

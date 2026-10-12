@@ -16,7 +16,7 @@ interface GroupsModalProps {
 // Wrapper: al cerrarse desmonta el contenido, y con el desmontaje se reinicia
 // el formulario. Reiniciarlo desde un useEffect provocaba un render en cascada
 // (react-hooks/set-state-in-effect).
-export default function GroupsModal(props: GroupsModalProps) {
+export default function GroupsModal(props: Readonly<GroupsModalProps>) {
   if (!props.isOpen) return null;
   return <GroupsModalContent {...props} />;
 }
@@ -28,13 +28,13 @@ function GroupsModalContent({
   grupos,
   naves,
   showToast,
-}: GroupsModalProps) {
+}: Readonly<GroupsModalProps>) {
   const [grupoNombreInput, setGrupoNombreInput] = useState("");
   const [grupoEmpresaInput, setGrupoEmpresaInput] = useState("");
   const [grupoNavesInput, setGrupoNavesInput] = useState<string[]>([]);
   const [creatingGrupo, setCreatingGrupo] = useState(false);
 
-  const crearGrupo = async (e: React.FormEvent) => {
+  const crearGrupo = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     setCreatingGrupo(true);
 
@@ -90,7 +90,9 @@ function GroupsModalContent({
       className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1500] p-4"
       {...backdropHandlers}
     >
-      <div className="bg-white w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl p-6 md:p-8 shadow-2xl relative" onClick={e => e.stopPropagation()}>
+      <div
+        className="bg-white w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl p-6 md:p-8 shadow-2xl relative"
+      >
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-xl font-bold text-slate-800">Grupos de Reclutamiento</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-2xl">&times;</button>
@@ -133,11 +135,11 @@ function GroupsModalContent({
               </div>
 
               <div>
-                <label className="block text-sm font-semibold mb-1">Naves Asignadas</label>
+                <span className="block text-sm font-semibold mb-1">Naves Asignadas</span>
                 <div className="max-h-40 overflow-y-auto bg-white border rounded p-2">
                   {grupoEmpresaInput ? (
                     naves.filter(n => String(n.empresa_id) === String(grupoEmpresaInput)).map(n => (
-                      <label key={n.id} className="flex items-center gap-2 text-sm cursor-pointer mb-1">
+                      <label key={n.id} htmlFor={`groups-nave-${n.id}`} className="flex items-center gap-2 text-sm cursor-pointer mb-1">
                         <input
                           id={`groups-nave-${n.id}`}
                           name="grupo_naves"

@@ -1,13 +1,26 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Edit, Trash2 } from "lucide-react";
+import { Edit, Trash2, Eye, EyeOff, Copy, Check } from "lucide-react";
 import NewUserModal from "@/components/usuarios/NewUserModal";
 import EditUserModal from "@/components/usuarios/EditUserModal";
 import GroupsModal from "@/components/usuarios/GroupsModal";
 import DeleteUserModal from "@/components/usuarios/DeleteUserModal";
 import { useLocalStorageValue } from "@/hooks/useLocalStorageValue";
 import type { Usuario, Nave, Grupo, Empresa } from "@/types";
+
+function getRolBadgeClass(rol: string): string {
+  switch (rol) {
+    case "ADMIN":
+      return "bg-indigo-100 text-indigo-700";
+    case "ROOT":
+      return "bg-amber-100 text-amber-700";
+    case "ENCARGADO":
+      return "bg-sky-100 text-sky-700";
+    default:
+      return "bg-slate-100 text-slate-700";
+  }
+}
 
 export default function UsuariosPage() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
@@ -17,6 +30,20 @@ export default function UsuariosPage() {
   const [loading, setLoading] = useState(true);
   const role = useLocalStorageValue("tci_role") || "USER";
   const myGrupoId = useLocalStorageValue("tci_grupo_id");
+
+  const [showPasswords, setShowPasswords] = useState<Record<number, boolean>>({});
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+
+  const togglePasswordVisibility = (id: number) => {
+    setShowPasswords(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const copyPassword = (id: number, pass?: string | null) => {
+    if (!pass) return;
+    navigator.clipboard.writeText(pass);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
 
   const [showNewUserModal, setShowNewUserModal] = useState(false);
   const [showGruposModal, setShowGruposModal] = useState(false);
@@ -125,17 +152,38 @@ export default function UsuariosPage() {
                 <td className="px-6 py-4 font-semibold text-slate-900">{u.nombre || u.usuario}</td>
                 <td className="px-6 py-4 font-mono text-sm text-slate-500">{u.usuario}</td>
                 <td className="px-6 py-4">
-                  <span className="font-mono text-sm bg-slate-100/80 text-slate-700 px-2.5 py-1 rounded-lg border border-slate-200/50">
-                    ********
-                  </span>
+                  {(role === "ADMIN" || role === "ROOT") ? (
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm bg-slate-100/80 text-slate-700 px-2.5 py-1 rounded-lg border border-slate-200/50 min-w-[90px] text-center inline-block">
+                        {showPasswords[u.id] ? (u.actual_password || "—") : "••••••••"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => togglePasswordVisibility(u.id)}
+                        className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                        title={showPasswords[u.id] ? "Ocultar contraseña" : "Ver contraseña"}
+                      >
+                        {showPasswords[u.id] ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                      {u.actual_password && showPasswords[u.id] && (
+                        <button
+                          type="button"
+                          onClick={() => copyPassword(u.id, u.actual_password)}
+                          className="p-1 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                          title="Copiar contraseña"
+                        >
+                          {copiedId === u.id ? <Check size={16} className="text-emerald-600" /> : <Copy size={16} />}
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="font-mono text-sm bg-slate-100/80 text-slate-700 px-2.5 py-1 rounded-lg border border-slate-200/50">
+                      ••••••••
+                    </span>
+                  )}
                 </td>
                 <td className="px-6 py-4">
-                  <span className={`px-2.5 py-1 text-xs font-bold rounded-full ${
-                    u.rol === 'ADMIN' ? 'bg-indigo-100 text-indigo-700' :
-                    u.rol === 'ROOT' ? 'bg-amber-100 text-amber-700' :
-                    u.rol === 'ENCARGADO' ? 'bg-sky-100 text-sky-700' :
-                    'bg-slate-100 text-slate-700'
-                  }`}>
+                  <span className={`px-2.5 py-1 text-xs font-bold rounded-full ${getRolBadgeClass(u.rol)}`}>
                     {u.rol}
                   </span>
                 </td>
@@ -176,7 +224,7 @@ export default function UsuariosPage() {
             ))}
             {usuarios.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-6 py-8 text-center text-slate-500">
+                <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
                   No hay usuarios registrados
                 </td>
               </tr>

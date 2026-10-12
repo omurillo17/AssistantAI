@@ -14,7 +14,7 @@ interface AdminModalProps {
 // Wrapper: al cerrarse desmonta el contenido, y con el desmontaje se reinicia
 // el formulario. Reiniciarlo desde un useEffect provocaba un render en cascada
 // (react-hooks/set-state-in-effect).
-export default function AdminModal(props: AdminModalProps) {
+export default function AdminModal(props: Readonly<AdminModalProps>) {
   const { empresa } = props;
   if (!props.isOpen || !empresa) return null;
   return <AdminModalContent {...props} empresa={empresa} />;
@@ -25,7 +25,7 @@ function AdminModalContent({
   onSuccess,
   empresa,
   showToast,
-}: AdminModalProps & { empresa: Empresa }) {
+}: Readonly<AdminModalProps & { empresa: Empresa }>) {
   const backdropHandlers = useBackdropClose(onClose);
   const [usuario, setUsuario] = useState("");
   const [password, setPassword] = useState("");
@@ -71,7 +71,9 @@ function AdminModalContent({
       className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4 opacity-100 animate-in fade-in"
       {...backdropHandlers}
     >
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95"
+      >
         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
           <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">Crear Administrador para {empresa.nombre}</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1 bg-white rounded-md shadow-sm border border-slate-200"><X size={20} /></button>

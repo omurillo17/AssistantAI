@@ -16,10 +16,10 @@ const patchBodySchema = z.object({
   escalation_reason: z.string().nullable().optional(),
   event_id: z.string().nullable().optional(),
   asignado_a_id: z.string().max(100).nullable().optional(),
-  empresa_id: z.string().uuid().optional(),
+  empresa_id: z.uuid().optional(),
 });
 
-import { WAHA_BASE, WAHA_API_KEY, WAHA_SESSION } from '@/lib/waha';
+import { enviarNotificacionReclutador } from '@/lib/messagingService';
 import { getSession } from '@/lib/auth';
 
 // ─── GET /api/db/candidato?telefono=xxx ───────────────────
@@ -93,10 +93,73 @@ export async function GET(request: Request) {
   }
 }
 
+function buildCandidatoUpdateFields(data: z.infer<typeof patchBodySchema>) {
+  const { estado, notas, vacante_interes, escalado, escalation_reason, event_id, asignado_a_id, empresa_id } = data;
+  const campos: string[] = ['updated_at = NOW()'];
+  const valores: (string | boolean | null)[] = [];
+  let idx = 1;
+
+  if (estado !== undefined) {
+    campos.push(`estado = $${idx++}`);
+    valores.push(estado);
+  }
+  if (notas !== undefined) {
+    campos.push(`escalation_reason = $${idx++}`);
+    valores.push(notas);
+  }
+  if (escalation_reason !== undefined) {
+    campos.push(`escalation_reason = $${idx++}`);
+    valores.push(escalation_reason);
+  }
+  if (vacante_interes !== undefined) {
+    campos.push(`vacante_interes = $${idx++}`);
+    valores.push(vacante_interes);
+  }
+  if (event_id !== undefined) {
+    campos.push(`event_id = $${idx++}`);
+    valores.push(event_id);
+  }
+  if (asignado_a_id !== undefined) {
+    campos.push(`asignado_a_id = $${idx++}`);
+    valores.push(asignado_a_id);
+  }
+  if (empresa_id !== undefined) {
+    campos.push(`empresa_id = $${idx++}`);
+    valores.push(empresa_id);
+  }
+  if (escalado !== undefined) {
+    campos.push(`escalado = $${idx++}`);
+    valores.push(escalado);
+    if (escalado === true) {
+      campos.push(`escalated_at = NOW()`);
+    } else {
+      campos.push(`escalated_at = NULL`);
+      if (!estado || estado === "ESCALADO") {
+        campos.push(`estado = 'INTERESADO'`);
+      }
+    }
+  }
+
+  return { campos, valores, nextIdx: idx };
+}
+
+async function notificarReclutadorTransferencia(asignado_a_id: string, telefono: string) {
+  try {
+    const recRes = await pool.query('SELECT telefono FROM reclutadores WHERE id = $1 AND activo = true LIMIT 1', [asignado_a_id]);
+    if (recRes.rows.length > 0) {
+      const recTelefono = recRes.rows[0].telefono;
+      const msg = `🔔 *Atención*: Se te ha transferido un nuevo candidato.\n\n👤 *Teléfono:* ${telefono}\nPor favor revisa la plataforma para atenderlo.`;
+      await enviarNotificacionReclutador(recTelefono, msg, asignado_a_id);
+      console.log(`Notificación enviada al reclutador ${asignado_a_id} (${recTelefono})`);
+    }
+  } catch (notifyErr) {
+    console.error('Error al notificar al reclutador:', notifyErr);
+  }
+}
+
 // ─── PATCH /api/db/candidato ─────────────────────────────
 // Body: { telefono, estado?, notas?, vacante_interes?, escalado?, escalation_reason? }
 export async function PATCH(request: Request) {
-
   try {
     const payload = await getSession(request);
     if (!payload) {
@@ -115,60 +178,15 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Datos inválidos", details: parsed.error.issues }, { status: 400 });
     }
 
-    const { telefono, estado, notas, vacante_interes, escalado, escalation_reason, event_id, asignado_a_id, empresa_id } = parsed.data;
-
-    const campos: string[] = ['updated_at = NOW()'];
-    const valores: (string | boolean | null)[] = [];
-    let idx = 1;
-
-    if (estado !== undefined) {
-      campos.push(`estado = $${idx++}`);
-      valores.push(estado);
-    }
-    if (notas !== undefined) {
-      campos.push(`escalation_reason = $${idx++}`);
-      valores.push(notas);
-    }
-    if (escalation_reason !== undefined) {
-      campos.push(`escalation_reason = $${idx++}`);
-      valores.push(escalation_reason);
-    }
-    if (vacante_interes !== undefined) {
-      campos.push(`vacante_interes = $${idx++}`);
-      valores.push(vacante_interes);
-    }
-    if (event_id !== undefined) {
-      campos.push(`event_id = $${idx++}`);
-      valores.push(event_id);
-    }
-    if (asignado_a_id !== undefined) {
-      campos.push(`asignado_a_id = $${idx++}`);
-      valores.push(asignado_a_id);
-    }
-    if (empresa_id !== undefined) {
-      campos.push(`empresa_id = $${idx++}`);
-      valores.push(empresa_id);
-    }
-    if (escalado !== undefined) {
-      campos.push(`escalado = $${idx++}`);
-      valores.push(escalado);
-      // Si se activa el escalado, registrar timestamp; si se desactiva, limpiarlo y resetear estado si estaba en ESCALADO
-      if (escalado === true) {
-        campos.push(`escalated_at = NOW()`);
-      } else {
-        campos.push(`escalated_at = NULL`);
-        if (!estado || estado === "ESCALADO") {
-          campos.push(`estado = 'INTERESADO'`);
-        }
-      }
-    }
+    const { campos, valores, nextIdx } = buildCandidatoUpdateFields(parsed.data);
 
     if (campos.length === 1) {
       return NextResponse.json({ error: 'No hay campos para actualizar' }, { status: 400 });
     }
 
+    let idx = nextIdx;
     const telefonoIdx = idx++;
-    valores.push(telefono);
+    valores.push(parsed.data.telefono);
     let filtroExtra = "";
     if (target_empresa) {
       filtroExtra += ` AND empresa_id = $${idx++}`;
@@ -187,39 +205,8 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: 'Candidato no encontrado' }, { status: 404 });
     }
 
-    // Si se asignó a un reclutador y se está escalando, intentar notificarle vía WhatsApp
-    if (asignado_a_id && escalado === true) {
-      try {
-        const recRes = await pool.query('SELECT telefono FROM reclutadores WHERE id = $1 AND activo = true LIMIT 1', [asignado_a_id]);
-        if (recRes.rows.length > 0) {
-          const recTelefono = recRes.rows[0].telefono;
-          const msg = `🔔 *Atención*: Se te ha transferido un nuevo candidato.\n\n👤 *Teléfono:* ${telefono}\nPor favor revisa la plataforma para atenderlo.`;
-
-          await fetch(`${WAHA_BASE}/api/sendText`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-              'X-Api-Key': WAHA_API_KEY
-            },
-            body: JSON.stringify({
-              chatId: `${recTelefono}@c.us`,
-              text: msg,
-              session: WAHA_SESSION
-            })
-          });
-          console.log(`Notificación enviada al reclutador ${asignado_a_id} (${recTelefono})`);
-
-          // Guardar notificación en base de datos
-          await pool.query(
-            'INSERT INTO notificaciones (reclutador_id, mensaje) VALUES ($1, $2)',
-            [asignado_a_id, `Se te ha transferido un nuevo candidato: ${telefono}`]
-          );
-        }
-      } catch (notifyErr) {
-        console.error('Error al notificar al reclutador:', notifyErr);
-        // No bloqueamos la respuesta principal si falla la notificación
-      }
+    if (parsed.data.asignado_a_id && parsed.data.escalado === true) {
+      await notificarReclutadorTransferencia(parsed.data.asignado_a_id, parsed.data.telefono);
     }
 
     return NextResponse.json(res.rows[0]);

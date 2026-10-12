@@ -1,26 +1,99 @@
-"""Reconocimiento de valores de vacante que NO son una vacante real.
+"""Normalización, limpieza y encasillamiento estricto de vacantes del catálogo.
 
-El modelo devuelve `actualizar_vacante` copiando lo que ve en su propia
-ficha de contexto, y ahí el valor viene envuelto en adornos: llaves que
-sobran de los placeholders del prompt (`{Ninguna}`), comillas, asteriscos
-de negritas. Los guards que comparaban el string crudo contra
-("GENERAL", "NINGUNA", ...) no atrapaban ninguna de esas variantes y el
-placeholder acababa guardado como si fuera una vacante elegida, rompiendo
-el match vacante->reclutador de `definir_agenda`.
-
-Este módulo centraliza la limpieza y la comparación para que parser,
-analizador y los webhooks del frontend usen el mismo criterio.
+Centraliza el reconocimiento de placeholders ("GENERAL", "NINGUNA", "{Ninguna}"),
+la limpieza de adornos tipográficos y el matching estricto contra el catálogo
+de vacantes_def activas en Postgres.
 """
 
+import logging
 import re
+import time
+import unicodedata
+from typing import Any
 
-# Valores que el prompt usa como "todavía no hay vacante". 'X' es el
-# literal de la plantilla cuando el modelo la copia sin rellenar.
-PLACEHOLDERS_VACANTE = frozenset({"GENERAL", "NINGUNA", "PENDIENTE", "DESCONOCIDA", "X"})
+logger = logging.getLogger("vacantes")
 
-# Llaves, corchetes, comillas, pipes y asteriscos de markdown: adornos con
-# los que el modelo envuelve el valor sin que dejen de ser el mismo valor.
+# Valores que el prompt usa como "todavía no hay vacante" o frases genéricas
+# que no deben guardarse como vacante real.
+PLACEHOLDERS_VACANTE = frozenset({
+    "GENERAL", "NINGUNA", "PENDIENTE", "DESCONOCIDA", "X", "NUESTRAS VACANTES",
+    "ESTA VACANTE", "VACANTES", "VACANTE", "EMPLEO", "TRABAJO", "INFORMACION",
+    "PUESTO", "POSTULACION", "OTRO", "OTRA", "NINGUNO", "NO SE", "CUALQUIERA",
+    "SIN VACANTE", "NO DEFINIDA", "SOLICITUD", "CANDIDATO", "NONE", "NULL",
+    "SIN REGISTRAR", "NO REGISTRADO", "DEFAULT", "TODAS", "CUALQUIER",
+})
+
+# Llaves, corchetes, comillas, pipes y asteriscos de markdown.
 _ADORNOS_RE = re.compile(r"[{}\[\]\"'|`*]+")
+
+# Prefijos de ruido comunes en respuestas de IA o mensajes de candidatos
+_PREFIX_RE = re.compile(
+    r"^(?:(?:LA|EL)\s+DE\s+|VACANTE\s+(?:DE|PARA)\s+|PUESTO\s+(?:DE|PARA)\s+|"
+    r"POSTULACI[OÓ]N\s+A(?:\s+LA\s+VACANTE\s+DE)?\s+|INTERESA(?:\s+LA\s+VACANTE\s+DE)?\s+|"
+    r"PROCESO\s+PARA(?:\s+LA\s+VACANTE\s+DE)?\s+|REFIE?RES\s+A(?:\s+LA)?\s+|"
+    r"INFORMACI[OÓ]N\s+(?:DE|SOBRE)\s+)",
+    re.IGNORECASE,
+)
+
+# Sufijos de ruido (como nombres de nave pegados a la vacante o fórmulas de cortesía)
+_SUFFIX_RE = re.compile(
+    r"(?:\s+EN\s+(?:CEDIS|DULCERIA|MATERIAS\s+PRIMAS|SUCURSAL|PLANTA|ZMG|MANDARINA)|"
+    r"\s+(?:CEDIS|DULCERIA|MATERIAS\s+PRIMAS|MANDARINA)|\s+ES(?:\s+UNA|\s+UN|\s+LA)?|"
+    r"\s+DISPONIBLE|\s+POR\s+FAVOR|\s+GRACIAS)$",
+    re.IGNORECASE,
+)
+
+_AUX_CREDITO_Y_COBRANZA = "AUXILIAR DE CREDITO Y COBRANZA"
+_OPERADOR_ALMACEN = "OPERADOR DE ALMACEN"
+_OPERADOR_REPARTO = "OPERADOR DE REPARTO"
+_MATERIAS_PRIMAS = "MATERIAS PRIMAS"
+_TOKEN_RE = re.compile(r"[A-Z0-9]+")
+_STOPWORDS = frozenset({"DE", "Y", "O", "LA", "EL", "EN", "PARA", "UN", "UNA"})
+
+# Catálogo base de respaldo en caso de fallo de BD
+CATALOGO_DEFAULT = [
+    _AUX_CREDITO_Y_COBRANZA,
+    "AUXILIAR DE MERCADOTECNIA",
+    "AUXILIAR DE SISTEMAS",
+    _OPERADOR_ALMACEN,
+    "BECARIO DE MERCADOTECNIA",
+    "OPERADOR DE MANTENIMIENTO",
+    "OPERADOR DE ESTACIONAMIENTO",
+    "CAJERA O ESCANER",
+    "OPERADOR GENERAL",
+    "CAJERO/A",
+    _OPERADOR_REPARTO,
+    "OPERADOR DE VEHICULO",
+    "OPERADOR DE RECIBO",
+]
+
+# Sinónimos y aliases comunes hacia el catálogo estándar
+SINONIMOS_VACANTES = {
+    "CHOFER": "OPERADOR DE VEHICULO",
+    "CHOFER DE REPARTO": _OPERADOR_REPARTO,
+    "REPARTIDOR": _OPERADOR_REPARTO,
+    "REPARTIDORA": _OPERADOR_REPARTO,
+    "ALMACENISTA": _OPERADOR_ALMACEN,
+    "ALMACEN": _OPERADOR_ALMACEN,
+    "ESTACIONAMIENTO": "OPERADOR DE ESTACIONAMIENTO",
+    "MANTENIMIENTO": "OPERADOR DE MANTENIMIENTO",
+    "SISTEMAS": "AUXILIAR DE SISTEMAS",
+    "COBRANZA": _AUX_CREDITO_Y_COBRANZA,
+    "CREDITO": _AUX_CREDITO_Y_COBRANZA,
+    "MERCADOTECNIA": "AUXILIAR DE MERCADOTECNIA",
+    "RECIBO": "OPERADOR DE RECIBO",
+    "CAJERO": "CAJERA O ESCANER",
+    "CAJERA": "CAJERA O ESCANER",
+    "CAJEROS": "CAJERA O ESCANER",
+    "CAJERAS": "CAJERA O ESCANER",
+    "ESCANER": "CAJERA O ESCANER",
+    "ESCANISTA": "CAJERA O ESCANER",
+    "ESCANISTAS": "CAJERA O ESCANER",
+    "CAJERO/A": "CAJERA O ESCANER",
+    "CAJERA O ESCANER": "CAJERA O ESCANER",
+    "OPERADOR GENERAL": "OPERADOR GENERAL",
+    "OPERADORA GENERAL": "OPERADOR GENERAL",
+}
 
 
 def limpiar_vacante(valor: object) -> str:
@@ -30,16 +103,214 @@ def limpiar_vacante(valor: object) -> str:
     return _ADORNOS_RE.sub("", str(valor)).strip()
 
 
-def es_placeholder_vacante(valor: object, extra: frozenset[str] | set[str] | None = None) -> bool:
-    """True si `valor` es un placeholder y no una vacante real.
+def normalizar_texto(texto: str | None) -> str:
+    """Mayúsculas, sin acentos y sin adornos."""
+    if not texto:
+        return ""
+    nfd = unicodedata.normalize("NFD", str(texto).upper())
+    sin_acento = "".join(c for c in nfd if unicodedata.category(c) != "Mn")
+    return _ADORNOS_RE.sub("", sin_acento).strip()
 
-    `extra` permite sumar literales propios de un call site (p. ej. las
-    frases genéricas "ESTA VACANTE" / "NUESTRA VACANTE" que sólo aparecen
-    cuando la vacante se rescata del texto del mensaje).
-    """
-    limpio = limpiar_vacante(valor).upper()
+
+def es_placeholder_vacante(valor: object, extra: frozenset[str] | set[str] | None = None) -> bool:
+    """True si `valor` es un placeholder o frase genérica y no una vacante real."""
+    limpio = normalizar_texto(str(valor) if valor else "")
     if not limpio:
         return True
     if limpio in PLACEHOLDERS_VACANTE:
         return True
     return bool(extra) and limpio in extra
+
+
+def _limpiar_texto_vacante(texto: str | None) -> str | None:
+    if not texto:
+        return None
+    norm = normalizar_texto(texto)
+    if not norm or es_placeholder_vacante(norm):
+        return None
+    cur = _PREFIX_RE.sub("", norm).strip()
+    cur = _SUFFIX_RE.sub("", cur).strip()
+    cur = normalizar_texto(cur)
+    if not cur or es_placeholder_vacante(cur):
+        return None
+    return cur
+
+
+def _buscar_por_tokens(cur: str, cur_tokens: set[str], cat_map: dict[str, str]) -> str | None:
+    # Coincidencia por tokens exactos
+    for cat_norm, cat_orig in cat_map.items():
+        cat_tokens = set(_TOKEN_RE.findall(cat_norm)) - _STOPWORDS
+        if cur_tokens == cat_tokens:
+            return cat_orig
+
+    # Inclusión de substring
+    for cat_norm, cat_orig in cat_map.items():
+        if cur in cat_norm or cat_norm in cur:
+            return cat_orig
+
+    # Tokens subset (ej. "OPERADOR ALMACEN" en "OPERADOR DE ALMACEN")
+    for cat_norm, cat_orig in cat_map.items():
+        cat_tokens = set(_TOKEN_RE.findall(cat_norm)) - _STOPWORDS
+        if cur_tokens.issubset(cat_tokens) and len(cur_tokens) >= 2:
+            return cat_orig
+        # Alias singular/plural especial (ej. CAJERO -> CAJERO/A o CAJERA O ESCANER)
+        if len(cur_tokens) == 1 and next(iter(cur_tokens)) in ("CAJERO", "CAJERA") and ("CAJERO" in cat_norm or "CAJERA" in cat_norm):
+            return cat_orig
+
+    return None
+
+
+def _buscar_por_sinonimos_tokens(cur_tokens: set[str], sins: dict[str, str], cat_map: dict[str, str]) -> str | None:
+    for tok in cur_tokens:
+        if tok in sins:
+            sin_target = normalizar_texto(sins[tok])
+            if sin_target in cat_map:
+                return cat_map[sin_target]
+    return None
+
+
+def emparejar_vacante(
+    texto: str | None,
+    catalogo: list[str] | set[str] | None = None,
+    sinonimos: dict[str, str] | None = None,
+) -> str | None:
+    """Encasilla un texto detectado contra el catálogo oficial de vacantes.
+
+    Si coincide con una vacante del catálogo (o sus sinónimos/variaciones),
+    devuelve el nombre canónico exacto registrado. Si es basura o genérico,
+    devuelve None.
+    """
+    cur = _limpiar_texto_vacante(texto)
+    if not cur:
+        return None
+
+    if catalogo is None:
+        now = time.time()
+        for _ts, _nombres, _sins in _CATALOGO_CACHE.values():
+            if _nombres and (now - _ts) < _CACHE_TTL_SEGUNDOS:
+                catalogo = _nombres
+                if sinonimos is None:
+                    sinonimos = _sins
+                break
+
+    cats = catalogo if catalogo is not None else CATALOGO_DEFAULT
+    cat_map = {normalizar_texto(c): c for c in cats if c}
+    if cur in cat_map:
+        return cat_map[cur]
+
+    # Cotejar sinónimos directos
+    sins = sinonimos if sinonimos is not None else SINONIMOS_VACANTES
+    if cur in sins:
+        sin_target = normalizar_texto(sins[cur])
+        if sin_target in cat_map:
+            return cat_map[sin_target]
+
+    cur_tokens = set(_TOKEN_RE.findall(cur)) - _STOPWORDS
+    if not cur_tokens:
+        return None
+
+    matched = _buscar_por_tokens(cur, cur_tokens, cat_map)
+    if matched:
+        return matched
+
+    return _buscar_por_sinonimos_tokens(cur_tokens, sins, cat_map)
+
+
+_CATALOGO_CACHE: dict[str, tuple[float, list[str], dict[str, str]]] = {}
+_CACHE_TTL_SEGUNDOS = 60
+
+
+def _procesar_rows_catalogo(rows: list) -> tuple[list[str], dict[str, str]]:
+    nombres = [r["nombre"] for r in rows if r.get("nombre")]
+    sinonimos: dict[str, str] = dict(SINONIMOS_VACANTES)
+    for r in rows:
+        nombre = r.get("nombre")
+        palabras = r.get("palabras_clave") or ""
+        if nombre and palabras:
+            for kw in palabras.split(","):
+                kw_clean = normalizar_texto(kw)
+                if kw_clean:
+                    sinonimos[kw_clean] = nombre
+    if not nombres:
+        nombres = list(CATALOGO_DEFAULT)
+    return nombres, sinonimos
+
+
+async def obtener_catalogo_vacantes_db(empresa_id: str | None = None) -> tuple[list[str], dict[str, str]]:
+    """Consulta las vacantes activas y sus palabras clave desde la BD con cache."""
+    cache_key = empresa_id or "global"
+    now = time.time()
+    cached = _CATALOGO_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _CACHE_TTL_SEGUNDOS:
+        return cached[1], cached[2]
+
+    try:
+        from app.db import get_pool
+        pool = get_pool()
+        if empresa_id:
+            rows = await pool.fetch(
+                "SELECT nombre, palabras_clave FROM vacantes_def WHERE activa = true AND (empresa_id = $1::uuid OR empresa_id IS NULL)",
+                empresa_id,
+            )
+        else:
+            rows = await pool.fetch(
+                "SELECT nombre, palabras_clave FROM vacantes_def WHERE activa = true"
+            )
+
+        nombres, sinonimos = _procesar_rows_catalogo(rows)
+        _CATALOGO_CACHE[cache_key] = (now, nombres, sinonimos)
+        return nombres, sinonimos
+    except Exception as e:
+        logger.warning("obtener_catalogo_vacantes_db: error consultando BD (%s), usando default", e)
+        return list(CATALOGO_DEFAULT), dict(SINONIMOS_VACANTES)
+
+
+PLACEHOLDERS_NAVE = frozenset({
+    "NINGUNA", "GENERAL", "PENDIENTE", "DESCONOCIDA", "X", "NONE", "NULL",
+    "SIN SUCURSAL", "NO DEFINIDA", "SIN ASIGNAR", "TODAS", "CUALQUIERA",
+    "{NINGUNA}", "{GENERAL}", "{PENDIENTE}",
+})
+
+NAVES_DEFAULT = ["DULCERIA", "CEDIS", _MATERIAS_PRIMAS, "MATRIZ", "SUCURSAL", "VITALI"]
+
+SINONIMOS_NAVES = {
+    "1": "DULCERIA",
+    "NAVE 1": "DULCERIA",
+    "DULCERIA/MANDARINA": "DULCERIA",
+    "MANDARINA": "DULCERIA",
+    "2": "CEDIS",
+    "NAVE 2": "CEDIS",
+    "3": _MATERIAS_PRIMAS,
+    "NAVE 3": _MATERIAS_PRIMAS,
+}
+
+
+def es_placeholder_nave(valor: object) -> bool:
+    """True si `valor` es un placeholder y no una nave o sucursal real."""
+    limpio = normalizar_texto(str(valor) if valor else "")
+    if not limpio:
+        return True
+    return limpio in PLACEHOLDERS_NAVE
+
+
+def emparejar_nave(texto: str | None, catalogo: list[str] | set[str] | None = None) -> str | None:
+    """Encasilla el valor de nave a un nombre canónico registrado o None si es inválido o placeholder."""
+    if not texto:
+        return None
+    norm = normalizar_texto(texto)
+    if not norm or es_placeholder_nave(norm):
+        return None
+
+    if norm in SINONIMOS_NAVES:
+        return SINONIMOS_NAVES[norm]
+
+    cats = catalogo if catalogo is not None else NAVES_DEFAULT
+    cat_map = {normalizar_texto(c): c for c in cats if c}
+    if norm in cat_map:
+        return cat_map[norm]
+
+    for cat_norm, cat_orig in cat_map.items():
+        if norm in cat_norm or cat_norm in norm:
+            return cat_orig
+
+    return None

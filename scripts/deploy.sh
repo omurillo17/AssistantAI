@@ -2,33 +2,37 @@
 #
 # Despliegue a producción.
 #
-# Producción corre en esta misma máquina: los contenedores de docker compose,
-# con cloudflared publicando el frontend a internet. Así que "desplegar" es
-# reconstruir la imagen y recrear los contenedores con el código que tienes
-# ahora en el árbol de trabajo.
+# El desarrollo ocurre en otra máquina: allí se commitea y se empuja a GitHub.
+# Esta máquina es producción -- los contenedores de docker compose, con
+# cloudflared publicando el frontend -- y aquí solo se despliega. Por eso el
+# script trae el código en vez de empujarlo.
 #
-#   ./scripts/deploy.sh              despliega
+#   ./scripts/deploy.sh              trae la rama de producción y despliega
 #   ./scripts/deploy.sh --dry-run    enseña qué haría, sin tocar nada
 #   ./scripts/deploy.sh --si         no pide confirmación (para automatizar)
-#   ./scripts/deploy.sh --sin-push   despliega pero no empuja a GitHub
+#   ./scripts/deploy.sh --rama X     despliega otra rama en vez de la de por defecto
 #
-# El orden importa: primero se comprueba el código, luego la base, y solo
-# entonces se toca producción. Si algo falla antes del build, no se ha tocado
-# nada. Si falla después, el frontend vuelve a la imagen anterior.
+# El orden importa: primero se trae el código y se comprueba, luego la base, y
+# solo entonces se tocan los contenedores. Si algo falla antes del build, la
+# máquina se queda como estaba. Si falla después, el frontend vuelve a la
+# imagen anterior.
 
 set -Eeuo pipefail
 
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$RAIZ"
 
+# Rama que corre en producción. Se despliega lo que haya en su punta remota.
+RAMA_PRODUCCION="${RAMA_PRODUCCION:-develop}"
+
 DRY_RUN=0
 SIN_CONFIRMAR=0
-HACER_PUSH=1
-for arg in "$@"; do
+for ((i=1; i<=$#; i++)); do
+  arg="${!i}"
   case "$arg" in
     --dry-run)   DRY_RUN=1 ;;
     --si|--yes)  SIN_CONFIRMAR=1 ;;
-    --sin-push)  HACER_PUSH=0 ;;
+    --rama)      i=$((i+1)); RAMA_PRODUCCION="${!i}" ;;
     -h|--help)   sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Opción desconocida: $arg (prueba --help)"; exit 2 ;;
   esac
@@ -48,33 +52,69 @@ ejecutar() {
 trap 'rojo "\n✗ El despliegue se detuvo en la línea $LINENO."' ERR
 
 # ─────────────────────────────────────────────────────────────
-paso "1/6 · Comprobaciones previas"
+paso "1/7 · Comprobaciones previas"
 
 [[ -f .env ]] || fallo "No hay .env en la raíz."
 docker compose version >/dev/null 2>&1 || fallo "docker compose no está disponible."
 
-RAMA="$(git rev-parse --abbrev-ref HEAD)"
-gris "   rama: $RAMA"
+gris "   rama de producción: $RAMA_PRODUCCION"
 
-# Se despliega lo que hay en el árbol, y luego se empuja: si quedara algo sin
-# commitear, GitHub no reflejaría lo que de verdad está corriendo.
+# El árbol de esta máquina no es sitio para editar: cualquier cambio local
+# haría que el checkout falle o que lo desplegado no sea lo que hay en GitHub.
 if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
-  rojo "✗ Hay cambios sin commitear:"
+  rojo "✗ Esta máquina tiene cambios sin commitear:"
   git status --short --untracked-files=no | sed 's/^/     /'
   echo
-  echo "   Commitea antes de desplegar, o usa --sin-push si de verdad quieres"
-  echo "   desplegar algo que no va a quedar registrado en el repo."
-  [[ $HACER_PUSH -eq 1 ]] && exit 1
+  echo "   Producción solo debe correr lo que está en GitHub. Descarta esos"
+  echo "   cambios (git checkout -- <archivo>) o llévatelos a tu equipo antes"
+  echo "   de desplegar."
+  exit 1
 fi
 
-SIN_TRACKEAR="$(git ls-files --others --exclude-standard | head -5)"
-if [[ -n "$SIN_TRACKEAR" ]]; then
-  gris "   (archivos sin trackear, no se despliegan ni se empujan):"
-  echo "$SIN_TRACKEAR" | sed 's/^/     /' | while read -r l; do gris "$l"; done
+COMMIT_ACTUAL="$(git rev-parse HEAD)"
+
+# ─────────────────────────────────────────────────────────────
+paso "2/7 · Traer el código de GitHub"
+
+ejecutar git fetch --quiet origin "$RAMA_PRODUCCION"
+git rev-parse --verify --quiet "origin/$RAMA_PRODUCCION" >/dev/null \
+  || fallo "No existe origin/$RAMA_PRODUCCION."
+
+DESTINO="$(git rev-parse "origin/$RAMA_PRODUCCION")"
+
+if [[ "$DESTINO" == "$COMMIT_ACTUAL" ]]; then
+  gris "   ya está en el último commit de $RAMA_PRODUCCION ($(git log -1 --format=%s | cut -c1-50))"
+else
+  # Lo que importa no es si la rama "va por detrás" en línea recta, sino si hay
+  # commits corriendo ahora mismo que no estén en ella. Comprobar la ancestría
+  # no basta: en cuanto la rama de producción acumula merges de PR, las dos
+  # historias divergen y un retroceso deja de parecerlo.
+  SE_PERDERIAN="$(git rev-list --count "$DESTINO..$COMMIT_ACTUAL")"
+  if [[ "$SE_PERDERIAN" -gt 0 ]]; then
+    rojo "✗ origin/$RAMA_PRODUCCION no contiene lo que corre ahora mismo."
+    echo
+    echo "   Desplegarla desharía $SE_PERDERIAN commit(s) que ya están en producción:"
+    git log --oneline "$DESTINO..$COMMIT_ACTUAL" | head -12 | sed 's/^/     /'
+    [[ "$SE_PERDERIAN" -gt 12 ]] && gris "     ... y $((SE_PERDERIAN - 12)) más"
+    echo
+    echo "   Lleva primero esos commits a $RAMA_PRODUCCION (merge o PR) y"
+    echo "   vuelve a intentarlo."
+    exit 1
+  fi
+
+  echo "   se van a desplegar:"
+  git log --oneline "$COMMIT_ACTUAL..$DESTINO" | head -15 | sed 's/^/     /'
+
+  # --ff-only: si esta máquina tuviera commits propios, mejor que falle a que
+  # se invente un merge en producción.
+  ejecutar git checkout --quiet "$RAMA_PRODUCCION"
+  ejecutar git merge --ff-only --quiet "origin/$RAMA_PRODUCCION" \
+    || fallo "No se pudo avanzar a origin/$RAMA_PRODUCCION sin merge. Revisa el estado del repo aquí."
+  verde "   ✓ en $(git rev-parse --short HEAD)"
 fi
 
 # ─────────────────────────────────────────────────────────────
-paso "2/6 · Verificar el código"
+paso "3/7 · Verificar el código"
 
 gris "   backend · pytest"
 if [[ -x backend/.venv/bin/python ]]; then
@@ -91,7 +131,7 @@ gris "   frontend · typecheck, lint y tests"
 verde "   ✓ código verificado"
 
 # ─────────────────────────────────────────────────────────────
-paso "3/6 · Migraciones de la base"
+paso "4/7 · Migraciones de la base"
 
 # database_setup.sql solo se ejecuta cuando Postgres arranca con el volumen
 # vacío, así que sobre una base que ya existe no aplica nada. Los cambios de
@@ -148,7 +188,7 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────
-paso "4/6 · Construir la imagen"
+paso "5/7 · Construir la imagen"
 
 if [[ $SIN_CONFIRMAR -eq 0 && $DRY_RUN -eq 0 ]]; then
   echo
@@ -167,7 +207,7 @@ gris "   imagen previa: ${IMAGEN_PREVIA:0:12}"
 ejecutar docker compose build frontend
 
 # ─────────────────────────────────────────────────────────────
-paso "5/6 · Recrear los contenedores"
+paso "6/7 · Recrear los contenedores"
 
 ejecutar docker compose up -d
 
@@ -198,17 +238,14 @@ if [[ $DRY_RUN -eq 0 ]]; then
 fi
 
 # ─────────────────────────────────────────────────────────────
-paso "6/6 · Publicar en GitHub"
+paso "7/7 · Resumen"
 
-if [[ $HACER_PUSH -eq 0 ]]; then
-  gris "   omitido (--sin-push)"
-elif [[ $DRY_RUN -eq 1 ]]; then
-  gris "   [dry-run] haría: git push origin $RAMA"
-else
-  # Va al final a propósito: solo se publica lo que ya se comprobó que arranca.
-  ejecutar git push origin "$RAMA"
-  verde "   ✓ empujado a origin/$RAMA"
-fi
+# Aquí no se empuja nada: los commits se hacen en el equipo de desarrollo y
+# esta máquina solo los consume. Lo que queda es dejar por escrito qué versión
+# está sirviendo, para poder mirarlo luego sin adivinar.
+gris "   rama:   $RAMA_PRODUCCION"
+gris "   commit: $(git rev-parse --short HEAD) · $(git log -1 --format=%s | cut -c1-60)"
+gris "   fecha:  $(git log -1 --format=%ad --date=format:'%Y-%m-%d %H:%M')"
 
 echo
 verde "✓ Despliegue terminado."

@@ -32,6 +32,19 @@ function quienAsigna(key: EstadoKey): { texto: string; clase: string } {
   return { texto: "Ambos", clase: "bg-slate-100 text-slate-500" };
 }
 
+function getBloqueKeySuffix(bloque: Bloque): string {
+  if ("texto" in bloque && typeof bloque.texto === "string") {
+    return bloque.texto.slice(0, 15);
+  }
+  if ("titulo" in bloque && typeof bloque.titulo === "string") {
+    return bloque.titulo;
+  }
+  if ("items" in bloque && Array.isArray(bloque.items) && bloque.items[0]) {
+    return bloque.items[0].slice(0, 15);
+  }
+  return "bloque";
+}
+
 /**
  * Tabla de estados construida desde `@/lib/estados`, que es la fuente única de
  * verdad del sistema. Escribirla a mano aquí garantizaría que la capacitación
@@ -73,7 +86,7 @@ function TablaEstados() {
   );
 }
 
-function BloqueContenido({ bloque }: { bloque: Bloque }) {
+function BloqueContenido({ bloque }: Readonly<{ bloque: Bloque }>) {
   switch (bloque.tipo) {
     case "parrafo":
       return <p className="text-slate-600 leading-relaxed mb-4">{bloque.texto}</p>;
@@ -81,8 +94,8 @@ function BloqueContenido({ bloque }: { bloque: Bloque }) {
     case "lista":
       return (
         <ul className="mb-4 flex flex-col gap-2">
-          {bloque.items.map((item, i) => (
-            <li key={i} className="flex gap-3 text-slate-600 leading-relaxed">
+          {bloque.items.map((item) => (
+            <li key={item} className="flex gap-3 text-slate-600 leading-relaxed">
               <span className="mt-2 w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
               <span>{item}</span>
             </li>
@@ -94,7 +107,7 @@ function BloqueContenido({ bloque }: { bloque: Bloque }) {
       return (
         <ol className="mb-4 flex flex-col gap-3">
           {bloque.items.map((item, i) => (
-            <li key={i} className="flex gap-3 text-slate-600 leading-relaxed">
+            <li key={item} className="flex gap-3 text-slate-600 leading-relaxed">
               <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center shrink-0">
                 {i + 1}
               </span>
@@ -153,7 +166,7 @@ function BloqueContenido({ bloque }: { bloque: Bloque }) {
   }
 }
 
-export function LeccionVista({ leccion }: { leccion: Leccion }) {
+export function LeccionVista({ leccion }: Readonly<{ leccion: Leccion }>) {
   const hidratado = useIsHydrated();
   const role = useLocalStorageValue("tci_role");
 
@@ -260,31 +273,41 @@ export function LeccionVista({ leccion }: { leccion: Leccion }) {
         {/* Contenido */}
         <article className="flex-1 min-w-0 bg-white rounded-xl border border-slate-200 p-6 md:p-8">
           <section className="mb-8">
-            {leccion.video.embed ? (
-              <div className="aspect-video w-full rounded-lg overflow-hidden border border-slate-200">
-                <iframe
-                  src={leccion.video.embed}
-                  title={leccion.video.titulo}
-                  allowFullScreen
-                  className="w-full h-full"
-                />
-              </div>
-            ) : leccion.video.url ? (
-              <video
-                src={leccion.video.url}
-                controls
-                className="w-full rounded-lg border border-slate-200 bg-black"
-              />
-            ) : (
-              <div className="w-full aspect-video rounded-lg border-2 border-dashed border-slate-200 bg-slate-50 flex flex-col items-center justify-center text-slate-400 gap-2 px-6 text-center">
-                <PlayCircle size={38} />
-                <span className="text-sm font-bold text-slate-500">{leccion.video.titulo}</span>
-                <span className="text-xs">
-                  El video de esta lección está en producción. Mientras tanto, la guía
-                  escrita de abajo cubre el tema completo.
-                </span>
-              </div>
-            )}
+            {(() => {
+              if (leccion.video.embed) {
+                return (
+                  <div className="aspect-video w-full rounded-lg overflow-hidden border border-slate-200">
+                    <iframe
+                      src={leccion.video.embed}
+                      title={leccion.video.titulo}
+                      allowFullScreen
+                      className="w-full h-full"
+                    />
+                  </div>
+                );
+              }
+              if (leccion.video.url) {
+                return (
+                  <video
+                    src={leccion.video.url}
+                    controls
+                    className="w-full rounded-lg border border-slate-200 bg-black"
+                  >
+                    <track kind="captions" />
+                  </video>
+                );
+              }
+              return (
+                <div className="w-full aspect-video rounded-lg border-2 border-dashed border-slate-200 bg-slate-50 flex flex-col items-center justify-center text-slate-400 gap-2 px-6 text-center">
+                  <PlayCircle size={38} />
+                  <span className="text-sm font-bold text-slate-500">{leccion.video.titulo}</span>
+                  <span className="text-xs">
+                    El video de esta lección está en producción. Mientras tanto, la guía
+                    escrita de abajo cubre el tema completo.
+                  </span>
+                </div>
+              );
+            })()}
             {tieneVideo && (
               <p className="text-xs text-slate-400 mt-2">{leccion.video.titulo}</p>
             )}
@@ -295,9 +318,10 @@ export function LeccionVista({ leccion }: { leccion: Leccion }) {
               <h2 className="text-xl font-bold text-slate-800 mb-3 pb-2 border-b border-slate-100">
                 {seccion.titulo}
               </h2>
-              {seccion.bloques.map((bloque, i) => (
-                <BloqueContenido key={i} bloque={bloque} />
-              ))}
+              {seccion.bloques.map((bloque) => {
+                const bKey = `${seccion.id}-${bloque.tipo}-${getBloqueKeySuffix(bloque)}`;
+                return <BloqueContenido key={bKey} bloque={bloque} />;
+              })}
             </section>
           ))}
 

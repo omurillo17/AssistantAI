@@ -1,14 +1,89 @@
 import { NextResponse } from 'next/server';
-import { writeFile, mkdir } from 'fs/promises';
-import path from 'path';
-import fs from 'fs';
+import { writeFile, mkdir } from 'node:fs/promises';
+import path from 'node:path';
+import fs from 'node:fs';
 import { pool } from '@/lib/db';
 import { rateLimit } from '@/lib/rate-limit';
 import { sniffDocumentType } from '@/lib/file-validation';
 import { deleteUploadedFile } from '@/lib/fileStorage';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB limit
-const ALLOWED_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png', '.webp'];
+const ALLOWED_EXTENSIONS = new Set(['.pdf', '.jpg', '.jpeg', '.png', '.webp']);
+
+function validateFile(fileObj: File | null, label: string) {
+  if (!fileObj) return null;
+  if (fileObj.size > MAX_FILE_SIZE) {
+    return `El archivo de ${label} excede el límite máximo de 10 MB.`;
+  }
+  const ext = path.extname(fileObj.name || '').toLowerCase();
+  if (!ALLOWED_EXTENSIONS.has(ext)) {
+    return `Formato no permitido en ${label}. Solo se aceptan PDF o imágenes (JPG, PNG, WEBP).`;
+  }
+  return null;
+}
+
+async function saveFile(fileObj: File, suffix: string, uploadDir: string, safeTelefono: string) {
+  const arrayBuffer = await fileObj.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+  // La extensión se determina por el contenido real (magic bytes), no por
+  // el nombre del archivo, para impedir subir HTML/scripts disfrazados.
+  const ext = sniffDocumentType(buffer);
+  if (!ext || ext === '.doc' || ext === '.docx') {
+    throw new Error('FORMATO_NO_PERMITIDO');
+  }
+  const finalFilename = `portal_${safeTelefono}_${suffix}_${Date.now()}${ext}`;
+  const filePath = path.join(uploadDir, finalFilename);
+  await writeFile(filePath, buffer);
+  return `/uploads/${finalFilename}`;
+}
+
+async function processUploadedDocuments(
+  formData: FormData,
+  uploadDir: string,
+  safeTelefono: string,
+  cand: Record<string, unknown>,
+  datosIneObj: Record<string, unknown>,
+  datosRfcObj: Record<string, unknown>
+) {
+  const fileIne = formData.get('file_ine') as File | null;
+  const fileRfc = formData.get('file_rfc') as File | null;
+  const fileCv = formData.get('file_cv') as File | null;
+  const singleFile = formData.get('file') as File | null;
+
+  let urlIne: string | null = null;
+  let urlRfc: string | null = null;
+  let urlCv: string | null = null;
+
+  if (fileIne) {
+    await deleteUploadedFile(datosIneObj?.url as string | null);
+    urlIne = await saveFile(fileIne, 'ine', uploadDir, safeTelefono);
+  }
+  if (fileRfc) {
+    await deleteUploadedFile(datosRfcObj?.url as string | null);
+    urlRfc = await saveFile(fileRfc, 'rfc', uploadDir, safeTelefono);
+  }
+  if (fileCv) {
+    await deleteUploadedFile(cand.link_cv as string | null);
+    urlCv = await saveFile(fileCv, 'cv', uploadDir, safeTelefono);
+  }
+
+  if (singleFile && !urlIne && !urlRfc && !urlCv) {
+    const tipoDoc = (formData.get('tipo_documento') as string) || 'ine';
+    const url = await saveFile(singleFile, tipoDoc, uploadDir, safeTelefono);
+    if (tipoDoc === 'ine') {
+      await deleteUploadedFile(datosIneObj?.url as string | null);
+      urlIne = url;
+    } else if (tipoDoc === 'rfc') {
+      await deleteUploadedFile(datosRfcObj?.url as string | null);
+      urlRfc = url;
+    } else {
+      await deleteUploadedFile(cand.link_cv as string | null);
+      urlCv = url;
+    }
+  }
+
+  return { urlIne, urlRfc, urlCv };
+}
 
 export async function POST(request: Request) {
   // Endpoint público: rate limit para evitar abuso de subida de archivos
@@ -34,25 +109,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Debes seleccionar los archivos requeridos para subir.' }, { status: 400 });
     }
 
-    // Validar extensión y tamaño de archivos
-    const validateFile = (fileObj: File | null, label: string) => {
-      if (!fileObj) return null;
-      if (fileObj.size > MAX_FILE_SIZE) {
-        return `El archivo de ${label} excede el límite máximo de 10 MB.`;
-      }
-      const ext = path.extname(fileObj.name || '').toLowerCase();
-      if (!ALLOWED_EXTENSIONS.includes(ext)) {
-        return `Formato no permitido en ${label}. Solo se aceptan PDF o imágenes (JPG, PNG, WEBP).`;
-      }
-      return null;
-    };
-
-    const errIne = validateFile(fileIne, 'INE');
-    const errRfc = validateFile(fileRfc, 'Constancia RFC');
-    const errCv = validateFile(fileCv, 'CV / Solicitud');
-    const errSingle = validateFile(singleFile, 'Documento');
-
-    const firstError = errIne || errRfc || errCv || errSingle;
+    const firstError =
+      validateFile(fileIne, 'INE') ||
+      validateFile(fileRfc, 'Constancia RFC') ||
+      validateFile(fileCv, 'CV / Solicitud') ||
+      validateFile(singleFile, 'Documento');
     if (firstError) {
       return NextResponse.json({ error: firstError }, { status: 400 });
     }
@@ -85,54 +146,14 @@ export async function POST(request: Request) {
     let datosIneObj = typeof cand.datos_ine === 'string' ? (() => { try { return JSON.parse(cand.datos_ine); } catch { return {}; } })() : (cand.datos_ine || {});
     let datosRfcObj = typeof cand.datos_rfc === 'string' ? (() => { try { return JSON.parse(cand.datos_rfc); } catch { return {}; } })() : (cand.datos_rfc || {});
 
-    const deleteOldFile = deleteUploadedFile;
-
-    const saveFile = async (fileObj: File, suffix: string) => {
-      const arrayBuffer = await fileObj.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      // La extensión se determina por el contenido real (magic bytes), no por
-      // el nombre del archivo, para impedir subir HTML/scripts disfrazados.
-      const ext = sniffDocumentType(buffer);
-      if (!ext || ext === '.doc' || ext === '.docx') {
-        throw new Error('FORMATO_NO_PERMITIDO');
-      }
-      const finalFilename = `portal_${safeTelefono}_${suffix}_${Date.now()}${ext}`;
-      const filePath = path.join(uploadDir, finalFilename);
-      await writeFile(filePath, buffer);
-      return `/uploads/${finalFilename}`;
-    };
-
-    let urlIne: string | null = null;
-    let urlRfc: string | null = null;
-    let urlCv: string | null = null;
-
-    if (fileIne) {
-      await deleteOldFile(datosIneObj?.url);
-      urlIne = await saveFile(fileIne, 'ine');
-    }
-    if (fileRfc) {
-      await deleteOldFile(datosRfcObj?.url);
-      urlRfc = await saveFile(fileRfc, 'rfc');
-    }
-    if (fileCv) {
-      await deleteOldFile(cand.link_cv);
-      urlCv = await saveFile(fileCv, 'cv');
-    }
-
-    if (singleFile && !urlIne && !urlRfc && !urlCv) {
-      const tipoDoc = (formData.get('tipo_documento') as string) || 'ine';
-      const url = await saveFile(singleFile, tipoDoc);
-      if (tipoDoc === 'ine') {
-        await deleteOldFile(datosIneObj?.url);
-        urlIne = url;
-      } else if (tipoDoc === 'rfc') {
-        await deleteOldFile(datosRfcObj?.url);
-        urlRfc = url;
-      } else {
-        await deleteOldFile(cand.link_cv);
-        urlCv = url;
-      }
-    }
+    const { urlIne, urlRfc, urlCv } = await processUploadedDocuments(
+      formData,
+      uploadDir,
+      safeTelefono,
+      cand,
+      datosIneObj,
+      datosRfcObj
+    );
 
     if (urlIne) {
       datosIneObj = { ...datosIneObj, url: urlIne, fecha_carga_portal: new Date().toISOString() };

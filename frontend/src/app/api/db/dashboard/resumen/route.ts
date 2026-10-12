@@ -63,7 +63,17 @@ export async function GET(request: Request) {
       WITH base AS (
         SELECT
           COALESCE(NULLIF(c.estado, ''), 'NUEVO') AS estado,
-          COALESCE(NULLIF(c.vacante_interes, ''), 'General') AS vacante,
+          COALESCE(
+            NULLIF(
+              CASE
+                WHEN UPPER(TRIM(c.vacante_interes)) LIKE '%CAJER%' OR UPPER(TRIM(c.vacante_interes)) LIKE '%ESCAN%' THEN 'CAJERA O ESCANER'
+                WHEN UPPER(TRIM(c.vacante_interes)) LIKE '%OPERADOR%GENERAL%' THEN 'OPERADOR GENERAL'
+                ELSE UPPER(TRIM(c.vacante_interes))
+              END,
+              ''
+            ),
+            'General'
+          ) AS vacante,
           c.nave_interes,
           COALESCE(c.escalado, FALSE) AS escalado,
           r.nombre AS asignado_a_nombre,
@@ -86,8 +96,12 @@ export async function GET(request: Request) {
                  COUNT(*)::int AS total,
                  COUNT(*) FILTER (WHERE estado = 'CONTRATADO')::int AS contratados,
                  COUNT(*) FILTER (WHERE estado = 'RECHAZADO')::int AS rechazados
-          FROM base GROUP BY vacante ORDER BY COUNT(*) DESC
+          FROM base
+          WHERE estado != 'OTRA_CIUDAD'
+          GROUP BY vacante ORDER BY COUNT(*) DESC
         ) t) AS vacantes,
+
+        (SELECT COUNT(*)::int FROM base WHERE estado = 'OTRA_CIUDAD') AS otra_ciudad,
 
         (SELECT COALESCE(json_agg(t), '[]'::json) FROM (
           SELECT asignado_a_nombre AS nombre,

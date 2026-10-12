@@ -31,7 +31,7 @@ export default function RecruiterModal({
   setRColor,
   onSave,
   onCancel,
-}: Props) {
+}: Readonly<Props>) {
   const backdropHandlers = useBackdropClose(onCancel);
 
   return (
@@ -41,7 +41,6 @@ export default function RecruiterModal({
     >
       <div
         className="bg-white w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl p-6 md:p-8 shadow-2xl relative"
-        onClick={(e) => e.stopPropagation()}
       >
         <h3 className="text-xl font-bold text-slate-800 mb-6 pb-4 border-b border-black/10">
           Editar Reclutador
@@ -49,7 +48,7 @@ export default function RecruiterModal({
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm text-slate-500 font-medium mb-1">
+            <label htmlFor="recruiter-nombre" className="block text-sm text-slate-500 font-medium mb-1">
               Nombre
             </label>
             <input
@@ -64,7 +63,7 @@ export default function RecruiterModal({
           </div>
 
           <div>
-            <label className="block text-sm text-slate-500 font-medium mb-1">
+            <label htmlFor="recruiter-phone" className="block text-sm text-slate-500 font-medium mb-1">
               Teléfono Whatsapp
             </label>
             <div className="flex gap-2">
@@ -94,7 +93,7 @@ export default function RecruiterModal({
           </div>
 
           <div>
-            <label className="block text-sm text-slate-500 font-medium mb-1">
+            <label htmlFor="recruiter-calendar" className="block text-sm text-slate-500 font-medium mb-1">
               Correo Electrónico (Google Calendar ID)
             </label>
             <input
@@ -109,7 +108,7 @@ export default function RecruiterModal({
           </div>
 
           <div>
-            <label className="block text-sm text-slate-500 font-medium mb-1">
+            <label htmlFor="recruiter-color" className="block text-sm text-slate-500 font-medium mb-1">
               Color Identificador
             </label>
             <div className="flex items-center gap-4">

@@ -25,8 +25,8 @@ function getSecret(): string | null {
 }
 
 function base64url(bytes: ArrayBuffer): string {
-  const chars = String.fromCharCode(...new Uint8Array(bytes));
-  return btoa(chars).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const chars = String.fromCodePoint(...new Uint8Array(bytes));
+  return btoa(chars).replace(/\+/g, '-').replace(/\//g, '_').replace(/={1,2}$/, '');
 }
 
 async function firmar(mensaje: string, secret: string): Promise<string> {
@@ -45,7 +45,7 @@ async function firmar(mensaje: string, secret: string): Promise<string> {
 function comparaSegura(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let dif = 0;
-  for (let i = 0; i < a.length; i++) dif |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  for (let i = 0; i < a.length; i++) dif |= (a.codePointAt(i) || 0) ^ (b.codePointAt(i) || 0);
   return dif === 0;
 }
 

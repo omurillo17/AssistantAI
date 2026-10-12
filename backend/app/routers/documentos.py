@@ -122,6 +122,62 @@ def _borrar_archivo(url: str) -> None:
         pass
 
 
+def _extraer_urls_candidato(row, blobs: dict) -> list[str]:
+    urls: list[str] = []
+    if isinstance(row["link_cv"], str) and row["link_cv"].startswith("/uploads/"):
+        urls.append(row["link_cv"])
+    for blob in blobs.values():
+        for url in _urls_del_blob(blob):
+            if url not in urls:
+                urls.append(url)
+    return urls
+
+
+def _parsear_tipos_respuesta(datos: dict, total: int) -> list[str]:
+    tipos = ["OTRO"] * total
+    for entrada in datos.get("archivos") or []:
+        if not isinstance(entrada, dict):
+            continue
+        try:
+            idx = int(entrada.get("indice")) - 1
+        except (TypeError, ValueError):
+            continue
+        if 0 <= idx < len(tipos):
+            tipos[idx] = normalizar_tipo_archivo(entrada.get("tipo"))
+    return tipos
+
+
+def _procesar_archivos_clasificados(
+    disponibles: list[tuple[str, dict]],
+    tipos: list[str],
+) -> tuple[list[dict], set[str]]:
+    archivos: list[dict] = []
+    descartadas: set[str] = set()
+    for (url, _), tipo in zip(disponibles, tipos):
+        if tipo in TIPOS_ARCHIVO_DESCARTABLES:
+            descartadas.add(url)
+            _borrar_archivo(url)
+            continue
+        archivos.append({
+            "url": url,
+            "tipo": tipo,
+            "etiqueta": ETIQUETAS_ARCHIVO.get(tipo, "Documento sin identificar"),
+        })
+    return archivos, descartadas
+
+
+def _actualizar_blobs(blobs: dict, archivos: list[dict], descartadas: set[str], urls_vivas: list[str]) -> None:
+    for blob in blobs.values():
+        if not blob:
+            continue
+        blob["archivos"] = archivos
+        blob["urls"] = [u for u in (blob.get("urls") or []) if u not in descartadas]
+        if blob.get("url") in descartadas:
+            blob["url"] = urls_vivas[0] if urls_vivas else None
+        if blob.get("url_reverso") in descartadas:
+            blob.pop("url_reverso", None)
+
+
 @router.post("/clasificar")
 async def clasificar(payload: ClasificarRequest) -> dict:
     """Reclasifica con IA los archivos ya guardados de un candidato."""
@@ -135,14 +191,7 @@ async def clasificar(payload: ClasificarRequest) -> dict:
         return {"ok": False, "error": "Candidato no encontrado", "archivos": []}
 
     blobs = {campo: _parse_blob(row[campo]) for campo in ("datos_ine", "datos_rfc", "cv_manual")}
-
-    urls: list[str] = []
-    if isinstance(row["link_cv"], str) and row["link_cv"].startswith("/uploads/"):
-        urls.append(row["link_cv"])
-    for blob in blobs.values():
-        for url in _urls_del_blob(blob):
-            if url not in urls:
-                urls.append(url)
+    urls = _extraer_urls_candidato(row, blobs)
 
     if not urls:
         return {"ok": True, "archivos": [], "descartados": 0}
@@ -167,48 +216,15 @@ async def clasificar(payload: ClasificarRequest) -> dict:
     try:
         crudo = respuesta[respuesta.index("{"):respuesta.rindex("}") + 1]
         datos = json.loads(crudo)
-    except (ValueError, json.JSONDecodeError):
+    except ValueError:
         logger.warning("clasificar: respuesta no parseable de Gemini para %s", payload.telefono)
         return {"ok": False, "error": "El análisis con IA devolvió una respuesta inesperada", "archivos": []}
 
-    tipos = ["OTRO"] * len(disponibles)
-    for entrada in datos.get("archivos") or []:
-        if not isinstance(entrada, dict):
-            continue
-        try:
-            idx = int(entrada.get("indice")) - 1
-        except (TypeError, ValueError):
-            continue
-        if 0 <= idx < len(tipos):
-            tipos[idx] = normalizar_tipo_archivo(entrada.get("tipo"))
-
-    archivos: list[dict] = []
-    descartadas: set[str] = set()
-    for (url, _), tipo in zip(disponibles, tipos):
-        if tipo in TIPOS_ARCHIVO_DESCARTABLES:
-            descartadas.add(url)
-            _borrar_archivo(url)
-            continue
-        archivos.append({
-            "url": url,
-            "tipo": tipo,
-            "etiqueta": ETIQUETAS_ARCHIVO.get(tipo, "Documento sin identificar"),
-        })
-
+    tipos = _parsear_tipos_respuesta(datos, len(disponibles))
+    archivos, descartadas = _procesar_archivos_clasificados(disponibles, tipos)
     urls_vivas = [a["url"] for a in archivos]
 
-    # Se reescriben los tres campos con la misma clasificación: cada uno sigue
-    # guardando los datos extraídos que ya tenía (nombre, curp, rfc...), solo
-    # cambia la lista de archivos y se limpian las urls descartadas.
-    for blob in blobs.values():
-        if not blob:
-            continue
-        blob["archivos"] = archivos
-        blob["urls"] = [u for u in (blob.get("urls") or []) if u not in descartadas]
-        if blob.get("url") in descartadas:
-            blob["url"] = urls_vivas[0] if urls_vivas else None
-        if blob.get("url_reverso") in descartadas:
-            blob.pop("url_reverso", None)
+    _actualizar_blobs(blobs, archivos, descartadas, urls_vivas)
 
     link_cv = row["link_cv"] if row["link_cv"] not in descartadas else None
 

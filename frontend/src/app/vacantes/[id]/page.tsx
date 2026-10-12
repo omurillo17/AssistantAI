@@ -155,7 +155,7 @@ export default function VacanteFiltrosPage() {
     setLoading(true);
     try {
       const res = await fetch(`${API_URL}${tenantQuery()}`);
-      if (!res.ok) throw new Error();
+      if (!res.ok) throw new Error("Error al cargar vacante y reclutadores");
       const data = await res.json();
       const raw: Partial<Recruiter>[] = Array.isArray(data) ? data : data.data || [];
 
@@ -241,7 +241,7 @@ export default function VacanteFiltrosPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(updatedRecruiters),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) throw new Error("Error al guardar filtros de vacante");
 
       setRecruiters(updatedRecruiters);
       setVacante({ ...vacante, filtros: updatedFiltros });
@@ -255,8 +255,8 @@ export default function VacanteFiltrosPage() {
 
   const addFiltroFromTemplate = (template: Omit<Filtro, "id" | "activo">) => {
     if (!vacante) return;
-    const existing = (vacante.filtros || []).find((f) => f.clave === template.clave);
-    if (existing) { showToast("Este filtro ya está agregado", true); return; }
+    const alreadyExists = (vacante.filtros || []).some((f) => f.clave === template.clave);
+    if (alreadyExists) { showToast("Este filtro ya está agregado", true); return; }
     const newF: Filtro = { ...template, id: nuevoFiltroId("f"), activo: true };
     const updated = [...(vacante.filtros || []), newF];
     saveFiltros(updated);
@@ -284,9 +284,9 @@ export default function VacanteFiltrosPage() {
 
   const togglePreguntaBase = (template: Omit<Filtro, "id" | "activo">) => {
     if (!vacante) return;
-    const existing = (vacante.filtros || []).find((f) => f.clave === template.clave);
+    const exists = (vacante.filtros || []).some((f) => f.clave === template.clave);
     let updated;
-    if (existing) {
+    if (exists) {
       updated = (vacante.filtros || []).filter((f) => f.clave !== template.clave);
     } else {
       const newF: Filtro = { ...template, id: nuevoFiltroId("fb"), activo: true, es_pregunta_base: true };
@@ -571,10 +571,10 @@ export default function VacanteFiltrosPage() {
 
               {newFiltro.tipo === "booleano" && (
                 <div>
-                  <label className="text-xs font-medium text-slate-500 block mb-1">Para aprobar, el candidato debe responder</label>
+                  <span className="text-xs font-medium text-slate-500 block mb-1">Para aprobar, el candidato debe responder</span>
                   <div className="flex gap-3">
                     {["Sí", "No"].map((opt) => (
-                      <label key={opt} className="flex items-center gap-2 cursor-pointer text-sm">
+                      <label key={opt} htmlFor={`filtro-requiere-${opt.toLowerCase()}`} className="flex items-center gap-2 cursor-pointer text-sm">
                         <input
                           id={`filtro-requiere-${opt.toLowerCase()}`}
                           type="radio"
@@ -683,7 +683,9 @@ export default function VacanteFiltrosPage() {
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4"
           {...preguntasBaseBackdrop}
         >
-          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl relative flex flex-col max-h-[85vh]" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="bg-white w-full max-w-md rounded-2xl shadow-2xl relative flex flex-col max-h-[85vh]"
+          >
             <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50 rounded-t-2xl">
               <div>
                 <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
@@ -704,7 +706,7 @@ export default function VacanteFiltrosPage() {
                 {PREGUNTAS_BASE_PREDEFINIDAS.map((pb) => {
                   const isSelected = (vacante?.filtros || []).some((f) => f.clave === pb.clave);
                   return (
-                    <label key={pb.clave} className={`flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-colors ${isSelected ? "bg-indigo-50/50" : "hover:bg-slate-50"}`}>
+                    <div key={pb.clave} className={`flex items-start gap-3 p-3 rounded-xl cursor-pointer transition-colors ${isSelected ? "bg-indigo-50/50" : "hover:bg-slate-50"}`}>
                       <div className="mt-0.5">
                         <input
                           id={`pregunta-base-${pb.clave}`}
@@ -712,14 +714,14 @@ export default function VacanteFiltrosPage() {
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => togglePreguntaBase(pb)}
-                          className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                          className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                         />
                       </div>
-                      <div className="flex-1">
-                        <div className="text-sm font-bold text-slate-700">{pb.etiqueta}</div>
-                        <div className="text-xs text-slate-500 mt-0.5">{pb.pregunta}</div>
-                      </div>
-                    </label>
+                      <label htmlFor={`pregunta-base-${pb.clave}`} className="flex-1 cursor-pointer">
+                        <span className="text-sm font-bold text-slate-700 block">{pb.etiqueta}</span>
+                        <span className="text-xs text-slate-500 mt-0.5 block">{pb.pregunta}</span>
+                      </label>
+                    </div>
                   );
                 })}
               </div>

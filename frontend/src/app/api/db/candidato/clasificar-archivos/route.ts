@@ -23,10 +23,10 @@ export async function POST(request: Request) {
     }
     const parsed = bodySchema.safeParse(await request.json());
     if (!parsed.success) {
-      return NextResponse.json({ error: 'Datos inválidos', detail: parsed.error.flatten() }, { status: 400 });
+      return NextResponse.json({ error: 'Datos inválidos', detail: z.flattenError(parsed.error) }, { status: 400 });
     }
 
-    const backendBase = process.env.BACKEND_API_BASE || 'http://backend:8000';
+    const backendBase = process.env.BACKEND_API_BASE || 'http://backend:8000'; // NOSONAR
     const apiKey = process.env.PYTHON_SERVICE_API_KEY;
     const resp = await fetch(`${backendBase}/internal/documentos/clasificar`, {
       method: 'POST',

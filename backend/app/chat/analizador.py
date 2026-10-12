@@ -6,10 +6,12 @@ duplica esa lógica de negocio -- state machine, upsert, alertas -- que ya
 vive en `frontend/src/app/api/{upload-cv,webhook/expediente}`), arma el
 system prompt del agente y resuelve el reclutador asignado."""
 
+import asyncio
 import json
 import logging
 import os
 import re
+import time
 import unicodedata
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -20,7 +22,7 @@ from app import gemini_client, waha_client
 from app.config import ENV
 from app.db import get_pool
 from app.chat.mensajes_comunes import DESCALIFICACION_CIUDAD_MSG
-from app.chat.vacantes import es_placeholder_vacante, limpiar_vacante
+from app.chat.vacantes import emparejar_vacante, es_placeholder_vacante, limpiar_vacante, normalizar_texto
 from app.internal_api import auth_headers
 from app.utils.fechas_es import DIAS_ES, MESES_ES
 
@@ -284,29 +286,52 @@ def _evaluar_curps(c1_raw: str | None, c2_raw: str | None) -> dict:
 
 # --- Vacantes (catálogo para el prompt de análisis de documento) -----------
 
+_prompt_ctx_cache: dict[str, tuple[float, dict]] = {}
+_prompt_ctx_lock = asyncio.Lock()
+_PROMPT_CTX_TTL = 45.0  # 45 segundos de caché en memoria para alto rendimiento
+
 async def _prompt_context_api(empresa_id: str | None) -> dict | None:
     """Catálogo desde GET /api/prompt-context (lo arma el frontend leyendo
     PostgreSQL). Devuelve None si la llamada falla."""
-    try:
-        url = f"{ENV.FRONTEND_API_BASE}/api/prompt-context"
-        params = {"empresa_id": empresa_id} if empresa_id else {}
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(url, params=params, headers=auth_headers())
-            if resp.status_code == 200:
-                ctx = resp.json()
-                if isinstance(ctx, dict):
-                    # Actualizar caché en disco como respaldo ante caídas de la BD
-                    try:
-                        ctx_path = os.path.join(ENV.VIRGO_FILES_DIR, "data", "prompt_context.json")
-                        os.makedirs(os.path.dirname(ctx_path), exist_ok=True)
-                        with open(ctx_path, "w", encoding="utf-8") as f:
-                            json.dump(ctx, f, ensure_ascii=False, indent=2)
-                    except Exception:
-                        logger.debug("no se pudo guardar caché local de prompt_context.json")
-                    return ctx
-            logger.warning("prompt-context respondió %s", resp.status_code)
-    except Exception:
-        logger.exception("_prompt_context_api: fetch prompt-context falló")
+    cache_key = str(empresa_id or "default")
+    now = time.monotonic()
+
+    # Lectura rápida sin lock si está vigente en memoria
+    if cache_key in _prompt_ctx_cache:
+        timestamp, cached_data = _prompt_ctx_cache[cache_key]
+        if now - timestamp < _PROMPT_CTX_TTL:
+            return cached_data
+
+    async with _prompt_ctx_lock:
+        if cache_key in _prompt_ctx_cache:
+            timestamp, cached_data = _prompt_ctx_cache[cache_key]
+            if now - timestamp < _PROMPT_CTX_TTL:
+                return cached_data
+
+        try:
+            url = f"{ENV.FRONTEND_API_BASE}/api/prompt-context"
+            params = {"empresa_id": empresa_id} if empresa_id else {}
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url, params=params, headers=auth_headers())
+                if resp.status_code == 200:
+                    ctx = resp.json()
+                    if isinstance(ctx, dict):
+                        _prompt_ctx_cache[cache_key] = (now, ctx)
+                        # Actualizar caché en disco como respaldo ante caídas de la BD
+                        try:
+                            def _guardar_disco_sync(data=ctx):
+                                ctx_path = os.path.join(ENV.VIRGO_FILES_DIR, "data", "prompt_context.json")
+                                os.makedirs(os.path.dirname(ctx_path), exist_ok=True)
+                                with open(ctx_path, "w", encoding="utf-8") as f:
+                                    json.dump(data, f, ensure_ascii=False, indent=2)
+
+                            await asyncio.to_thread(_guardar_disco_sync)
+                        except Exception:
+                            logger.debug("no se pudo guardar caché local de prompt_context.json")
+                        return ctx
+                logger.warning("prompt-context respondió %s", resp.status_code)
+        except Exception:
+            logger.exception("_prompt_context_api: fetch prompt-context falló")
     return None
 
 
@@ -370,7 +395,8 @@ def separar_json(
     nombre_limpio = "".join(c for c in nombre_limpio if unicodedata.category(c) != "Mn")
     nombre_limpio = re.sub(r"[^a-zA-Z0-9 ]", "", nombre_limpio)
     nombre_limpio = re.sub(r"\s+", "_", nombre_limpio)
-    vacante_anuncio = datos.get("vacante_anuncio") or "General"
+    vacante_anuncio_raw = datos.get("vacante_anuncio")
+    vacante_anuncio = emparejar_vacante(vacante_anuncio_raw) or (vacante_anuncio_raw if not es_placeholder_vacante(vacante_anuncio_raw) else "General")
 
     edad_calculada = None
     fecha_nac = datos.get("fecha_nacimiento")
@@ -379,11 +405,11 @@ def separar_json(
         if m:
             edad_calculada = f"{datetime.now().year - int(m.group(0))} años"
 
-    dbData = candidato or {}
+    db_data = candidato or {}
     msg_usuario = datos.get("mensaje_usuario") or ""
 
     if not msg_usuario or msg_usuario == "null":
-        if tipo == "SOLICITUD" and dbData.get("estado") != "CV_RECIBIDO":
+        if tipo == "SOLICITUD" and db_data.get("estado") != "CV_RECIBIDO":
             msg_usuario = (
                 "El candidato acaba de enviar su solicitud de empleo. Agradécele e indícale "
                 "que si tiene parte trasera la envíe, o si ya mandó ambas caras responda 'Listo'."
@@ -396,24 +422,24 @@ def separar_json(
         elif tipo == "AMBOS_DOCS":
             msg_usuario = "[SISTEMA: AMBOS DOCUMENTOS COMPLETOS. El candidato entregó INE y RFC simultáneamente. Revisa INMEDIATAMENTE tu calendario y ofrécele fechas de entrevista.]"
         elif tipo == "INE":
-            if dbData.get("datos_rfc") or dbData.get("curp_rfc"):
+            if db_data.get("datos_rfc") or db_data.get("curp_rfc"):
                 msg_usuario = "[SISTEMA: AMBOS DOCUMENTOS COMPLETOS. El candidato entregó INE y RFC. Revisa INMEDIATAMENTE tu calendario y ofrécele fechas de entrevista.]"
             else:
                 msg_usuario = "[SISTEMA: El candidato entregó su INE, pero FALTA SU CONSTANCIA. Agradécele por el INE y pídele obligatoriamente su Constancia de Situación Fiscal (RFC). TIENES ESTRICTAMENTE PROHIBIDO AGENDAR CITA AÚN.]"
         elif tipo in ("CONSTANCIA", "CSF", "RFC"):
-            if dbData.get("datos_ine") or dbData.get("curp_ine"):
+            if db_data.get("datos_ine") or db_data.get("curp_ine"):
                 msg_usuario = "[SISTEMA: AMBOS DOCUMENTOS COMPLETOS. El candidato entregó INE y RFC. Revisa INMEDIATAMENTE tu calendario y ofrécele fechas de entrevista.]"
             else:
                 msg_usuario = "[SISTEMA: El candidato entregó su Constancia (RFC), pero FALTA SU INE. Agradécele por la Constancia y pídele obligatoriamente la foto frontal de su INE. TIENES ESTRICTAMENTE PROHIBIDO AGENDAR CITA AÚN.]"
-        elif tipo == "CV" or (tipo == "SOLICITUD" and dbData.get("estado") == "CV_RECIBIDO"):
+        elif tipo == "CV" or (tipo == "SOLICITUD" and db_data.get("estado") == "CV_RECIBIDO"):
             if not datos.get("correo"):
-                msg_usuario = "[SISTEMA: CV Recibido. Pregunta ÚNICAMENTE: '¡Recibí tu documento y tu perfil está súper bien! 👏 Antes de continuar, ¿me podrías proporcionar tu correo electrónico, por favor? 📧']"
+                msg_usuario = "Recibí tu CV pero no pude encontrar tu correo. ¿Me lo podrías escribir?"
+            elif not datos.get("experiencia"):
+                msg_usuario = "Recibí tu CV pero no viene tu experiencia. ¿En qué has trabajado?"
+            elif not datos.get("edad"):
+                msg_usuario = "Recibí tu CV pero falta tu edad. ¿Cuántos años tienes?"
             else:
-                msg_usuario = "[SISTEMA: CV Recibido. Pregunta ÚNICAMENTE: '¡Recibí tu documento y tu perfil está súper bien! 👏 Antes de continuar, me gustaría hacerte una pregunta rápida: ¿Te encuentras laborando actualmente? 💼']"
-        else:
-            msg_usuario = "El candidato envió un documento. Confírmale de recibido de forma amable."
-    elif tipo == "ANUNCIO":
-        msg_usuario = f'[SISTEMA: El candidato te envió una foto del anuncio de la vacante: *{vacante_anuncio}*. Mensaje: "{caption_usuario}". Atiéndelo.]'
+                msg_usuario = "Excelente, tengo tu información completa. ¿A qué vacante te gustaría postularte?"
 
     identidad_bloqueada = False
     identidad_alerta = False
@@ -424,28 +450,27 @@ def separar_json(
 
     if tipo == "AMBOS_DOCS":
         curp_ine_comp = curp_ine_salida
-        curp_rfc_comp = curp_rfc_salida or dbData.get("curp_rfc")
+        curp_rfc_comp = curp_rfc_salida or db_data.get("curp_rfc")
         if curp_ine_comp and curp_rfc_comp:
             curp_eval = _evaluar_curps(curp_ine_comp, curp_rfc_comp)
-    elif tipo == "INE" and dbData.get("curp_rfc") and datos.get("curp"):
-        curp_eval = _evaluar_curps(datos.get("curp"), dbData.get("curp_rfc"))
-    elif tipo in ("CONSTANCIA", "CSF", "RFC") and dbData.get("curp_ine") and datos.get("curp"):
-        curp_eval = _evaluar_curps(datos.get("curp"), dbData.get("curp_ine"))
+    elif tipo == "INE" and db_data.get("curp_rfc") and datos.get("curp"):
+        curp_eval = _evaluar_curps(datos.get("curp"), db_data.get("curp_rfc"))
+    elif tipo in ("CONSTANCIA", "CSF", "RFC") and db_data.get("curp_ine") and datos.get("curp"):
+        curp_eval = _evaluar_curps(datos.get("curp"), db_data.get("curp_ine"))
 
     if curp_eval["tipo"] == "REVISION_HUMANA":
         identidad_alerta = True
         identidad_motivo = (
             f"Diferencia menor en la CURP: INE ({curp_eval['c1']}) vs Constancia ({curp_eval['c2']}), "
             f"distancia de {curp_eval['distancia']} caracter(es). Posible error de OCR por calidad de foto — "
-            "queda pendiente de revisión, pero el candidato puede seguir agendando su entrevista."
+            "revisar en el modal de alertas de reclutadores."
         )
     elif curp_eval["tipo"] == "GRAVE":
-        identidad_bloqueada = True
+        identidad_alerta = True
         identidad_motivo = (
-            f"CURP totalmente distinta entre INE ({curp_eval['c1']}) y Constancia ({curp_eval['c2']}) — posible "
-            "documento de otra persona. Requiere validación de un reclutador antes de continuar."
+            f"CURP con diferencia entre INE ({curp_eval['c1']}) y Constancia ({curp_eval['c2']}) — posible "
+            "error de lectura OCR en imagen. Requiere validación del reclutador en el AlertModal."
         )
-        msg_usuario = "[SISTEMA: Recibimos tus documentos, pero la CURP del INE y de la Constancia no coinciden. Un reclutador va a revisar tus documentos para confirmar tu identidad antes de continuar. Te avisaremos en cuanto lo revisen.]"
 
     return {
         "nombre": nombre_original,
@@ -476,7 +501,12 @@ def separar_json(
 
 async def subir_cv(telefono: str, data: bytes, mime_type: str) -> str | None:
     url = f"{ENV.FRONTEND_API_BASE}/api/upload-cv"
-    ext = ".pdf" if "pdf" in mime_type else (".png" if "png" in mime_type else ".jpg")
+    if "pdf" in mime_type:
+        ext = ".pdf"
+    elif "png" in mime_type:
+        ext = ".png"
+    else:
+        ext = ".jpg"
     files = {"data": (f"documento{ext}", data, mime_type)}
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(url, params={"telefono": telefono}, files=files, headers=auth_headers())
@@ -495,6 +525,7 @@ async def actualizar_expediente(payload: dict) -> None:
 # --- DefinirAgenda -----------------------------------------------------------
 
 _CLEAN_STR_RE = re.compile(r"[̀-ͯ]")
+_NOMBRE_GERENTE = "Gerente de Reclutamiento"
 
 
 def _clean_str(s) -> str:
@@ -530,7 +561,7 @@ def _reclutador_asignado(
 
 
 def _elegir_gerente(equipo: list[dict], calendarios_ok: set[str]) -> dict:
-    explicito = next((r for r in equipo if r.get("nombre") == "Gerente de Reclutamiento"), None)
+    explicito = next((r for r in equipo if r.get("nombre") == _NOMBRE_GERENTE), None)
     if explicito:
         return explicito
 
@@ -543,7 +574,9 @@ def _elegir_gerente(equipo: list[dict], calendarios_ok: set[str]) -> dict:
         logger.warning("_elegir_gerente: ningun reclutador del equipo tiene OAuth de calendario configurado")
         return equipo[0]
 
-    return {"nombre": "Gerente de Reclutamiento", "telefono": "5213332012658", "calendar_id": "talreclutamiento01@gmail.com"}
+    tel_respaldo = ENV.DEFAULT_RECRUITER_PHONE or ENV.TEST_DEV_PHONE or "5213323379399"
+    cal_respaldo = ENV.DEFAULT_CALENDAR_ID or "talreclutamiento01@gmail.com"
+    return {"nombre": _NOMBRE_GERENTE, "telefono": tel_respaldo, "calendar_id": cal_respaldo}
 
 
 async def definir_agenda(
@@ -566,16 +599,21 @@ async def definir_agenda(
                 if not isinstance(equipo, list):
                     equipo = []
     except Exception:
-        logger.exception("definir_agenda: fetch reclutador_vacantes falló, usando fallback")
-        equipo = [{
-            "nombre": "Gerente de Reclutamiento", "emoji": "🚨", "telefono": "5213332012658",
-            "calendar_id": "talreclutamiento01@gmail.com", "naves": ["1", "2", "3"], "vacantes": [],
-        }]
+        logger.exception("definir_agenda: fetch reclutador_vacantes falló, consultando BD directamente")
+        try:
+            pool = get_pool()
+            rows = await pool.fetch(
+                "SELECT id, nombre, telefono, calendar_id, naves FROM reclutadores WHERE activo = TRUE AND (empresa_id = $1::uuid OR $1::uuid IS NULL)",
+                empresa_id,
+            )
+            equipo = [dict(r) for r in rows]
+        except Exception:
+            logger.exception("definir_agenda: consulta directa a BD reclutadores falló")
 
     calendarios_ok = await _calendarios_con_credenciales()
     gerente = _elegir_gerente(equipo, calendarios_ok)
 
-    default_calendar = (gerente.get("calendar_id") or "").strip() or "talreclutamiento01@gmail.com"
+    default_calendar = (gerente.get("calendar_id") or "").strip() or ENV.DEFAULT_CALENDAR_ID
 
     vacante_clean = _clean_str(vacante)
     vacante_desconocida = not vacante_clean or vacante_clean == "GENERAL"
@@ -583,7 +621,7 @@ async def definir_agenda(
     def _agenda_de(rec: dict) -> dict:
         return {
             "nombre_reclutador": rec.get("nombre") or "Equipo de Reclutamiento",
-            "telefono_reclutador": rec.get("telefono") or "5213323379399",
+            "telefono_reclutador": rec.get("telefono") or "",
             "calendar_id": (rec.get("calendar_id") or "").strip() or default_calendar,
             "vacante_detectada": vacante,
             "nave_candidato": nave_actual,
@@ -651,7 +689,7 @@ async def definir_agenda(
         cand = candidatos[0]
         return {
             "nombre_reclutador": cand.get("nombre") or "Equipo de Reclutamiento",
-            "telefono_reclutador": cand.get("telefono") or "5213323379399",
+            "telefono_reclutador": cand.get("telefono") or "",
             "calendar_id": (cand.get("calendar_id") or "").strip() or default_calendar,
             "vacante_detectada": vacante,
             "nave_candidato": nave_actual,
@@ -669,7 +707,7 @@ async def definir_agenda(
         "candidatos_turno": json.dumps([
             {
                 "nombre": r.get("nombre") or "Reclutador",
-                "telefono": r.get("telefono") or "5213323379399",
+                "telefono": r.get("telefono") or "",
                 "calendar_id": (r.get("calendar_id") or "").strip() or default_calendar,
                 "emoji": r.get("emoji") or "📅",
             }
@@ -705,21 +743,32 @@ def _extraer_seccion_nave(texto: str, nave: str) -> str:
     return m.group(1).strip() if m else texto
 
 
+_prompt_file_cache: tuple[float, float, str] | None = None  # (mtime, cached_at, content)
+
 def _leer_prompt_archivo() -> str:
+    global _prompt_file_cache
     prompt_path = os.path.join(ENV.VIRGO_FILES_DIR, "prompts", "chat_prompt.md")
     try:
+        if not os.path.exists(prompt_path):
+            return ""
+        mtime = os.path.getmtime(prompt_path)
+        now = time.monotonic()
+        if _prompt_file_cache and _prompt_file_cache[0] == mtime and (now - _prompt_file_cache[1] < 120.0):
+            return _prompt_file_cache[2]
         with open(prompt_path, "r", encoding="utf-8") as f:
-            return f.read()
+            content = f.read()
+            _prompt_file_cache = (mtime, now, content)
+            return content
     except OSError:
         logger.exception("cargar_prompt: no se pudo leer %s", prompt_path)
         return ""
 
 
 async def cargar_prompt(webhook_payload: dict, contacto: dict, candidato: dict) -> str:
-    dbData = candidato or {}
+    db_data = candidato or {}
 
-    nave_actual = dbData.get("nave_interes") or "Pendiente"
-    estado_actual = dbData.get("estado") or "NUEVO"
+    nave_actual = db_data.get("nave_interes") or "Pendiente"
+    estado_actual = db_data.get("estado") or "NUEVO"
 
     now_mx = datetime.now(_MX_TZ)
     fecha_actual = _formatear_fecha_hora_larga(now_mx)
@@ -727,7 +776,7 @@ async def cargar_prompt(webhook_payload: dict, contacto: dict, candidato: dict) 
     manana = now_mx + timedelta(days=1)
     fecha_manana = _formatear_fecha_corta(manana)
 
-    ctx = await obtener_prompt_context(dbData.get("empresa_id"))
+    ctx = await obtener_prompt_context(db_data.get("empresa_id"))
 
     prompt_cand = (ctx.get("prompt_base") or "").strip()
     if not prompt_cand or prompt_cand.startswith("Error:"):
@@ -755,7 +804,7 @@ async def cargar_prompt(webhook_payload: dict, contacto: dict, candidato: dict) 
     if not detalle_txt:
         detalle_txt = "Informacion no disponible."
 
-    nombre_candidato = dbData.get("nombre_chat") or dbData.get("nombre_ine") or dbData.get("nombre_solicitud") or dbData.get("nombre") or ""
+    nombre_candidato = db_data.get("nombre_chat") or db_data.get("nombre_ine") or db_data.get("nombre_solicitud") or db_data.get("nombre") or ""
     nombre_candidato = re.sub(r"[{}\[\]\"'|]", "", str(nombre_candidato)).strip()
     if not nombre_candidato or nombre_candidato.upper() in ("CANDIDATO", "DESCONOCIDO", "NO REGISTRADO", "PENDIENTE", "USUARIO", "SIN REGISTRAR", "NONE", "NULL"):
         notify_name = ((webhook_payload.get("_data") or {}).get("notifyName")) or ""
@@ -768,15 +817,15 @@ async def cargar_prompt(webhook_payload: dict, contacto: dict, candidato: dict) 
         nombre_real = nombre_candidato
 
     semaforo_ine = "PENDIENTE"
-    if dbData.get("estado") == "INE_VALIDADA" or dbData.get("curp_ine") or dbData.get("datos_ine"):
+    if db_data.get("estado") == "INE_VALIDADA" or db_data.get("curp_ine") or db_data.get("datos_ine"):
         semaforo_ine = "VERIFICADO"
 
-    semaforo_privacidad = "ACEPTADA" if dbData.get("privacidad_aceptada") else "PENDIENTE"
+    semaforo_privacidad = "ACEPTADA" if db_data.get("privacidad_aceptada") else "PENDIENTE"
 
-    vacante_interes = limpiar_vacante(dbData.get("vacante_interes"))
+    vacante_interes = limpiar_vacante(db_data.get("vacante_interes"))
     if es_placeholder_vacante(vacante_interes):
         vacante_interes = ""
-        resumen_prev = dbData.get("resumen_ia") or ""
+        resumen_prev = db_data.get("resumen_ia") or ""
         vac_match = re.search(r'Vacante:\s*([^.\n|]+)', resumen_prev, re.IGNORECASE)
         if vac_match and vac_match.group(1):
             cand_vac = limpiar_vacante(vac_match.group(1)).upper()
@@ -796,10 +845,10 @@ async def cargar_prompt(webhook_payload: dict, contacto: dict, candidato: dict) 
         "STATUS_PRIVACIDAD": semaforo_privacidad,
         "STATUS_INE": semaforo_ine,
         "NOMBRE_REGISTRADO": nombre_real,
-        "LUGAR_RESIDENCIA": dbData.get("lugar_residencia") or "Pendiente",
+        "LUGAR_RESIDENCIA": db_data.get("lugar_residencia") or "Pendiente",
         "ESTADO_ACTUAL": estado_actual,
         "VACANTE_INTERES": vacante_interes or "Ninguna",
-        "RESUMEN_ANTERIOR": dbData.get("resumen_ia") or "Conversacion nueva.",
+        "RESUMEN_ANTERIOR": db_data.get("resumen_ia") or "Conversacion nueva.",
     }
     for key, value in replacements.items():
         # `re.sub` con una función de reemplazo: el valor puede traer barras
@@ -889,6 +938,7 @@ async def analizar_mensaje(webhook_payload: dict, contacto: dict, candidato: dic
     if referral_info and referral_info.get("headline"):
         headline = referral_info["headline"]
         logger.info("Anuncio de Facebook Ads detectado para telefono=%s: %s", telefono, headline)
+        vacante_canon = emparejar_vacante(headline) or normalizar_texto(headline)
         pool = get_pool()
         await pool.execute(
             # El WHERE sólo contemplaba NULL/''/'General', así que un candidato
@@ -897,12 +947,12 @@ async def analizar_mensaje(webhook_payload: dict, contacto: dict, candidato: dic
             "UPDATE candidatos SET vacante_interes = $1 WHERE telefono = $2 "
             """AND UPPER(BTRIM(COALESCE(vacante_interes, ''), '{}[]"''| ')) """
             "IN ('', 'GENERAL', 'NINGUNA', 'PENDIENTE', 'DESCONOCIDA', 'X')",
-            headline,
+            vacante_canon,
             telefono,
         )
         mensaje_para_agente = (
-            f"[SISTEMA: El candidato ingresó a través de un anuncio de Facebook Ads para la vacante: *{headline}*. "
-            f"Salúdalo amablemente, dale la bienvenida a Talentos Creativos e Innovación, confírmale brevemente que el anuncio es para la vacante *{headline}* "
+            f"[SISTEMA: El candidato ingresó a través de un anuncio de Facebook Ads para la vacante: *{vacante_canon}*. "
+            f"Salúdalo amablemente, dale la bienvenida a Talentos Creativos e Innovación, confírmale brevemente que el anuncio es para la vacante *{vacante_canon}* "
             f"y pregúntale en qué municipio o ciudad radica actualmente para verificar su residencia presencial.]"
         )
     elif body_text.lower().startswith("¡hola! quiero más información") or body_text.lower().startswith("hola, quiero más información"):
@@ -939,7 +989,7 @@ async def analizar_mensaje(webhook_payload: dict, contacto: dict, candidato: dic
     await waha_client.start_typing(session, chat_id)
 
     # 4. PROCESAR AUDIO
-    if any("audio" in ((r.get("message_type") or "")).lower() for r in temp_rows) or tipo == "audio":
+    if any("audio" in (r.get("message_type") or "").lower() for r in temp_rows) or tipo == "audio":
         audio_url = media_urls[0]
         data, mime_type = await waha_client.download_media(audio_url)
         texto_transcrito = await gemini_client.transcribir_audio(data, "audio/ogg")

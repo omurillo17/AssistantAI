@@ -20,7 +20,7 @@ const USUARIO_REGEX = /^[a-zA-Z0-9._-]+$/;
 // Roles operativos: trabajan sobre una nave concreta y reciben avisos de citas
 // y alertas por WhatsApp, así que para ellos el grupo y el teléfono son
 // obligatorios. ROOT y ADMIN administran y no reciben esos avisos.
-const ROLES_OPERATIVOS = ["RECLUTADOR", "ENCARGADO", "USER"];
+const ROLES_OPERATIVOS = new Set(["RECLUTADOR", "ENCARGADO", "USER"]);
 
 const ETIQUETA = "block text-sm font-semibold mb-1 text-slate-600";
 const CAMPO =
@@ -29,7 +29,7 @@ const CAMPO =
 // Wrapper: al cerrarse desmonta el contenido, y con el desmontaje se reinicia
 // el formulario. Reiniciarlo desde un useEffect provocaba un render en cascada
 // (react-hooks/set-state-in-effect).
-export default function NewUserModal(props: NewUserModalProps) {
+export default function NewUserModal(props: Readonly<NewUserModalProps>) {
   if (!props.isOpen) return null;
   return <NewUserModalContent {...props} />;
 }
@@ -41,7 +41,7 @@ function NewUserModalContent({
   grupos,
   naves,
   showToast,
-}: NewUserModalProps) {
+}: Readonly<NewUserModalProps>) {
   const [usuarioInput, setUsuarioInput] = useState("");
   const [nombreInput, setNombreInput] = useState("");
   const [passwordInput, setPasswordInput] = useState("");
@@ -56,11 +56,11 @@ function NewUserModalContent({
   const creatorEmpresaId = typeof window !== 'undefined' ? localStorage.getItem("tci_empresa_id") : null;
 
   const usuarioInvalido = usuarioInput.length > 0 && !USUARIO_REGEX.test(usuarioInput);
-  const esRolOperativo = ROLES_OPERATIVOS.includes(rolInput);
+  const esRolOperativo = ROLES_OPERATIVOS.has(rolInput);
   const grupoRequerido = esRolOperativo;
   const telefonoRequerido = esRolOperativo;
 
-  const crearUsuario = async (e: React.FormEvent) => {
+  const crearUsuario = async (e: React.SyntheticEvent) => {
     e.preventDefault();
 
     // Se valida antes de salir a la red para dar el mensaje exacto de una vez;
@@ -126,7 +126,7 @@ function NewUserModalContent({
             ))}
           </optgroup>
         ))}
-      {creatorRole !== "ENCARGADO" && grupos.filter(g => !g.empresa_id).length > 0 && (
+      {creatorRole !== "ENCARGADO" && grupos.some(g => !g.empresa_id) && (
         <optgroup label="Sin Empresa Asignada (Legacy)">
           {grupos.filter(g => !g.empresa_id).map(g => (
             <option key={g.id} value={g.id}>
@@ -148,7 +148,9 @@ function NewUserModalContent({
       {/* Formato apaisado: max-w-3xl y rejilla de 2 columnas en pantallas
           medianas hacia arriba. Los seis campos caben sin scroll, en vez de
           una tira vertical larga. En móvil colapsa a una sola columna. */}
-      <div className="bg-white w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl p-6 md:p-8 shadow-2xl relative" onClick={e => e.stopPropagation()}>
+      <div
+        className="bg-white w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl p-6 md:p-8 shadow-2xl relative"
+      >
         <div className="flex justify-between items-center mb-6 pb-4 border-b border-black/10">
           <div>
             <h3 className="text-xl font-bold text-slate-800">Nuevo Usuario</h3>

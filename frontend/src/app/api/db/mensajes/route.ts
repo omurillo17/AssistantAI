@@ -8,7 +8,7 @@ import { resolveGrupoNaveIds } from '@/lib/grupos';
 import { getCandidateDisplayName } from '@/lib/formatters';
 
 const postSchema = z.object({
-  candidato_id: z.string().uuid("ID de candidato inválido").optional(),
+  candidato_id: z.uuid("ID de candidato inválido").optional(),
   telefono: z.string().min(1, "Falta el campo telefono").max(20),
   ultimo_mensaje: z.string().optional(),
   ultimo_mensaje_rol: z.string().max(50).optional().default('user'),
@@ -149,11 +149,66 @@ export async function GET(request: Request) {
   }
 }
 
+async function resolveCandidatoIdByPhone(telefono: string, targetEmpresa: string | null): Promise<string | null> {
+  const query = targetEmpresa
+    ? 'SELECT id FROM candidatos WHERE telefono = $1 AND empresa_id = $2 ORDER BY updated_at DESC LIMIT 1'
+    : 'SELECT id FROM candidatos WHERE telefono = $1 ORDER BY updated_at DESC LIMIT 1';
+  const params = targetEmpresa ? [telefono, targetEmpresa] : [telefono];
+  const candRes = await pool.query(query, params);
+  return (candRes.rowCount && candRes.rowCount > 0) ? candRes.rows[0].id : null;
+}
+
+function buildMensajesBandejaUpsert(data: z.infer<typeof postSchema>, targetCandidatoId: string) {
+  const {
+    telefono,
+    ultimo_mensaje,
+    ultimo_mensaje_rol,
+    asignado_a_id,
+    mensajes_no_leidos,
+    activo,
+  } = data;
+
+  const setClauses: string[] = ['updated_at = NOW()'];
+  const values: unknown[] = [
+    targetCandidatoId,
+    telefono,
+    ultimo_mensaje ?? '',
+    ultimo_mensaje_rol,
+    asignado_a_id ?? null,
+    mensajes_no_leidos,
+    activo,
+  ];
+  let idx = 8;
+
+  if (ultimo_mensaje !== undefined) {
+    setClauses.push(`ultimo_mensaje = $${idx++}`);
+    values.push(ultimo_mensaje);
+    setClauses.push(`ultimo_mensaje_at = NOW()`);
+  }
+  if (ultimo_mensaje_rol !== undefined) {
+    setClauses.push(`ultimo_mensaje_rol = $${idx++}`);
+    values.push(ultimo_mensaje_rol);
+  }
+  if (asignado_a_id !== undefined) {
+    setClauses.push(`asignado_a_id = $${idx++}`);
+    values.push(asignado_a_id);
+  }
+  if (mensajes_no_leidos !== undefined) {
+    setClauses.push(`mensajes_no_leidos = $${idx++}`);
+    values.push(mensajes_no_leidos);
+  }
+  if (activo !== undefined) {
+    setClauses.push(`activo = $${idx++}`);
+    values.push(activo);
+  }
+
+  return { setClauses, values };
+}
+
 // ─── POST /api/db/mensajes ────────────────────────────────
 // Crea o actualiza un registro en mensajes_bandeja
 // Body: { telefono, ultimo_mensaje?, ultimo_mensaje_rol?, asignado_a_id?, mensajes_no_leidos?, activo? }
 export async function POST(request: Request) {
-
   try {
     const payload = await getSession(request);
     if (!payload) {
@@ -167,72 +222,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
     }
 
-    const {
-      candidato_id,
-      telefono,
-      ultimo_mensaje,
-      ultimo_mensaje_rol,
-      asignado_a_id,
-      mensajes_no_leidos,
-      activo,
-    } = parsed.data;
+    let targetCandidatoId = parsed.data.candidato_id;
 
-    let targetCandidatoId = candidato_id;
-
-    if (!targetCandidatoId && telefono) {
-      // Fallback: If no candidato_id is provided, try to find one by phone
-      // IMPORTANT: In SaaS mode, N8N MUST send empresa_id (via JWT or URL) so we find the RIGHT candidate!
+    if (!targetCandidatoId && parsed.data.telefono) {
       const { searchParams } = new URL(request.url);
       const target_empresa = searchParams.get('empresa_id') || jwt_empresa_id;
+      targetCandidatoId = await resolveCandidatoIdByPhone(parsed.data.telefono, target_empresa) || undefined;
       
-      let candRes;
-      if (target_empresa) {
-         candRes = await pool.query('SELECT id FROM candidatos WHERE telefono = $1 AND empresa_id = $2 ORDER BY updated_at DESC LIMIT 1', [telefono, target_empresa]);
-      } else {
-         candRes = await pool.query('SELECT id FROM candidatos WHERE telefono = $1 ORDER BY updated_at DESC LIMIT 1', [telefono]);
-      }
-      
-      if (candRes.rowCount && candRes.rowCount > 0) {
-        targetCandidatoId = candRes.rows[0].id;
-      } else {
+      if (!targetCandidatoId) {
         return NextResponse.json({ error: "No se encontró candidato para este teléfono" }, { status: 404 });
       }
     }
 
-    // Upsert en mensajes_bandeja
-    const setClauses: string[] = ['updated_at = NOW()'];
-    const values: unknown[] = [
-      targetCandidatoId,
-      telefono,
-      ultimo_mensaje ?? '',
-      ultimo_mensaje_rol,
-      asignado_a_id ?? null,
-      mensajes_no_leidos,
-      activo
-    ];
-    let idx = 8;
-
-    if (ultimo_mensaje !== undefined) {
-      setClauses.push(`ultimo_mensaje = $${idx++}`);
-      values.push(ultimo_mensaje);
-      setClauses.push(`ultimo_mensaje_at = NOW()`);
-    }
-    if (ultimo_mensaje_rol !== undefined) {
-      setClauses.push(`ultimo_mensaje_rol = $${idx++}`);
-      values.push(ultimo_mensaje_rol);
-    }
-    if (asignado_a_id !== undefined) {
-      setClauses.push(`asignado_a_id = $${idx++}`);
-      values.push(asignado_a_id);
-    }
-    if (mensajes_no_leidos !== undefined) {
-      setClauses.push(`mensajes_no_leidos = $${idx++}`);
-      values.push(mensajes_no_leidos);
-    }
-    if (activo !== undefined) {
-      setClauses.push(`activo = $${idx++}`);
-      values.push(activo);
-    }
+    const { setClauses, values } = buildMensajesBandejaUpsert(parsed.data, targetCandidatoId!);
 
     const res = await pool.query(
       `INSERT INTO mensajes_bandeja (candidato_id, telefono, ultimo_mensaje, ultimo_mensaje_rol, asignado_a_id, mensajes_no_leidos, activo)

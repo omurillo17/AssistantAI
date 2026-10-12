@@ -1,8 +1,9 @@
+import crypto from 'node:crypto';
 import { NextResponse } from 'next/server';
 
 import { pool } from '@/lib/db';
 import { verifyInternalApiKey } from '@/lib/auth';
-import { WAHA_BASE, WAHA_API_KEY, WAHA_SESSION } from '@/lib/waha';
+import { enviarMensajeDirecto } from '@/lib/messagingService';
 
 /**
  * GET /api/cron/process-outbox
@@ -32,7 +33,7 @@ export async function GET(request: Request) {
     const PAUSA_MS = Number(process.env.OUTBOX_PAUSA_MS || 10000);
     const dormir = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-    // Contraparte de salida de la lista negra (`numeros_ignorados`): el filtro
+    // Contraparte de salida de la lista negra (`numeros_ignorados` y `reclutadores`): el filtro
     // de ingesta.py solo corta lo que ENTRA, pero a quien ya tenía expediente
     // antes de entrar a la lista le pueden quedar recordatorios encolados. Se
     // marcan aquí en vez de excluirlos del SELECT para que no se re-escaneen
@@ -40,12 +41,23 @@ export async function GET(request: Request) {
     await pool.query(`
       UPDATE cola_mensajes
       SET estado = 'IGNORADO',
-          error_detalle = 'Numero en numeros_ignorados: la IA no le responde',
+          error_detalle = 'Numero en numeros_ignorados o reclutador: la IA no le responde',
           updated_at = NOW()
       WHERE estado = 'PENDIENTE'
         AND RIGHT(regexp_replace(telefono, '[^0-9]', '', 'g'), 10) IN (
           SELECT telefono FROM numeros_ignorados WHERE activo = TRUE
+          UNION
+          SELECT RIGHT(regexp_replace(telefono, '[^0-9]', '', 'g'), 10) FROM reclutadores WHERE activo = TRUE AND telefono IS NOT NULL
         )
+    `);
+
+    await pool.query(`
+      UPDATE cola_mensajes
+      SET estado = 'IGNORADO',
+          error_detalle = 'Numero invalido o no registrado (< 10 digitos)',
+          updated_at = NOW()
+      WHERE estado = 'PENDIENTE'
+        AND LENGTH(regexp_replace(telefono, '[^0-9]', '', 'g')) < 10
     `);
 
     // Solo intentar los que tienen reintentos < 5
@@ -66,33 +78,19 @@ export async function GET(request: Request) {
     let errores = 0;
 
     for (const [i, msg] of mensajes.entries()) {
-      // Pausa ANTES de cada envío salvo el primero, con algo de aleatoriedad:
-      // un ritmo exacto delata al bot tanto como no esperar.
-      if (i > 0) await dormir(PAUSA_MS + Math.random() * 3000);
-      try {
-        const wahaRes = await fetch(`${WAHA_BASE}/api/sendText`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Api-Key': WAHA_API_KEY,
-          },
-          body: JSON.stringify({
-            session: WAHA_SESSION,
-            chatId: msg.telefono,
-            text: msg.texto,
-          }),
-        });
+      // Pausa ANTES de cada envío salvo el primero, con algo de aleatoriedad
+      if (i > 0) await dormir(PAUSA_MS + crypto.randomInt(0, 3000));
 
-        if (wahaRes.ok) {
-          await pool.query(`UPDATE cola_mensajes SET estado = 'ENVIADO', updated_at = NOW() WHERE id = $1`, [msg.id]);
-          enviados++;
-        } else {
-          const errText = await wahaRes.text();
-          await pool.query(`UPDATE cola_mensajes SET reintentos = reintentos + 1, error_detalle = $1, updated_at = NOW() WHERE id = $2`, [errText, msg.id]);
-          errores++;
-        }
-      } catch (fetchErr: unknown) {
-        await pool.query(`UPDATE cola_mensajes SET reintentos = reintentos + 1, error_detalle = $1, updated_at = NOW() WHERE id = $2`, [fetchErr instanceof Error ? fetchErr.message : String(fetchErr), msg.id]);
+      const resEnvio = await enviarMensajeDirecto(msg.telefono, msg.texto);
+
+      if (resEnvio.ok) {
+        await pool.query(`UPDATE cola_mensajes SET estado = 'ENVIADO', updated_at = NOW() WHERE id = $1`, [msg.id]);
+        enviados++;
+      } else {
+        await pool.query(
+          `UPDATE cola_mensajes SET reintentos = reintentos + 1, error_detalle = $1, updated_at = NOW() WHERE id = $2`,
+          [resEnvio.error || 'Error en envío', msg.id]
+        );
         errores++;
       }
     }

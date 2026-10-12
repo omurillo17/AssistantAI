@@ -28,9 +28,9 @@ export async function generateMetadata({
 
 export default async function LeccionPage({
   params,
-}: {
+}: Readonly<{
   params: Promise<{ slug: string }>;
-}) {
+}>) {
   const { slug } = await params;
   const leccion = getLeccion(slug);
 

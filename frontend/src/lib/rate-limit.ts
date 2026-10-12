@@ -26,7 +26,7 @@ export function rateLimit(request: NextRequest | Request, limit: number = 100) {
     ? forwarded.split(',').map((p) => p.trim()).filter(Boolean)
     : [];
   const ip = request.headers.get('cf-connecting-ip') ||
-             (forwardedParts.length > 0 ? forwardedParts[forwardedParts.length - 1] : null) ||
+             forwardedParts.at(-1) ||
              request.headers.get('x-real-ip') ||
              '127.0.0.1';
 

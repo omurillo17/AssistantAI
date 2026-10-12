@@ -31,22 +31,36 @@ async def close_client() -> None:
         _client = None
 
 
+META_SESSION_PREFIX = "meta:"
+META_SUFFIX = "@meta"
+C_US_SUFFIX = "@c.us"
+
+
 def _headers() -> dict[str, str]:
     return {"X-Api-Key": ENV.WAHA_API_KEY}
 
 
 async def send_text(session: str, chat_id: str, text: str) -> None:
-    """Único punto de salida de mensajes de WhatsApp, y por eso el sitio donde
-    se aplica el regulador de ritmo (ver app/throttle.py): así ninguna ruta
-    -- chat, recordatorios, alertas -- puede saltarse el límite por olvido."""
+    """Único punto de salida de mensajes de WhatsApp, aplicando el regulador de ritmo."""
     await throttle.esperar_turno()
+    if session.startswith(META_SESSION_PREFIX) or chat_id.endswith(META_SUFFIX):
+        from app import meta_client
+        pid = session.split(META_SESSION_PREFIX, 1)[1] if session.startswith(META_SESSION_PREFIX) else ENV.META_WA_PHONE_NUMBER_ID
+        clean_to = chat_id.replace(C_US_SUFFIX, "").replace(META_SUFFIX, "")
+        await meta_client.send_text(pid, clean_to, text)
+        return
+
     url = f"{ENV.WAHA_BASE_URL}/api/sendText"
     client = _get_client()
-    resp = await client.post(url, headers=_headers(), json={"session": session, "chatId": chat_id, "text": text})
+    target_id = chat_id if ("@" in chat_id) else f"{chat_id}@c.us"
+    resp = await client.post(url, headers=_headers(), json={"session": session, "chatId": target_id, "text": text})
     resp.raise_for_status()
 
 
 async def start_typing(session: str, chat_id: str) -> None:
+    if session.startswith(META_SESSION_PREFIX) or chat_id.endswith(META_SUFFIX):
+        return
+
     url = f"{ENV.WAHA_BASE_URL}/api/startTyping"
     try:
         client = _get_client()
@@ -87,10 +101,12 @@ async def get_chats(session: str = "default", limit: int = 10000) -> list[dict]:
 
 
 async def download_media(media_url: str) -> tuple[bytes, str]:
-    """Descarga el binario de un adjunto de WAHA. Replica el nodo
-    `DescargarMedia`: sustituye 'localhost' por el hostname real del
-    contenedor WAHA (media.url que manda WAHA en el webhook apunta a
-    localhost, válido solo dentro del propio contenedor de WAHA)."""
+    """Descarga el binario de un adjunto de WAHA o Meta Cloud API."""
+    if media_url.startswith(META_SESSION_PREFIX):
+        from app import meta_client
+        media_id = media_url.split(META_SESSION_PREFIX, 1)[1]
+        return await meta_client.download_media(media_id)
+
     fixed_url = media_url.replace("localhost", "waha")
     client = _get_client()
     resp = await client.get(fixed_url, headers=_headers())

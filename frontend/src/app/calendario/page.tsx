@@ -2,13 +2,12 @@
 
 import { useCallback, useEffect, useState, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Calendar, dateFnsLocalizer, View, Views, type ToolbarProps } from "react-big-calendar";
+import { Calendar, dateFnsLocalizer, View, Views } from "react-big-calendar";
 import { format, parse, startOfWeek, getDay, addMonths, subMonths, addWeeks, subWeeks, addDays, subDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { MessageSquare, ChevronDown, ChevronRight, XCircle, ChevronLeft, RefreshCw, Calendar as CalendarIcon, LayoutList } from "lucide-react";
 import "react-big-calendar/lib/css/react-big-calendar.css";
 import { useTenantChange } from "@/hooks/useTenant";
-import { useBackdropClose } from "@/hooks/useBackdropClose";
 
 const locales = { es };
 const localizer = dateFnsLocalizer({
@@ -21,41 +20,26 @@ const localizer = dateFnsLocalizer({
 
 const BACKEND_BASE_URL = "/api/backend";
 
-import type { Candidato, Recruiter } from "@/types";
+import type { Candidato } from "@/types";
 
-interface CalendarEvent {
+export type CalendarEventResource = Partial<Omit<Candidato, "telefono">> & {
+  telefono?: string | null;
+  es_bloqueo?: boolean;
+  es_google_calendar?: boolean;
+  creator_email?: string | null;
+  [key: string]: unknown;
+};
+
+export interface CalendarEvent {
   id: string;
   title: string;
   start: Date;
   end: Date;
-  resource: Candidato;
+  resource: CalendarEventResource;
 }
 
-// Forma de un evento tal y como lo devuelve /api/calendario (Google Calendar).
-// Todo opcional a propósito: la API los reenvía tal cual llegan y no garantiza
-// ningún campo salvo el id.
-type GoogleEvent = {
-  id?: string;
-  title?: string;
-  summary?: string;
-  description?: string;
-  // Google los manda como objeto; algunos caminos de nuestra API los aplanan
-  // a string, y el código de abajo contempla las dos formas.
-  start?: string | { dateTime?: string; date?: string };
-  end?: string | { dateTime?: string; date?: string };
-  calendarId?: string;
-  creator?: { email?: string };
-  organizer?: { email?: string };
-};
-
 // ─── Custom Toolbar ──────────────────────────────────────────────────────────
-function CustomToolbar({ date, view, onNavigate, onView }: ToolbarProps<CalendarEvent, object>) {
-  // "DATE" es la acción con la que react-big-calendar acepta una fecha ya
-  // calculada y la usa tal cual (ver utils/move.js). Antes se mandaba "prev" /
-  // "next", que la librería no reconoce: funcionaba de rebote porque su
-  // `switch` cae en `default` y devuelve la fecha sin tocarla. Con "PREV" sí
-  // habría aplicado su propio salto encima del nuestro y el calendario habría
-  // avanzado el doble; con "DATE" el camino es el previsto.
+function CustomToolbar({ date, view, onNavigate, onView }: any) {
   const views: { key: View; label: string }[] = [
     { key: Views.MONTH, label: "Mes" },
     { key: Views.WEEK, label: "Semana" },
@@ -64,14 +48,14 @@ function CustomToolbar({ date, view, onNavigate, onView }: ToolbarProps<Calendar
   ];
 
   const navigatePrev = () => {
-    if (view === Views.MONTH) onNavigate("DATE", subMonths(date, 1));
-    else if (view === Views.WEEK) onNavigate("DATE", subWeeks(date, 1));
-    else onNavigate("DATE", subDays(date, 1));
+    if (view === Views.MONTH) onNavigate("prev", subMonths(date, 1));
+    else if (view === Views.WEEK) onNavigate("prev", subWeeks(date, 1));
+    else onNavigate("prev", subDays(date, 1));
   };
   const navigateNext = () => {
-    if (view === Views.MONTH) onNavigate("DATE", addMonths(date, 1));
-    else if (view === Views.WEEK) onNavigate("DATE", addWeeks(date, 1));
-    else onNavigate("DATE", addDays(date, 1));
+    if (view === Views.MONTH) onNavigate("next", addMonths(date, 1));
+    else if (view === Views.WEEK) onNavigate("next", addWeeks(date, 1));
+    else onNavigate("next", addDays(date, 1));
   };
 
   const getLabel = () => {
@@ -97,7 +81,7 @@ function CustomToolbar({ date, view, onNavigate, onView }: ToolbarProps<Calendar
           <ChevronLeft size={18} className="text-slate-600" />
         </button>
         <button
-          onClick={() => onNavigate("TODAY")}
+          onClick={() => onNavigate("today", new Date())}
           className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-colors"
         >
           Hoy
@@ -137,7 +121,7 @@ function CustomToolbar({ date, view, onNavigate, onView }: ToolbarProps<Calendar
 export default function CalendarioPage() {
   const router = useRouter();
   const [candidatos, setCandidatos] = useState<Candidato[]>([]);
-  const [googleEvents, setGoogleEvents] = useState<GoogleEvent[]>([]);
+  const [googleEvents, setGoogleEvents] = useState<any[]>([]);
   const [gcalRange, setGcalRange] = useState<{ start: Date; end: Date } | null>(null);
   const reconciledRef = useRef<Set<string>>(new Set());
   const [recruiterColors, setRecruiterColors] = useState<Record<string, string>>({});
@@ -176,11 +160,6 @@ export default function CalendarioPage() {
   const [blockTitle, setBlockTitle] = useState("Vacaciones / Bloqueo");
   const [blocking, setBlocking] = useState(false);
 
-  const cancelBackdrop = useBackdropClose(() => setCancelTarget(null));
-  const eventBackdrop = useBackdropClose(() => setSelectedEvent(null));
-  const rescheduleBackdrop = useBackdropClose(() => setRescheduleTarget(null));
-  const blockBackdrop = useBackdropClose(() => setBlockTarget(null));
-
   // Vista del calendario
   const [view, setView] = useState<View>(Views.MONTH);
   const [date, setDate] = useState(new Date());
@@ -214,7 +193,7 @@ export default function CalendarioPage() {
         const resGcal = await fetch(`${BACKEND_BASE_URL}/internal/citas/google-calendar?start=${rangeStart.toISOString()}&end=${rangeEnd.toISOString()}`);
         if (resGcal.ok) {
           const gcalData = await resGcal.json();
-          const rawEvents: Record<string, unknown>[] = Array.isArray(gcalData) ? gcalData : gcalData.events || gcalData.data || [];
+          const rawEvents: Record<string, unknown>[] = Array.isArray(gcalData) ? gcalData : gcalData?.events || gcalData?.data || [];
           const realEvents = rawEvents.filter((ge) => ge && typeof ge.id === "string" && ge.id.length > 0 && !ge.error);
           setGoogleEvents(realEvents);
           setGcalRange({ start: rangeStart, end: rangeEnd });
@@ -225,7 +204,7 @@ export default function CalendarioPage() {
         const resRec = await fetch(`/api/db/vacantes${tenantQuery}`);
         if (resRec.ok) {
           const recData = await resRec.json();
-          const recs: Recruiter[] = Array.isArray(recData) ? recData : recData.data || [];
+          const recs: any[] = Array.isArray(recData) ? recData : recData.data || [];
           const colorMap: Record<string, string> = {};
           const nameMap: Record<string, string> = {};
           const phoneMap: Record<string, string> = {};
@@ -234,17 +213,18 @@ export default function CalendarioPage() {
           let myCalIdLocal = "";
           const myRecruiterId = localStorage.getItem("tci_reclutador_id");
 
-          recs.forEach((r: Recruiter, i: number) => {
+          recs.forEach((r: any, i: number) => {
             const calId = (r.calendar_id || "").toLowerCase();
+            const phone = r.telefono || "";
             if (calId) {
               colorMap[calId] = r.color || palette[i % palette.length];
-              // Algunas respuestas traen `name` en vez de `nombre`.
-              nameMap[calId] = r.nombre || (r as Recruiter & { name?: string }).name || calId;
-              if (r.telefono) phoneMap[calId] = r.telefono;
+              nameMap[calId] = r.nombre || r.name || calId;
+              if (phone) phoneMap[calId] = phone;
               if (r.reclutador_id) {
                 idToEmailMap[r.reclutador_id] = calId;
-                if (r.telefono) phoneMap[r.reclutador_id] = r.telefono;
+                if (phone) phoneMap[r.reclutador_id] = phone;
               }
+              if (r.id && phone) phoneMap[r.id] = phone;
               if (r.reclutador_id == myRecruiterId) {
                 myCalIdLocal = calId;
               }
@@ -354,7 +334,7 @@ export default function CalendarioPage() {
     const representedPhones = new Set<string>();
 
     // Deduplicate raw GCal events by id first
-    const uniqueGcalMap = new Map<string, GoogleEvent>();
+    const uniqueGcalMap = new Map<string, any>();
     for (const ge of googleEvents) {
       if (ge && ge.id && !uniqueGcalMap.has(ge.id)) {
         uniqueGcalMap.set(ge.id, ge);
@@ -399,10 +379,8 @@ export default function CalendarioPage() {
       const gePhoneClean = cleanPhone(telefono);
       const matchedCandidate = candByEventId.get(gcalId) || (gePhoneClean ? candByPhone.get(gePhoneClean) : null);
 
-      const fechaDe = (v: GoogleEvent["start"]) =>
-        typeof v === "string" ? v : v?.dateTime || v?.date;
-      const startDate = new Date(fechaDe(ge.start) || new Date());
-      const endDate = new Date(fechaDe(ge.end) || new Date());
+      const startDate = new Date(ge.start?.dateTime || ge.start?.date || ge.start || new Date());
+      const endDate = new Date(ge.end?.dateTime || ge.end?.date || ge.end || new Date());
 
       if (matchedCandidate) {
         if (matchedCandidate.id) representedCandidateIds.add(matchedCandidate.id);
@@ -433,26 +411,36 @@ export default function CalendarioPage() {
         });
       } else {
         // Evento directo de GCal (bloqueo, junta o cita sin candidato en DB)
+        const summaryStr = String(ge.summary || ge.title || "").trim();
+        const isBlock = !matchedCandidate && (
+          summaryStr.toLowerCase().includes("bloqueo") ||
+          desc.toLowerCase().includes("bloqueo") ||
+          summaryStr.toLowerCase().includes("vacacion") ||
+          summaryStr.toLowerCase().includes("junta") ||
+          summaryStr.toLowerCase().includes("capacitacion") ||
+          telefono === "No registrado"
+        );
+        const rawTitle = summaryStr || (isBlock ? "Bloqueo de Horario" : "Entrevista");
+        const cleanName = rawTitle.replace(/^🔒\s*/, "").trim();
+        const displayTitle = isBlock ? `🔒 ${cleanName}` : rawTitle;
+
         unifiedEvents.push({
           id: gcalId,
-          title: ge.title || ge.summary || "Entrevista",
+          title: displayTitle,
           start: startDate,
           end: endDate,
           resource: {
             ...ge,
-            // El evento no tiene candidato detrás: `nombre` y `escalado` son
-            // obligatorios en Candidato y antes viajaban en undefined.
-            nombre,
-            escalado: false,
             es_google_calendar: true,
+            es_bloqueo: isBlock,
             resumen_ia: desc,
             creator_email: creatorEmail,
-            nombre_chat: nombre,
-            vacante_interes: vacante,
+            nombre_chat: isBlock ? cleanName : nombre,
+            vacante_interes: isBlock ? "Bloqueo de Agenda" : vacante,
             telefono,
             nave_interes: nave,
-            estado: "Agendado (GCal)",
-          } as Candidato,
+            estado: isBlock ? "Bloqueado (GCal)" : "Agendado (GCal)",
+          },
         });
       }
     }
@@ -525,6 +513,7 @@ export default function CalendarioPage() {
 
     events.forEach((e) => {
       if (e.start < today) return;
+      if (e.resource?.es_bloqueo) return;
       // Para eventos de DB sin creator_email, los ponemos en 'sin_asignar'
       const email = e.resource.creator_email
         ? String(e.resource.creator_email).toLowerCase()
@@ -550,11 +539,11 @@ export default function CalendarioPage() {
     setCancelPassword("");
     setCancelError("");
     setCancelReason("Por imprevistos de agenda en el equipo de reclutamiento.");
-    const recEmail = (event.resource.creator_email || "").toLowerCase();
-    const recId = event.resource.asignado_a_id;
-    const assignedPhone = (recEmail && recruiterPhones[recEmail]) || (recId && recruiterPhones[recId]) || "";
+    const calId = (event.resource?.creator_email || "").toLowerCase();
+    const asigId = event.resource?.asignado_a_id || "";
+    const recPhone = recruiterPhones[calId] || recruiterPhones[asigId] || "";
     const defaultTel = typeof window !== "undefined" ? localStorage.getItem("tci_telefono") : "";
-    setRecruiterPhone(assignedPhone || defaultTel || "");
+    setRecruiterPhone(recPhone || defaultTel || "");
   };
 
   const confirmCancel = async () => {
@@ -600,11 +589,21 @@ export default function CalendarioPage() {
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error();
-      showToast("✅ Cita cancelada y candidato notificado por WhatsApp", false);
+      showToast(
+        cancelTarget.resource?.es_bloqueo
+          ? "✅ Bloqueo eliminado de Google Calendar"
+          : "✅ Cita cancelada y candidato notificado por WhatsApp",
+        false
+      );
       setSelectedEvent(null);
       loadData();
     } catch {
-      showToast("❌ Error al cancelar la cita", true);
+      showToast(
+        cancelTarget.resource?.es_bloqueo
+          ? "❌ Error al eliminar el bloqueo"
+          : "❌ Error al cancelar la cita",
+        true
+      );
     } finally {
       setCancelingId(null);
     }
@@ -616,11 +615,11 @@ export default function CalendarioPage() {
     setNewDate(format(event.start, "yyyy-MM-dd"));
     setNewTime(format(event.start, "HH:mm"));
     setRescheduleReason("Por reorganización de agenda de entrevistas.");
-    const recEmail = (event.resource.creator_email || "").toLowerCase();
-    const recId = event.resource.asignado_a_id;
-    const assignedPhone = (recEmail && recruiterPhones[recEmail]) || (recId && recruiterPhones[recId]) || "";
+    const calId = (event.resource?.creator_email || "").toLowerCase();
+    const asigId = event.resource?.asignado_a_id || "";
+    const recPhone = recruiterPhones[calId] || recruiterPhones[asigId] || "";
     const defaultTel = typeof window !== "undefined" ? localStorage.getItem("tci_telefono") : "";
-    setRecruiterPhone(assignedPhone || defaultTel || "");
+    setRecruiterPhone(recPhone || defaultTel || "");
   };
 
   const confirmReschedule = async () => {
@@ -869,19 +868,22 @@ export default function CalendarioPage() {
               noEventsInRange: "No hay entrevistas en este período.",
             }}
             eventPropGetter={(event) => {
-              const email = event.resource.creator_email
+              const email = event.resource?.creator_email
                 ? String(event.resource.creator_email).toLowerCase()
                 : "";
               const bgColor = getColorForEmail(email || "default");
+              const isBloqueo = Boolean(event.resource?.es_bloqueo);
               return {
                 style: {
-                  backgroundColor: bgColor,
+                  backgroundColor: isBloqueo ? "#475569" : bgColor,
                   borderRadius: "6px",
-                  border: "none",
+                  border: isBloqueo ? "1.5px dashed #cbd5e1" : "none",
                   color: "white",
                   fontWeight: "600",
                   fontSize: "12px",
                   padding: "2px 6px",
+                  opacity: isBloqueo ? 0.95 : 1,
+                  boxShadow: isBloqueo ? "none" : "0 1px 2px rgba(0,0,0,0.08)",
                 },
               };
             }}
@@ -894,98 +896,159 @@ export default function CalendarioPage() {
       {cancelTarget && (
         <div
           className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center z-[2000]"
-          {...cancelBackdrop}
+          onClick={() => setCancelTarget(null)}
         >
           <div
             className="bg-white w-[90%] max-w-md rounded-2xl p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
-                <XCircle size={20} className="text-red-600" />
-              </div>
-              <div>
-                <h3 className="font-bold text-slate-800 text-lg">Cancelar Entrevista</h3>
-                <p className="text-sm font-semibold text-indigo-600">
-                  {cancelTarget.resource.nombre_chat || cancelTarget.resource.nombre_solicitud || "Candidato"} ({cancelTarget.resource.vacante_interes || "General"})
-                </p>
-              </div>
-            </div>
+            {cancelTarget.resource?.es_bloqueo ? (
+              <>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                    <XCircle size={20} className="text-red-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800 text-lg">Eliminar Bloqueo</h3>
+                    <p className="text-sm font-semibold text-slate-600">
+                      {cancelTarget.resource.nombre_chat || "Bloqueo de Horario"}
+                    </p>
+                  </div>
+                </div>
 
-            <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4 text-xs text-red-700">
-              ⚠️ Esta acción eliminará el evento de Google Calendar y le enviará un mensaje de WhatsApp al candidato con el motivo y tu número de contacto.
-            </div>
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 text-xs text-amber-800">
+                  ⚠️ Esta acción eliminará el evento de Google Calendar y liberará el horario para nuevas citas.
+                </div>
 
-            <div className="space-y-4 mb-5">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Motivo / Explicación para el candidato
-                </label>
-                <textarea
-                  id="cancel-reason"
-                  name="cancel_reason"
-                  rows={2}
-                  value={cancelReason}
-                  onChange={(e) => setCancelReason(e.target.value)}
-                  placeholder="Explica la razón de la cancelación..."
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-red-400 focus:bg-white outline-none text-xs text-slate-800"
-                />
-              </div>
+                <div className="mb-5">
+                  <label htmlFor="cancel-password" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                    Contraseña de confirmación
+                  </label>
+                  <input
+                    id="cancel-password"
+                    name="cancel_password"
+                    type="password"
+                    value={cancelPassword}
+                    onChange={(e) => { setCancelPassword(e.target.value); setCancelError(""); }}
+                    onKeyDown={(e) => e.key === "Enter" && confirmCancel()}
+                    placeholder="••••••••"
+                    autoFocus
+                    className={`w-full px-3 py-2 rounded-xl border outline-none text-xs transition-all ${cancelError
+                      ? "border-red-400 bg-red-50 focus:border-red-500"
+                      : "border-slate-200 bg-slate-50 focus:border-indigo-400 focus:bg-white"
+                      }`}
+                  />
+                  {cancelError && (
+                    <p className="text-xs text-red-500 mt-1 font-medium">{cancelError}</p>
+                  )}
+                </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Teléfono del Reclutador (para aclaraciones)
-                </label>
-                <input
-                  id="cancel-recruiter-phone"
-                  name="recruiter_phone"
-                  type="text"
-                  value={recruiterPhone}
-                  onChange={(e) => setRecruiterPhone(e.target.value)}
-                  placeholder="521..."
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 focus:bg-white outline-none text-xs text-slate-800 font-mono"
-                />
-              </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setCancelTarget(null)}
+                    className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm transition-colors"
+                  >
+                    No, volver
+                  </button>
+                  <button
+                    onClick={confirmCancel}
+                    disabled={cancelingId === cancelTarget.id}
+                    className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-colors shadow-sm disabled:opacity-50"
+                  >
+                    {cancelingId === cancelTarget.id ? "Eliminando..." : "Sí, eliminar bloqueo"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                    <XCircle size={20} className="text-red-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800 text-lg">Cancelar Entrevista</h3>
+                    <p className="text-sm font-semibold text-indigo-600">
+                      {cancelTarget.resource.nombre_chat || cancelTarget.resource.nombre_solicitud || "Candidato"} ({cancelTarget.resource.vacante_interes || "General"})
+                    </p>
+                  </div>
+                </div>
 
-              <div>
-                <label htmlFor="cancel-password" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                  Contraseña de confirmación
-                </label>
-                <input
-                  id="cancel-password"
-                  name="cancel_password"
-                  type="password"
-                  value={cancelPassword}
-                  onChange={(e) => { setCancelPassword(e.target.value); setCancelError(""); }}
-                  onKeyDown={(e) => e.key === "Enter" && confirmCancel()}
-                  placeholder="••••••••"
-                  autoFocus
-                  className={`w-full px-3 py-2 rounded-xl border outline-none text-xs transition-all ${cancelError
-                    ? "border-red-400 bg-red-50 focus:border-red-500"
-                    : "border-slate-200 bg-slate-50 focus:border-indigo-400 focus:bg-white"
-                    }`}
-                />
-                {cancelError && (
-                  <p className="text-red-500 text-xs mt-1 font-medium">{cancelError}</p>
-                )}
-              </div>
-            </div>
+                <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4 text-xs text-red-700">
+                  ⚠️ Esta acción eliminará el evento de Google Calendar y le enviará un mensaje de WhatsApp al candidato con el motivo y tu número de contacto.
+                </div>
 
-            <div className="flex gap-3">
-              <button
-                onClick={() => setCancelTarget(null)}
-                className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm transition-colors"
-              >
-                Volver
-              </button>
-              <button
-                onClick={confirmCancel}
-                disabled={cancelingId === cancelTarget.id}
-                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-colors disabled:opacity-50 shadow-sm"
-              >
-                {cancelingId === cancelTarget.id ? "Cancelando..." : "Confirmar y Notificar"}
-              </button>
-            </div>
+                <div className="space-y-4 mb-5">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      Motivo / Explicación para el candidato
+                    </label>
+                    <textarea
+                      id="cancel-reason"
+                      name="cancel_reason"
+                      rows={2}
+                      value={cancelReason}
+                      onChange={(e) => setCancelReason(e.target.value)}
+                      placeholder="Explica la razón de la cancelación..."
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-red-400 focus:bg-white outline-none text-xs text-slate-800"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      Teléfono del Reclutador (para aclaraciones)
+                    </label>
+                    <input
+                      id="cancel-recruiter-phone"
+                      name="recruiter_phone"
+                      type="text"
+                      value={recruiterPhone}
+                      onChange={(e) => setRecruiterPhone(e.target.value)}
+                      placeholder="521..."
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:border-indigo-400 focus:bg-white outline-none text-xs text-slate-800 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="cancel-password" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                      Contraseña de confirmación
+                    </label>
+                    <input
+                      id="cancel-password"
+                      name="cancel_password"
+                      type="password"
+                      value={cancelPassword}
+                      onChange={(e) => { setCancelPassword(e.target.value); setCancelError(""); }}
+                      onKeyDown={(e) => e.key === "Enter" && confirmCancel()}
+                      placeholder="••••••••"
+                      autoFocus
+                      className={`w-full px-3 py-2 rounded-xl border outline-none text-xs transition-all ${cancelError
+                        ? "border-red-400 bg-red-50 focus:border-red-500"
+                        : "border-slate-200 bg-slate-50 focus:border-indigo-400 focus:bg-white"
+                        }`}
+                    />
+                    {cancelError && (
+                      <p className="text-xs text-red-500 mt-1 font-medium">{cancelError}</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setCancelTarget(null)}
+                    className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm transition-colors"
+                  >
+                    No, volver
+                  </button>
+                  <button
+                    onClick={confirmCancel}
+                    disabled={cancelingId === cancelTarget.id}
+                    className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm transition-colors shadow-sm disabled:opacity-50"
+                  >
+                    {cancelingId === cancelTarget.id ? "Cancelando..." : "Sí, cancelar cita"}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -994,7 +1057,7 @@ export default function CalendarioPage() {
       {selectedEvent && (
         <div
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000]"
-          {...eventBackdrop}
+          onClick={() => setSelectedEvent(null)}
         >
           <div
             className="bg-white w-[90%] max-w-md rounded-2xl p-7 shadow-2xl relative"
@@ -1007,69 +1070,131 @@ export default function CalendarioPage() {
               <XCircle size={22} />
             </button>
 
-            <h2 className="text-xl font-bold text-slate-800 mb-0.5">
-              {selectedEvent.resource.nombre_chat || selectedEvent.resource.nombre_solicitud || "Candidato"}
-            </h2>
-            <p className="text-indigo-600 font-semibold text-sm mb-5">
-              {selectedEvent.resource.vacante_interes || "Sin vacante"}
-            </p>
-
-            <div className="space-y-2 mb-5 bg-slate-50 p-4 rounded-xl border border-slate-100 text-sm">
-              {[
-                ["📅 Fecha", formatVisualDate(selectedEvent.start)],
-                ["📞 Teléfono", selectedEvent.resource.telefono],
-                ["🏭 Nave", selectedEvent.resource.nave_interes || "N/A"],
-                ["📌 Estado", selectedEvent.resource.estado],
-              ].map(([label, val]) => (
-                <div key={label} className="flex justify-between items-center">
-                  <span className="text-slate-500">{label}</span>
-                  <span className="font-semibold text-slate-800">{val}</span>
+            {selectedEvent.resource?.es_bloqueo ? (
+              <>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xl">🔒</span>
+                  <h2 className="text-xl font-bold text-slate-800">
+                    {selectedEvent.resource.nombre_chat || "Bloqueo de Horario"}
+                  </h2>
                 </div>
-              ))}
-            </div>
+                <p className="text-slate-500 font-medium text-xs mb-5">
+                  Horario bloqueado en Google Calendar (no disponible para entrevistas)
+                </p>
 
-            {selectedEvent.resource.resumen_ia && (
-              <div className="mb-5">
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Resumen IA</p>
-                <div className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100 whitespace-pre-wrap max-h-28 overflow-y-auto">
-                  {selectedEvent.resource.resumen_ia}
+                <div className="space-y-2 mb-5 bg-slate-50 p-4 rounded-xl border border-slate-100 text-sm">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500">📅 Inicio</span>
+                    <span className="font-semibold text-slate-800">{formatVisualDate(selectedEvent.start)}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500">🏁 Fin</span>
+                    <span className="font-semibold text-slate-800">{formatVisualDate(selectedEvent.end)}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500">👤 Calendario</span>
+                    <span className="font-semibold text-slate-800">
+                      {getRecruiterDisplayName(selectedEvent.resource.creator_email || "")}
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500">📌 Estado</span>
+                    <span className="font-semibold text-slate-700">Bloqueado</span>
+                  </div>
                 </div>
-              </div>
+
+                {selectedEvent.resource.resumen_ia && selectedEvent.resource.resumen_ia !== "Bloqueo manual creado desde CRM" && (
+                  <div className="mb-5">
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Descripción</p>
+                    <div className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100 whitespace-pre-wrap max-h-28 overflow-y-auto">
+                      {selectedEvent.resource.resumen_ia}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setSelectedEvent(null)}
+                    className="flex-1 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-sm transition-colors"
+                  >
+                    Cerrar
+                  </button>
+                  <button
+                    onClick={(e) => openCancelModal(e, selectedEvent)}
+                    disabled={cancelingId === selectedEvent.id}
+                    className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition-colors flex items-center justify-center gap-2 text-sm shadow-sm"
+                  >
+                    <XCircle size={16} /> Eliminar Bloqueo
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 className="text-xl font-bold text-slate-800 mb-0.5">
+                  {selectedEvent.resource.nombre_chat || selectedEvent.resource.nombre_solicitud || "Candidato"}
+                </h2>
+                <p className="text-indigo-600 font-semibold text-sm mb-5">
+                  {selectedEvent.resource.vacante_interes || "Sin vacante"}
+                </p>
+
+                <div className="space-y-2 mb-5 bg-slate-50 p-4 rounded-xl border border-slate-100 text-sm">
+                  {[
+                    ["📅 Fecha", formatVisualDate(selectedEvent.start)],
+                    ["📞 Teléfono", selectedEvent.resource.telefono],
+                    ["🏭 Nave", selectedEvent.resource.nave_interes || "N/A"],
+                    ["📌 Estado", selectedEvent.resource.estado],
+                  ].map(([label, val]) => (
+                    <div key={label} className="flex justify-between items-center">
+                      <span className="text-slate-500">{label}</span>
+                      <span className="font-semibold text-slate-800">{val}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {selectedEvent.resource.resumen_ia && (
+                  <div className="mb-5">
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">Resumen IA</p>
+                    <div className="text-sm text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100 whitespace-pre-wrap max-h-28 overflow-y-auto">
+                      {selectedEvent.resource.resumen_ia}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-3 mb-3">
+                  <button
+                    onClick={(e) => openCancelModal(e, selectedEvent)}
+                    disabled={cancelingId === selectedEvent.id}
+                    className="flex-1 py-2.5 bg-red-50 text-red-600 hover:bg-red-100 font-bold rounded-xl transition-colors flex items-center justify-center gap-2 text-sm border border-red-200"
+                  >
+                    <XCircle size={16} /> Cancelar
+                  </button>
+
+                  <button
+                    onClick={(e) => openRescheduleModal(e, selectedEvent)}
+                    className="flex-1 py-2.5 bg-amber-50 text-amber-600 hover:bg-amber-100 font-bold rounded-xl transition-colors flex items-center justify-center gap-2 text-sm border border-amber-200"
+                  >
+                    <RefreshCw size={16} /> Reagendar
+                  </button>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => window.open(`https://wa.me/${selectedEvent.resource.telefono}`, "_blank")}
+                    className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 text-sm"
+                  >
+                    <MessageSquare size={16} /> WhatsApp
+                  </button>
+                  {selectedEvent.resource.telefono && selectedEvent.resource.telefono !== "No registrado" && (
+                    <button
+                      onClick={() => router.push(`/mensajes?tel=${selectedEvent.resource.telefono}`)}
+                      className="flex-1 bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 text-sm"
+                    >
+                      Ver Chat
+                    </button>
+                  )}
+                </div>
+              </>
             )}
-
-            <div className="flex gap-3 mb-3">
-              <button
-                onClick={(e) => openCancelModal(e, selectedEvent)}
-                disabled={cancelingId === selectedEvent.id}
-                className="flex-1 py-2.5 bg-red-50 text-red-600 hover:bg-red-100 font-bold rounded-xl transition-colors flex items-center justify-center gap-2 text-sm border border-red-200"
-              >
-                <XCircle size={16} /> Cancelar
-              </button>
-
-              <button
-                onClick={(e) => openRescheduleModal(e, selectedEvent)}
-                className="flex-1 py-2.5 bg-amber-50 text-amber-600 hover:bg-amber-100 font-bold rounded-xl transition-colors flex items-center justify-center gap-2 text-sm border border-amber-200"
-              >
-                <RefreshCw size={16} /> Reagendar
-              </button>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={() => window.open(`https://wa.me/${selectedEvent.resource.telefono}`, "_blank")}
-                className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 text-sm"
-              >
-                <MessageSquare size={16} /> WhatsApp
-              </button>
-              {selectedEvent.resource.telefono && selectedEvent.resource.telefono !== "No registrado" && (
-                <button
-                  onClick={() => router.push(`/mensajes?tel=${selectedEvent.resource.telefono}`)}
-                  className="flex-1 bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 text-sm"
-                >
-                  Ver Chat
-                </button>
-              )}
-            </div>
           </div>
         </div>
       )}
@@ -1078,7 +1203,7 @@ export default function CalendarioPage() {
       {rescheduleTarget && (
         <div
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[2000]"
-          {...rescheduleBackdrop}
+          onClick={() => setRescheduleTarget(null)}
         >
           <div
             className="bg-white w-[90%] max-w-md rounded-2xl p-6 shadow-2xl relative"
@@ -1170,7 +1295,7 @@ export default function CalendarioPage() {
       {blockTarget && (
         <div
           className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[2000]"
-          {...blockBackdrop}
+          onClick={() => setBlockTarget(null)}
         >
           <div
             className="bg-white w-[90%] max-w-md rounded-2xl p-6 shadow-2xl relative"

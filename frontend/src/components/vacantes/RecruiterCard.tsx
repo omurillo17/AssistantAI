@@ -36,7 +36,7 @@ export default function RecruiterCard({
   onDragStart,
   onDrop,
   availableNaves,
-}: Props) {
+}: Readonly<Props>) {
   const router = useRouter();
   const isEditable = isAdmin || rec.reclutador_id === myRecId;
 
@@ -84,10 +84,12 @@ export default function RecruiterCard({
           )}
         </div>
         <label
+          htmlFor={`recruiter-toggle-${rec.reclutador_id}`}
           className={`flex items-center justify-end ${
             isAdmin ? "cursor-pointer" : "cursor-not-allowed opacity-80"
           }`}
         >
+          <span className="sr-only">Activar o desactivar {rec.nombre || "reclutador"}</span>
           <div className="relative">
             <input
               id={`recruiter-toggle-${rec.reclutador_id}`}

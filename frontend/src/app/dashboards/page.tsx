@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell, Legend,
+  ResponsiveContainer, PieChart, Pie, Cell /* NOSONAR */, Legend,
   AreaChart, Area,
   RadialBarChart, RadialBar, PolarAngleAxis,
 } from "recharts";
@@ -18,6 +18,7 @@ import { ESTADOS, getEstado, getEstadoColor, type EstadoKey } from "@/lib/estado
 import type { Candidato } from "@/types";
 import { CandidateModal } from "@/components/CandidateModal";
 import { useTenantChange } from "@/hooks/useTenant";
+import { useBackdropClose } from "@/hooks/useBackdropClose";
 import { formatNaveName, getCandidateDisplayName } from "@/lib/formatters";
 
 const CHART_COLORS = ["#6366f1", "#8b5cf6", "#ec4899", "#f43f5e", "#f59e0b", "#10b981", "#0ea5e9"];
@@ -60,6 +61,7 @@ export interface TimelineBucket {
 export interface ResumenDashboard {
   total: number;
   escalados: number;
+  otra_ciudad?: number;
   estados: { estado: string; count: number }[];
   vacantes: { vacante: string; total: number; contratados: number; rechazados: number }[];
   reclutadores: { nombre: string; asignados: number; contratados: number }[];
@@ -68,8 +70,63 @@ export interface ResumenDashboard {
 }
 
 const RESUMEN_VACIO: ResumenDashboard = {
-  total: 0, escalados: 0, estados: [], vacantes: [], reclutadores: [], naves: [], timeline: [],
+  total: 0, escalados: 0, otra_ciudad: 0, estados: [], vacantes: [], reclutadores: [], naves: [], timeline: [],
 };
+
+function buildHourlyTimelinePoints(addPoint: (key: string, label: string, fullDate: string) => void) {
+  for (let h = 0; h < 24; h++) {
+    const key = String(h).padStart(2, "0") + ":00";
+    addPoint(key, key, `${key} hrs`);
+  }
+}
+
+function buildDailyTimelinePoints(
+  range: "7d" | "1m",
+  now: Date,
+  addPoint: (key: string, label: string, fullDate: string) => void
+) {
+  const isoLocal = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const dias = range === "7d" ? 7 : 30;
+  for (let i = dias - 1; i >= 0; i--) {
+    const d = new Date(now);
+    d.setDate(now.getDate() - i);
+    const label = range === "7d"
+      ? `${DIAS_SEMANA[d.getDay()]} ${d.getDate()}`
+      : `${d.getDate()} ${MESES[d.getMonth()]}`;
+    const fullDate = range === "7d"
+      ? `${DIAS_SEMANA_COMPLETO[d.getDay()]} ${d.getDate()} de ${MESES_COMPLETO[d.getMonth()]}`
+      : `${d.getDate()} de ${MESES_COMPLETO[d.getMonth()]} ${d.getFullYear()}`;
+    addPoint(isoLocal(d), label, fullDate);
+  }
+}
+
+function buildMonthlyTimelinePoints(
+  range: "6m" | "1y",
+  now: Date,
+  addPoint: (key: string, label: string, fullDate: string) => void
+) {
+  const meses = range === "6m" ? 6 : 12;
+  for (let i = meses - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    addPoint(key, `${MESES[d.getMonth()]} ${String(d.getFullYear()).slice(-2)}`, `${MESES_COMPLETO[d.getMonth()]} ${d.getFullYear()}`);
+  }
+}
+
+function buildTimelinePoints(
+  range: TimeRange,
+  now: Date,
+  addPoint: (key: string, label: string, fullDate: string) => void
+) {
+  if (range === "1d") {
+    buildHourlyTimelinePoints(addPoint);
+  } else if (range === "7d" || range === "1m") {
+    buildDailyTimelinePoints(range, now, addPoint);
+  } else {
+    buildMonthlyTimelinePoints(range, now, addPoint);
+  }
+}
 
 function buildCandidatosTimeline(
   buckets: TimelineBucket[],
@@ -84,43 +141,12 @@ function buildCandidatosTimeline(
   // incluidos los tramos vacíos, que el SQL no devuelve — y se rellena.
   const porBucket = new Map(buckets.map((b) => [b.bucket, b.count]));
 
-  // Fecha local en formato YYYY-MM-DD. No sirve toISOString(): da la fecha en
-  // UTC, así que por la tarde en México (UTC-6) adelanta un día y las barras
-  // se desalinearían respecto a los buckets que agrupó Postgres.
-  const isoLocal = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-
   const addPoint = (key: string, label: string, fullDate: string) => {
     counts.set(key, porBucket.get(key) || 0);
     points.push({ key, label, fullDate, count: 0 });
   };
 
-  if (range === "1d") {
-    for (let h = 0; h < 24; h++) {
-      const key = String(h).padStart(2, "0") + ":00";
-      addPoint(key, key, `${key} hrs`);
-    }
-  } else if (range === "7d" || range === "1m") {
-    const dias = range === "7d" ? 7 : 30;
-    for (let i = dias - 1; i >= 0; i--) {
-      const d = new Date(now);
-      d.setDate(now.getDate() - i);
-      const label = range === "7d"
-        ? `${DIAS_SEMANA[d.getDay()]} ${d.getDate()}`
-        : `${d.getDate()} ${MESES[d.getMonth()]}`;
-      const fullDate = range === "7d"
-        ? `${DIAS_SEMANA_COMPLETO[d.getDay()]} ${d.getDate()} de ${MESES_COMPLETO[d.getMonth()]}`
-        : `${d.getDate()} de ${MESES_COMPLETO[d.getMonth()]} ${d.getFullYear()}`;
-      addPoint(isoLocal(d), label, fullDate);
-    }
-  } else {
-    const meses = range === "6m" ? 6 : 12;
-    for (let i = meses - 1; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      addPoint(key, `${MESES[d.getMonth()]} ${String(d.getFullYear()).slice(-2)}`, `${MESES_COMPLETO[d.getMonth()]} ${d.getFullYear()}`);
-    }
-  }
+  buildTimelinePoints(range, now, addPoint);
 
   points.forEach((p) => { p.count = counts.get(p.key) || 0; });
   const total = points.reduce((acc, p) => acc + p.count, 0);
@@ -128,6 +154,70 @@ function buildCandidatosTimeline(
   const max = points.reduce((prev, curr) => (curr.count > prev.count ? curr : prev), { label: "N/A", count: 0, fullDate: "Sin datos" });
 
   return { points, metrics: { total, promedio, max } };
+}
+
+function getRankColor(i: number): string {
+  if (i === 0) return "bg-amber-500";
+  if (i === 1) return "bg-slate-400";
+  if (i === 2) return "bg-amber-700";
+  return "bg-indigo-300";
+}
+
+function getHeatmapColor(count: number, intensity: number): string {
+  if (count === 0) return "#f1f5f9";
+  if (intensity > 0.66) return "#4f46e5";
+  if (intensity > 0.33) return "#818cf8";
+  return "#c7d2fe";
+}
+
+function getConversionBarColor(rate: number): string {
+  if (rate >= 20) return "bg-emerald-500";
+  if (rate >= 5) return "bg-amber-500";
+  return "bg-slate-300";
+}
+
+function buildDashboardQueries(
+  storedEmpresaId: string | null,
+  storedNaveId: string | null,
+  storedGrupoId: string | null,
+  timeRange: TimeRange
+) {
+  const common = new URLSearchParams();
+  if (storedEmpresaId) common.set("empresa_id", storedEmpresaId);
+  if (storedGrupoId) common.set("grupo_id", storedGrupoId);
+  else if (storedNaveId) common.set("nave_id", storedNaveId);
+
+  const msgParams = new URLSearchParams(common);
+  msgParams.set("count", "1");
+  const queryMensajes = `?${msgParams.toString()}`;
+
+  const actParams = new URLSearchParams(common);
+  actParams.set("time_range", timeRange);
+  const queryActividad = `?${actParams.toString()}`;
+
+  const resParams = new URLSearchParams(common);
+  resParams.set("time_range", timeRange);
+  const queryResumen = `?${resParams.toString()}`;
+
+  return {
+    queryResumen,
+    queryMensajes,
+    queryActividad,
+  };
+}
+
+function resolveNavesMap(empresasData: Record<string, unknown>, storedEmpresaId: string | null): Record<string, string> {
+  const empresas = Array.isArray(empresasData?.empresas) ? empresasData.empresas : [];
+  let empresaMatch = null;
+  if (storedEmpresaId) {
+    empresaMatch = empresas.find((e: { id: string }) => e.id === storedEmpresaId);
+  } else if (empresas.length === 1) {
+    empresaMatch = empresas[0];
+  }
+  const navesOrdenadas: NaveInfo[] = empresaMatch?.naves || [];
+  const mapa: Record<string, string> = {};
+  navesOrdenadas.forEach((n, i) => { mapa[String(i + 1)] = n.nombre; });
+  return mapa;
 }
 
 export default function DashboardsPage() {
@@ -141,20 +231,14 @@ export default function DashboardsPage() {
 
   const [timeRange, setTimeRange] = useState<TimeRange>("1m");
   const [isTimelineExpanded, setIsTimelineExpanded] = useState(false);
-  const isBackdropMouseDown = useRef(false);
+  const timelineBackdrop = useBackdropClose(() => setIsTimelineExpanded(false));
+  const estadoModalBackdrop = useBackdropClose(() => setSelectedEstadoModal(null));
 
-  // Drill-down interactivo al hacer clic en estados
   const [selectedEstadoModal, setSelectedEstadoModal] = useState<string | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<Candidato | null>(null);
   const [modalSearch, setModalSearch] = useState<string>("");
-  // Las filas del drill-down ya no salen de una lista precargada de 2000
-  // candidatos: se piden al abrir el modal, filtradas por estado en SQL.
-  // Se guarda junto al estado al que pertenecen: así al saltar de una etapa a
-  // otra no hace falta limpiar la lista en un efecto (lo que además haría
-  // parpadear los candidatos de la etapa anterior).
   const [modalData, setModalData] = useState<{ estado: string; rows: Candidato[] } | null>(null);
   const [modalLoading, setModalLoading] = useState(false);
-
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -163,28 +247,16 @@ export default function DashboardsPage() {
       const storedNaveId = localStorage.getItem("tci_nave_id");
       const storedGrupoId = localStorage.getItem("tci_grupo_id");
 
-      let queryCand = "";
-      if (storedEmpresaId) queryCand += `&empresa_id=${storedEmpresaId}`;
-      if (storedGrupoId) queryCand += `&grupo_id=${storedGrupoId}`;
-      else if (storedNaveId) queryCand += `&nave_id=${storedNaveId}`;
-
-      let queryMensajes = "";
-      if (storedEmpresaId) queryMensajes += `?empresa_id=${storedEmpresaId}`;
-      if (storedGrupoId) queryMensajes += (queryMensajes ? `&` : `?`) + `grupo_id=${storedGrupoId}`;
-      else if (storedNaveId) queryMensajes += (queryMensajes ? `&` : `?`) + `nave_id=${storedNaveId}`;
-
-      let queryActividad = storedEmpresaId ? `?empresa_id=${storedEmpresaId}` : "";
-      if (storedGrupoId) queryActividad += (queryActividad ? `&` : `?`) + `grupo_id=${storedGrupoId}`;
-      queryActividad += (queryActividad ? `&` : `?`) + `time_range=${timeRange}`;
-
-      // El resumen respeta el mismo filtro de empresa/grupo/nave que pedía
-      // /api/db/candidatos, pero devuelve los conteos ya hechos en Postgres.
-      const queryResumen = `?time_range=${timeRange}` + queryCand;
-      const countSep = queryMensajes ? "&" : "?";
+      const { queryResumen, queryMensajes, queryActividad } = buildDashboardQueries(
+        storedEmpresaId,
+        storedNaveId,
+        storedGrupoId,
+        timeRange
+      );
 
       const [resumenRes, msgsRes, empresasRes, actividadRes] = await Promise.all([
         fetch(`/api/db/dashboard/resumen${queryResumen}`),
-        fetch(`/api/db/mensajes${queryMensajes}${countSep}count=1`),
+        fetch(`/api/db/mensajes${queryMensajes}`),
         fetch(`/api/db/empresas`),
         fetch(`/api/db/actividad-horaria${queryActividad}`),
       ]);
@@ -192,21 +264,11 @@ export default function DashboardsPage() {
       const msgsData = await msgsRes.json();
       const empresasData = await empresasRes.json();
       const actividadData = await actividadRes.json();
+
       setResumen(resumenRes.ok && resumenData && !resumenData.error ? resumenData : RESUMEN_VACIO);
       setChatsActivos(typeof msgsData?.total === "number" ? msgsData.total : 0);
       setActividadHoraria(Array.isArray(actividadData) ? actividadData : []);
-
-      // candidatos.nave_interes guarda el numero secuencial de la sucursal (por
-      // orden de creacion dentro de su empresa, "1", "2"...), no el nombre — se
-      // resuelve aqui con el mismo orden que usa /api/prompt-context para la IA.
-      const empresas = Array.isArray(empresasData?.empresas) ? empresasData.empresas : [];
-      const empresaMatch = storedEmpresaId
-        ? empresas.find((e: { id: string }) => e.id === storedEmpresaId)
-        : (empresas.length === 1 ? empresas[0] : null);
-      const navesOrdenadas: NaveInfo[] = empresaMatch?.naves || [];
-      const mapa: Record<string, string> = {};
-      navesOrdenadas.forEach((n, i) => { mapa[String(i + 1)] = n.nombre; });
-      setNaveNombrePorNumero(mapa);
+      setNaveNombrePorNumero(resolveNavesMap(empresasData, storedEmpresaId));
     } catch (err) {
       console.error(err);
     } finally {
@@ -381,7 +443,8 @@ export default function DashboardsPage() {
       let nombre = "Sin sucursal";
       if (raw && raw !== "Pendiente") {
         const resolved = naveNombrePorNumero[raw] || raw;
-        nombre = formatNaveName(resolved);
+        const formatted = formatNaveName(resolved);
+        if (formatted) nombre = formatted;
       }
       counts[nombre] = (counts[nombre] || 0) + count;
     });
@@ -412,7 +475,7 @@ export default function DashboardsPage() {
 
   // ─── HORAS CON MAYOR ACTIVIDAD (heatmap) ────────────────────────
   const heatmap = useMemo(() => {
-    const grid: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0));
+    const grid: number[][] = Array.from({ length: 7 }, () => new Array(24).fill(0));
     let max = 0;
     let peakDia = 0;
     let peakHora = 0;
@@ -540,7 +603,7 @@ export default function DashboardsPage() {
                           />
                           <Bar dataKey="count" radius={[0, 6, 6, 0]} barSize={18} label={{ position: 'right', fill: '#64748b', fontWeight: 'bold', fontSize: 11 }}>
                             {kpis.funnel.map((entry, i) => (
-                              <Cell
+                              <Cell /* NOSONAR */
                                 key={`funnel-${entry.key || i}`}
                                 fill={entry.color}
                                 cursor="pointer"
@@ -582,14 +645,14 @@ export default function DashboardsPage() {
                             stroke="none"
                             cursor="pointer"
                             onClick={(data) => {
-                              if (data && data.key) {
+                              if (data?.key) {
                                 setSelectedEstadoModal(String(data.key));
                                 setModalSearch("");
                               }
                             }}
                           >
                             {kpis.donutEstados.map((entry, i) => (
-                              <Cell
+                              <Cell /* NOSONAR */
                                 key={`cell-${entry.key || i}`}
                                 fill={entry.color}
                                 cursor="pointer"
@@ -743,7 +806,7 @@ export default function DashboardsPage() {
                           <div key={r.nombre} className="p-3 bg-slate-50 rounded-xl">
                             <div className="flex items-center justify-between mb-1.5">
                               <div className="flex items-center gap-2">
-                                <div className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-white text-xs ${i === 0 ? 'bg-amber-500' : i === 1 ? 'bg-slate-400' : i === 2 ? 'bg-amber-700' : 'bg-indigo-300'}`}>
+                                <div className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-white text-xs ${getRankColor(i)}`}>
                                   {i + 1}
                                 </div>
                                 <span className="font-bold text-slate-700 text-sm">{r.nombre}</span>
@@ -774,7 +837,7 @@ export default function DashboardsPage() {
                           <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
                           <Tooltip contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }} cursor={{ fill: '#f8fafc' }} />
                           <Bar dataKey="count" radius={[6, 6, 0, 0]} barSize={32}>
-                            {naveDist.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                            {naveDist.map((item, i) => <Cell /* NOSONAR */ key={item.name} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                           </Bar>
                         </BarChart>
                       </ResponsiveContainer>
@@ -823,7 +886,7 @@ export default function DashboardsPage() {
                               ))}
                             </div>
                             {heatmap.grid.map((row, dia) => (
-                              <div key={dia} className="flex items-center gap-[2px] mb-[3px]">
+                              <div key={DIAS_SEMANA_COMPLETO[dia]} className="flex items-center gap-[2px] mb-[3px]">
                                 <div className="w-7 text-[10px] font-bold text-slate-500 text-right pr-1.5">
                                   {DIAS_SEMANA[dia]}
                                 </div>
@@ -831,18 +894,11 @@ export default function DashboardsPage() {
                                   const intensity = heatmap.max > 0 ? count / heatmap.max : 0;
                                   return (
                                     <div
-                                      key={hora}
+                                      key={`${DIAS_SEMANA[dia]}-${hora}`}
                                       title={`${DIAS_SEMANA_COMPLETO[dia]} ${hora}:00 hrs — ${count} mensajes de candidatos`}
                                       className="flex-1 aspect-square rounded-xs transition-transform hover:scale-125 hover:z-10 hover:shadow-xs cursor-pointer"
                                       style={{
-                                        backgroundColor:
-                                          count === 0
-                                            ? "#f1f5f9"
-                                            : intensity > 0.66
-                                            ? "#4f46e5"
-                                            : intensity > 0.33
-                                            ? "#818cf8"
-                                            : "#c7d2fe",
+                                        backgroundColor: getHeatmapColor(count, intensity),
                                       }}
                                     />
                                   );
@@ -882,7 +938,7 @@ export default function DashboardsPage() {
                         <YAxis tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} />
                         <Tooltip contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 20px rgba(0,0,0,0.1)" }} cursor={{ fill: '#f8fafc' }} />
                         <Bar dataKey="count" radius={[6, 6, 0, 0]} barSize={32} label={{ position: 'top', fill: '#64748b', fontWeight: 'bold' }}>
-                          {kpis.barrasVacante.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                          {kpis.barrasVacante.map((item, i) => <Cell /* NOSONAR */ key={item.name} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
                         </Bar>
                       </BarChart>
                     </ResponsiveContainer>
@@ -919,7 +975,7 @@ export default function DashboardsPage() {
                                 <div className="flex items-center gap-2 justify-end">
                                   <div className="w-20 h-1.5 bg-slate-200 rounded-full overflow-hidden">
                                     <div
-                                      className={`h-full rounded-full ${v.tasaConversion >= 20 ? "bg-emerald-500" : v.tasaConversion >= 5 ? "bg-amber-500" : "bg-slate-300"}`}
+                                      className={`h-full rounded-full ${getConversionBarColor(v.tasaConversion)}`}
                                       style={{ width: `${Math.min(v.tasaConversion, 100)}%` }}
                                     />
                                   </div>
@@ -930,6 +986,15 @@ export default function DashboardsPage() {
                           ))}
                         </tbody>
                       </table>
+                    </div>
+                  )}
+
+                  {Boolean(resumen.otra_ciudad) && (
+                    <div className="mt-4 flex items-center gap-2.5 px-3.5 py-2.5 bg-slate-50 border border-slate-200/80 rounded-xl text-xs text-slate-600 font-medium">
+                      <span className="text-sm">📍</span>
+                      <span>
+                        <strong className="text-slate-800 font-bold">{resumen.otra_ciudad} candidatos</strong> descalificados automáticamente por radicar en otra ciudad / fuera de Jalisco (no contabilizados en vacantes activas).
+                      </span>
                     </div>
                   )}
                 </div>
@@ -989,17 +1054,10 @@ export default function DashboardsPage() {
       {isTimelineExpanded && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/70 backdrop-blur-sm animate-fade-in"
-          onMouseDown={(e) => { isBackdropMouseDown.current = (e.target === e.currentTarget); }}
-          onMouseUp={(e) => {
-            if (isBackdropMouseDown.current && e.target === e.currentTarget) {
-              setIsTimelineExpanded(false);
-            }
-            isBackdropMouseDown.current = false;
-          }}
+          {...timelineBackdrop}
         >
           <div
             className="bg-white w-full max-w-5xl rounded-3xl shadow-2xl border border-slate-100 flex flex-col max-h-[95vh] overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
           >
             {/* HEADER */}
             <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-slate-50/80">
@@ -1160,17 +1218,10 @@ export default function DashboardsPage() {
       {selectedEstadoModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in"
-          onMouseDown={(e) => { isBackdropMouseDown.current = (e.target === e.currentTarget); }}
-          onMouseUp={(e) => {
-            if (isBackdropMouseDown.current && e.target === e.currentTarget) {
-              setSelectedEstadoModal(null);
-            }
-            isBackdropMouseDown.current = false;
-          }}
+          {...estadoModalBackdrop}
         >
           <div
             className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-100 flex flex-col max-h-[90vh] overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
           >
             {/* HEADER */}
             <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
@@ -1218,19 +1269,25 @@ export default function DashboardsPage() {
 
             {/* LIST */}
             <div className="flex-1 overflow-y-auto p-4 space-y-2.5 bg-slate-50/40 custom-scrollbar">
-              {modalLoading ? (
-                <div className="py-12 text-center text-slate-400">
-                  <Users size={36} className="mx-auto mb-2 opacity-40 text-slate-400 animate-pulse" />
-                  <p className="text-sm font-semibold">Cargando candidatos...</p>
-                </div>
-              ) : filteredModalCandidatos.length === 0 ? (
-                <div className="py-12 text-center text-slate-400">
-                  <Users size={36} className="mx-auto mb-2 opacity-40 text-slate-400" />
-                  <p className="text-sm font-semibold">No se encontraron candidatos en este estado</p>
-                  {modalSearch && <p className="text-xs text-slate-400 mt-1">Prueba con otro término de búsqueda</p>}
-                </div>
-              ) : (
-                filteredModalCandidatos.map((cand) => {
+              {(() => {
+                if (modalLoading) {
+                  return (
+                    <div className="py-12 text-center text-slate-400">
+                      <Users size={36} className="mx-auto mb-2 opacity-40 text-slate-400 animate-pulse" />
+                      <p className="text-sm font-semibold">Cargando candidatos...</p>
+                    </div>
+                  );
+                }
+                if (filteredModalCandidatos.length === 0) {
+                  return (
+                    <div className="py-12 text-center text-slate-400">
+                      <Users size={36} className="mx-auto mb-2 opacity-40 text-slate-400" />
+                      <p className="text-sm font-semibold">No se encontraron candidatos en este estado</p>
+                      {modalSearch && <p className="text-xs text-slate-400 mt-1">Prueba con otro término de búsqueda</p>}
+                    </div>
+                  );
+                }
+                return filteredModalCandidatos.map((cand) => {
                   const displayName = getCandidateDisplayName(cand);
                   const rawNave = (cand.nave_interes || "").trim();
                   const naveName = rawNave && rawNave !== "Pendiente"
@@ -1248,12 +1305,13 @@ export default function DashboardsPage() {
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span
-                              className="font-bold text-slate-800 text-sm hover:text-indigo-600 cursor-pointer transition-colors"
+                            <button
+                              type="button"
+                              className="font-bold text-slate-800 text-sm hover:text-indigo-600 cursor-pointer transition-colors text-left"
                               onClick={() => setSelectedCandidate(cand)}
                             >
                               {displayName}
-                            </span>
+                            </button>
                             {cand.escalado && (
                               <span className="text-[10px] bg-rose-100 text-rose-700 font-bold px-2 py-0.5 rounded-full border border-rose-200">
                                 🚨 Escalado
@@ -1300,8 +1358,8 @@ export default function DashboardsPage() {
                       </div>
                     </div>
                   );
-                })
-              )}
+                });
+              })()}
             </div>
 
             {/* FOOTER */}

@@ -85,7 +85,13 @@ export function parseDatosDocumento(value: unknown): Blob {
 }
 
 function normalizarTipo(raw: unknown): TipoArchivo {
-  const tipo = String(raw || "").trim().toUpperCase();
+  let str = "";
+  if (typeof raw === "string") {
+    str = raw;
+  } else if (typeof raw === "number") {
+    str = String(raw);
+  }
+  const tipo = str.trim().toUpperCase();
   if (TIPOS_VALIDOS.has(tipo)) return tipo as TipoArchivo;
   // Alias que manda Gemini o que ya existían en la base.
   if (tipo === "INE") return "INE_FRENTE";
@@ -119,6 +125,76 @@ export type FuenteDocumentos = {
   link_cv?: string | null;
 };
 
+function procesarArchivosIa(
+  blobs: unknown[],
+  agregar: (url: string, tipo: TipoArchivo) => void
+) {
+  for (const blob of blobs) {
+    const record = blob as { archivos?: unknown } | null;
+    if (!Array.isArray(record?.archivos)) continue;
+    for (const entrada of record.archivos) {
+      if (!entrada || typeof entrada !== "object") continue;
+      const { url, tipo } = entrada as { url?: unknown; tipo?: unknown };
+      agregar(proxyMediaUrl(typeof url === "string" ? url : null), normalizarTipo(tipo));
+    }
+  }
+}
+
+function procesarUrlsIne(
+  crudasIne: string[],
+  ambiguas: Set<string>,
+  vistos: Set<string>,
+  ineCount: () => number,
+  agregar: (url: string, tipo: TipoArchivo) => void
+): boolean {
+  let sinClasificar = false;
+  for (const url of crudasIne) {
+    if (vistos.has(url)) continue;
+    if (ambiguas.has(url)) {
+      sinClasificar = true;
+      agregar(url, "OTRO");
+    } else {
+      agregar(url, ineCount() === 0 ? "INE_FRENTE" : "INE_REVERSO");
+    }
+  }
+  return sinClasificar;
+}
+
+function procesarUrlsCsf(
+  crudasCsf: string[],
+  ambiguas: Set<string>,
+  vistos: Set<string>,
+  agregar: (url: string, tipo: TipoArchivo) => void
+): boolean {
+  let sinClasificar = false;
+  for (const url of crudasCsf) {
+    if (vistos.has(url)) continue;
+    if (ambiguas.has(url)) {
+      sinClasificar = true;
+      agregar(url, "OTRO");
+    } else {
+      agregar(url, "CONSTANCIA_FISCAL");
+    }
+  }
+  return sinClasificar;
+}
+
+function procesarUrlsLegadas(
+  crudasIne: string[],
+  crudasCsf: string[],
+  crudasCv: string[],
+  ambiguas: Set<string>,
+  vistos: Set<string>,
+  ineCount: () => number,
+  agregar: (url: string, tipo: TipoArchivo) => void
+): boolean {
+  const ineSinClasificar = procesarUrlsIne(crudasIne, ambiguas, vistos, ineCount, agregar);
+  const csfSinClasificar = procesarUrlsCsf(crudasCsf, ambiguas, vistos, agregar);
+  for (const url of crudasCv) agregar(url, "CV");
+
+  return ineSinClasificar || csfSinClasificar;
+}
+
 export function agruparDocumentos(fuente: FuenteDocumentos): DocumentosCandidato {
   const ineBlob = parseDatosDocumento(fuente.datos_ine);
   const csfBlob = parseDatosDocumento(fuente.datos_rfc);
@@ -128,7 +204,6 @@ export function agruparDocumentos(fuente: FuenteDocumentos): DocumentosCandidato
   const csf: ArchivoCandidato[] = [];
   const otros: ArchivoCandidato[] = [];
   const vistos = new Set<string>();
-  let sinClasificar = false;
 
   const agregar = (url: string, tipo: TipoArchivo) => {
     if (!url || vistos.has(url)) return;
@@ -140,14 +215,7 @@ export function agruparDocumentos(fuente: FuenteDocumentos): DocumentosCandidato
   };
 
   // 1. Clasificación explícita de la IA (fuente de verdad cuando existe).
-  for (const blob of [ineBlob, csfBlob, cvBlob]) {
-    if (!Array.isArray(blob?.archivos)) continue;
-    for (const entrada of blob.archivos as unknown[]) {
-      if (!entrada || typeof entrada !== "object") continue;
-      const { url, tipo } = entrada as { url?: unknown; tipo?: unknown };
-      agregar(proxyMediaUrl(typeof url === "string" ? url : null), normalizarTipo(tipo));
-    }
-  }
+  procesarArchivosIa([ineBlob, csfBlob, cvBlob], agregar);
 
   // 2. Urls legadas. Una url que aparece en datos_ine Y en datos_rfc viene de un
   //    turno AMBOS_DOCS: no se puede saber si es la INE o la Constancia.
@@ -156,25 +224,15 @@ export function agruparDocumentos(fuente: FuenteDocumentos): DocumentosCandidato
   const crudasCv = urlsCrudas(cvBlob, fuente.link_cv);
   const ambiguas = new Set(crudasIne.filter((u) => crudasCsf.includes(u)));
 
-  for (const url of crudasIne) {
-    if (vistos.has(url)) continue;
-    if (ambiguas.has(url)) {
-      sinClasificar = true;
-      agregar(url, "OTRO");
-    } else {
-      agregar(url, ine.length === 0 ? "INE_FRENTE" : "INE_REVERSO");
-    }
-  }
-  for (const url of crudasCsf) {
-    if (vistos.has(url)) continue;
-    if (ambiguas.has(url)) {
-      sinClasificar = true;
-      agregar(url, "OTRO");
-    } else {
-      agregar(url, "CONSTANCIA_FISCAL");
-    }
-  }
-  for (const url of crudasCv) agregar(url, "CV");
+  const sinClasificar = procesarUrlsLegadas(
+    crudasIne,
+    crudasCsf,
+    crudasCv,
+    ambiguas,
+    vistos,
+    () => ine.length,
+    agregar
+  );
 
   return { ine, csf, otros, sinClasificar, total: vistos.size };
 }

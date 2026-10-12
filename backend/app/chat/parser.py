@@ -17,12 +17,14 @@ from datetime import datetime, timezone
 from typing import Any
 
 from app.chat.mensajes_comunes import DESCALIFICACION_CIUDAD_MSG
-from app.chat.vacantes import es_placeholder_vacante, limpiar_vacante
-
-
-# Frases que el rescate por texto puede capturar cuando la IA habla de "la
-# vacante" en abstracto: tampoco son una vacante elegida.
-_VACANTES_GENERICAS = frozenset({"ESTA VACANTE", "NUESTRA VACANTE"})
+from app.chat.vacantes import (
+    emparejar_nave,
+    emparejar_vacante,
+    es_placeholder_nave,
+    es_placeholder_vacante,
+    limpiar_vacante,
+    normalizar_texto,
+)
 
 
 def _normalizar_vacante(v: str | None) -> str:
@@ -33,16 +35,16 @@ def _normalizar_vacante(v: str | None) -> str:
     return sin_acentos.upper().strip()
 
 _SPECIAL_CODES = {
-    "NAME_UPDATE": {"pattern": re.compile(r"NAME_UPDATE\s*\|\s*([^|]+)\s*\|", re.IGNORECASE), "action": "update_name", "field": "nombre"},
-    "VACANTE_UPDATE": {"pattern": re.compile(r"VACANTE_UPDATE\s*\|\s*([^|]+)\s*\|", re.IGNORECASE), "action": "update_vacante", "field": "vacante_interes"},
+    "NAME_UPDATE": {"pattern": re.compile(r"NAME_UPDATE\s*\|([^|]+)\|", re.IGNORECASE), "action": "update_name", "field": "nombre"},
+    "VACANTE_UPDATE": {"pattern": re.compile(r"VACANTE_UPDATE\s*\|([^|]+)\|", re.IGNORECASE), "action": "update_vacante", "field": "vacante_interes"},
     "CITA_CONFIRMADA": {"pattern": re.compile(r"CITA_CONFIRMADA\s*\|", re.IGNORECASE), "action": "cita_confirmada", "field": "fecha_cita_detectada"},
-    "CON_CV": {"pattern": re.compile(r"CON_CV\s*\|\s*([^|]+)\s*\|", re.IGNORECASE), "action": "cv_recibido", "field": "tiene_cv"},
+    "CON_CV": {"pattern": re.compile(r"CON_CV\s*\|([^|]+)\|", re.IGNORECASE), "action": "cv_recibido", "field": "tiene_cv"},
     "CV_MANUAL": {"pattern": re.compile(r"CV_MANUAL\s*\|\s*(\{[^}]+\})", re.IGNORECASE), "action": "cv_manual", "field": "cv_data", "is_json": True},
-    "HUMAN_ALERT": {"pattern": re.compile(r"HUMAN_ALERT\s*\|\s*([^|]+)\s*\|", re.IGNORECASE), "action": "escalate_to_human", "field": "escalation_reason"},
-    "MEMORY_UPDATE": {"pattern": re.compile(r"MEMORY_UPDATE\s*\|\s*([^|]+)\s*\|", re.IGNORECASE), "action": "update_memory", "field": "resumen_ia"},
+    "HUMAN_ALERT": {"pattern": re.compile(r"HUMAN_ALERT\s*\|([^|]+)\|", re.IGNORECASE), "action": "escalate_to_human", "field": "escalation_reason"},
+    "MEMORY_UPDATE": {"pattern": re.compile(r"MEMORY_UPDATE\s*\|([^|]+)\|", re.IGNORECASE), "action": "update_memory", "field": "resumen_ia"},
     "CITA_CANCELADA": {"pattern": re.compile(r"CITA_CANCELADA\s*\|", re.IGNORECASE), "action": "cita_cancelada", "field": "estado"},
-    "LUGAR_RESIDENCIA": {"pattern": re.compile(r"LUGAR_RESIDENCIA\s*\|\s*([^|]+)\s*\|", re.IGNORECASE), "action": "lugar_residencia", "field": "lugar_residencia"},
-    "CIUDAD_NO_APTA": {"pattern": re.compile(r"CIUDAD_NO_APTA\s*\|\s*([^|]+)\s*\|", re.IGNORECASE), "action": "ciudad_no_apta", "field": "lugar_residencia"},
+    "LUGAR_RESIDENCIA": {"pattern": re.compile(r"LUGAR_RESIDENCIA\s*\|([^|]+)\|", re.IGNORECASE), "action": "lugar_residencia", "field": "lugar_residencia"},
+    "CIUDAD_NO_APTA": {"pattern": re.compile(r"CIUDAD_NO_APTA\s*\|([^|]+)\|", re.IGNORECASE), "action": "ciudad_no_apta", "field": "lugar_residencia"},
 }
 
 _MENSAJE_HUMANO_DEFAULT = (
@@ -104,10 +106,13 @@ def _es_ciudad_no_apta(ciudad_str: str) -> bool:
     return True
 
 
+_SIMBOLOS_SUCIOS_RE = re.compile(r"[{}\[\]\"'|]")
+
+
 def _es_nombre_valido(nombre: str | None) -> bool:
     if not nombre:
         return False
-    clean = re.sub(r"[{}\[\]\"'|]", "", str(nombre)).strip()
+    clean = _SIMBOLOS_SUCIOS_RE.sub("", str(nombre)).strip()
     if not clean or len(clean) < 2:
         return False
     if clean.upper() in ("DESCONOCIDO", "CANDIDATO", "NO REGISTRADO", "PENDIENTE", "USUARIO", "SIN REGISTRAR", "NONE", "NULL"):
@@ -142,7 +147,7 @@ _JSON_COLA_RE = re.compile(
 )
 
 _YAML_COLA_RE = re.compile(
-    r'\n?\s*(?:memoria_update|etiquetas_internas)\s*:[\s\S]*$',
+    r'(?:^|\n)[ \t]*(?:memoria_update|etiquetas_internas)\s*:[\s\S]*$',
     re.IGNORECASE,
 )
 
@@ -153,10 +158,46 @@ _MEMORIA_UPDATE_RE = re.compile(r'"memoria_update"\s*:\s*"((?:[^"\\]|\\.)*)"')
 
 # Patrón para detectar y limpiar pies de menú (para evitar que se dupliquen si el
 # modelo los genera por su cuenta y además el parser los añade cada 3 mensajes).
-_MENU_FOOTER_RE = re.compile(
-    r'\s*_?\(\s*(?:Escribe\s+)?["“\']?Menú["”\']?[^)]*(?:menú principal|cambiar de nave)[^)]*\)_?',
+_PARENTESIS_SIMPLE_RE = re.compile(r'_?\([^()\n]{1,250}\)_?')
+
+
+def _limpiar_pie_menu(text: str) -> str:
+    def _reemplazar(m: re.Match) -> str:
+        s = m.group(0).lower()
+        if "menú principal" in s or "cambiar de nave" in s:
+            return ""
+        return m.group(0)
+
+    res = _PARENTESIS_SIMPLE_RE.sub(_reemplazar, text)
+    return "\n".join(line.rstrip(" \t") for line in res.splitlines())
+
+
+_VACANTE_MENCION_PREFIXES = (
+    "postulación a la vacante de",
+    "proceso para la vacante de",
+    "refieres a la vacante de",
+    "interesa la vacante de",
+    "vacante disponible de",
+    "vacante de",
+    "postulación a",
+)
+_VACANTE_MENCION_VAL_RE = re.compile(
+    r'^\s*\*?([a-záéíóúñ/\s]{4,35})\*?(?:[.,?!¿\n(]|\s+(?:está|en nuestra|cuenta|disponible)|$)',
     re.IGNORECASE,
 )
+
+
+def _extraer_mencion_vacante(texto: str) -> str | None:
+    texto_str = str(texto)
+    texto_lower = texto_str.lower()
+    for prefix in _VACANTE_MENCION_PREFIXES:
+        idx = texto_lower.find(prefix)
+        if idx != -1:
+            resto = texto_str[idx + len(prefix):]
+            m = _VACANTE_MENCION_VAL_RE.match(resto)
+            if m and m.group(1):
+                return m.group(1)
+    return None
 
 
 def _extract_code(text: str, code_name: str, code_config: dict) -> dict | None:
@@ -181,91 +222,101 @@ def _clean_message(text: str, detected_codes: list[dict]) -> str:
     return cleaned.strip()
 
 
-def _generate_database_updates(detected_codes: list[dict]) -> tuple[dict, list[dict]]:
+def _handle_single_action(
+    action: str,
+    value: Any,
+    now_iso: str,
+    updates: dict,
+    actions: list[dict],
+    catalogo: list[str] | set[str] | None = None,
+    sinonimos: dict[str, str] | None = None,
+) -> None:
+    if action == "update_name":
+        updates["nombre"] = value
+        updates["nombre_confirmado"] = True
+        actions.append({"type": "database_update", "table": "candidatos", "field": "nombre", "value": value})
+    elif action == "update_vacante":
+        vac_pipe = emparejar_vacante(value, catalogo=catalogo, sinonimos=sinonimos)
+        if vac_pipe:
+            updates["vacante_interes"] = vac_pipe
+            updates["estado"] = "INTERESADO"
+            actions.append({"type": "database_update", "table": "candidatos", "field": "vacante_interes", "value": vac_pipe})
+    elif action == "cita_confirmada":
+        updates["estado"] = "CITA_AGENDADA"
+        updates["fecha_ultima_cita"] = now_iso
+        actions.append({"type": "database_update", "table": "candidatos", "field": "estado", "value": "CITA_AGENDADA"})
+        actions.append({"type": "send_confirmation", "channel": "whatsapp"})
+    elif action == "cv_recibido":
+        updates["tiene_cv"] = True
+        updates["estado"] = "CV_RECIBIDO"
+        updates["vacante_cv"] = value
+        actions.append({"type": "database_update", "table": "candidatos", "field": "tiene_cv", "value": True})
+    elif action == "cv_manual":
+        cv_manual_str = json.dumps(value)
+        updates["cv_manual"] = cv_manual_str
+        updates["cv_manual_obj"] = value
+        updates["tiene_cv"] = True
+        updates["estado"] = "CV_MANUAL"
+        actions.append({"type": "database_update", "table": "candidatos", "field": "cv_manual", "value": cv_manual_str})
+    elif action == "escalate_to_human":
+        updates["estado"] = "ESCALADO"
+        updates["escalation_reason"] = value
+        updates["escalated_at"] = now_iso
+        actions.append({"type": "alert_human", "priority": "high", "reason": value})
+    elif action == "update_memory":
+        updates["resumen_ia"] = value
+        updates["ultima_actualizacion"] = now_iso
+        actions.append({"type": "database_update", "table": "candidatos", "field": "resumen_ia", "value": value})
+    elif action == "cita_cancelada":
+        updates["estado"] = "INTERESADO"
+        actions.append({"type": "database_update", "table": "candidatos", "field": "estado", "value": "INTERESADO"})
+    elif action in ("lugar_residencia", "ciudad_no_apta"):
+        updates["lugar_residencia"] = value
+        actions.append({"type": "database_update", "table": "candidatos", "field": "lugar_residencia", "value": value})
+        if action == "ciudad_no_apta" or _es_ciudad_no_apta(value):
+            updates["estado"] = "OTRA_CIUDAD"
+            updates["resumen_ia"] = f"Descalificado automáticamente: Radica en otra ciudad ({value})"
+            actions.append({"type": "database_update", "table": "candidatos", "field": "estado", "value": "OTRA_CIUDAD"})
+
+
+def _generate_database_updates(
+    detected_codes: list[dict],
+    catalogo: list[str] | set[str] | None = None,
+    sinonimos: dict[str, str] | None = None,
+) -> tuple[dict, list[dict]]:
     updates: dict = {}
     actions: list[dict] = []
     now_iso = datetime.now(timezone.utc).isoformat()
     for code in detected_codes:
-        action = code["action"]
-        value = code["value"]
-        if action == "update_name":
-            updates["nombre"] = value
-            updates["nombre_confirmado"] = True
-            actions.append({"type": "database_update", "table": "candidatos", "field": "nombre", "value": value})
-        elif action == "update_vacante":
-            # El formato pipe tampoco filtraba placeholders: VACANTE_UPDATE|General|
-            # dejaba el literal guardado como si fuera la vacante elegida.
-            vac_pipe = limpiar_vacante(value).upper()
-            if vac_pipe and not es_placeholder_vacante(vac_pipe):
-                updates["vacante_interes"] = vac_pipe
-                updates["estado"] = "INTERESADO"
-                actions.append({"type": "database_update", "table": "candidatos", "field": "vacante_interes", "value": vac_pipe})
-        elif action == "cita_confirmada":
-            updates["estado"] = "CITA_AGENDADA"
-            updates["fecha_ultima_cita"] = now_iso
-            actions.append({"type": "database_update", "table": "candidatos", "field": "estado", "value": "CITA_AGENDADA"})
-            actions.append({"type": "send_confirmation", "channel": "whatsapp"})
-        elif action == "cv_recibido":
-            updates["tiene_cv"] = True
-            updates["estado"] = "CV_RECIBIDO"
-            updates["vacante_cv"] = value
-            actions.append({"type": "database_update", "table": "candidatos", "field": "tiene_cv", "value": True})
-        elif action == "cv_manual":
-            cv_manual_str = json.dumps(value)
-            updates["cv_manual"] = cv_manual_str
-            updates["cv_manual_obj"] = value
-            updates["tiene_cv"] = True
-            updates["estado"] = "CV_MANUAL"
-            actions.append({"type": "database_update", "table": "candidatos", "field": "cv_manual", "value": cv_manual_str})
-        elif action == "escalate_to_human":
-            updates["estado"] = "ESCALADO"
-            updates["escalation_reason"] = value
-            updates["escalated_at"] = now_iso
-            actions.append({"type": "alert_human", "priority": "high", "reason": value})
-        elif action == "update_memory":
-            updates["resumen_ia"] = value
-            updates["ultima_actualizacion"] = now_iso
-            actions.append({"type": "database_update", "table": "candidatos", "field": "resumen_ia", "value": value})
-        elif action == "cita_cancelada":
-            updates["estado"] = "INTERESADO"
-            actions.append({"type": "database_update", "table": "candidatos", "field": "estado", "value": "INTERESADO"})
-        elif action == "lugar_residencia":
-            updates["lugar_residencia"] = value
-            if _es_ciudad_no_apta(value):
-                updates["estado"] = "OTRA_CIUDAD"
-                updates["resumen_ia"] = f"Descalificado automáticamente: Radica en otra ciudad ({value})"
-                actions.append({"type": "database_update", "table": "candidatos", "field": "lugar_residencia", "value": value})
-                actions.append({"type": "database_update", "table": "candidatos", "field": "estado", "value": "OTRA_CIUDAD"})
-            else:
-                actions.append({"type": "database_update", "table": "candidatos", "field": "lugar_residencia", "value": value})
-        elif action == "ciudad_no_apta":
-            updates["lugar_residencia"] = value
-            updates["estado"] = "OTRA_CIUDAD"
-            updates["resumen_ia"] = f"Descalificado automáticamente: Radica en otra ciudad ({value})"
-            actions.append({"type": "database_update", "table": "candidatos", "field": "lugar_residencia", "value": value})
-            actions.append({"type": "database_update", "table": "candidatos", "field": "estado", "value": "OTRA_CIUDAD"})
+        _handle_single_action(code["action"], code["value"], now_iso, updates, actions, catalogo=catalogo, sinonimos=sinonimos)
     return updates, actions
 
 
-def _parse_special_codes(ai_response: Any) -> dict:
-    if not ai_response:
-        return {"message_to_user": "", "has_special_codes": False, "detected_codes": [], "pending_actions": []}
-
-    json_obj: dict | None = None
+def _extraer_json_y_texto(ai_response: Any) -> tuple[dict | None, str]:
     if isinstance(ai_response, dict):
-        json_obj = ai_response
-        text_to_parse = json.dumps(ai_response)
-    elif isinstance(ai_response, str):
+        return ai_response, json.dumps(ai_response)
+    if isinstance(ai_response, str):
         clean_str = re.sub(r"```json", "", ai_response, flags=re.IGNORECASE)
-        clean_str = re.sub(r"```", "", clean_str).strip()
-        text_to_parse = clean_str
+        clean_str = clean_str.replace("```", "").strip()
+        json_obj = None
         if clean_str.startswith("{") and clean_str.endswith("}"):
             try:
                 json_obj = json.loads(clean_str)
             except json.JSONDecodeError:
                 json_obj = None
-    else:
-        text_to_parse = str(ai_response)
+        return json_obj, clean_str
+    return None, str(ai_response)
+
+
+def _parse_special_codes(
+    ai_response: Any,
+    catalogo: list[str] | set[str] | None = None,
+    sinonimos: dict[str, str] | None = None,
+) -> dict:
+    if not ai_response:
+        return {"message_to_user": "", "has_special_codes": False, "detected_codes": [], "pending_actions": []}
+
+    json_obj, text_to_parse = _extraer_json_y_texto(ai_response)
 
     detected_codes = []
     for code_name, code_config in _SPECIAL_CODES.items():
@@ -277,7 +328,7 @@ def _parse_special_codes(ai_response: Any) -> dict:
     if json_obj and json_obj.get("mensaje_al_usuario"):
         cleaned_message = json_obj["mensaje_al_usuario"]
 
-    updates, actions = _generate_database_updates(detected_codes)
+    updates, actions = _generate_database_updates(detected_codes, catalogo=catalogo, sinonimos=sinonimos)
 
     if json_obj and json_obj.get("memoria_update"):
         updates["resumen_ia"] = json_obj["memoria_update"]
@@ -303,7 +354,12 @@ def _parse_special_codes(ai_response: Any) -> dict:
     }
 
 
-def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
+def procesar_respuesta_ia(
+    raw_response: Any,
+    candidato: dict,
+    catalogo: list[str] | set[str] | None = None,
+    sinonimos: dict[str, str] | None = None,
+) -> list[dict]:
     """Procesa la respuesta del agente de IA. Soporta:
     1. Formato JSON estructurado (mensajes_al_usuario: list[str], memoria_update, etiquetas_internas).
     2. Formato JSON estándar (mensaje_al_usuario: str con [SPLIT]).
@@ -366,7 +422,7 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
                         except json.JSONDecodeError:
                             json_parsed = None
 
-    result = _parse_special_codes(json_parsed if json_parsed else raw_input)
+    result = _parse_special_codes(json_parsed if json_parsed else raw_input, catalogo=catalogo, sinonimos=sinonimos)
     mensajes_candidato: list[str] = []
 
     if json_parsed:
@@ -408,7 +464,7 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
             # Nombre
             nom = et.get("actualizar_nombre") or et.get("nombre")
             if nom and _es_nombre_valido(str(nom)):
-                clean_nom = re.sub(r"[{}\[\]\"'|]", "", str(nom)).strip()
+                clean_nom = _SIMBOLOS_SUCIOS_RE.sub("", str(nom)).strip()
                 result["nombre_detectado"] = clean_nom
                 result["database_updates"]["nombre"] = clean_nom
                 result["database_updates"]["nombre_confirmado"] = True
@@ -416,20 +472,19 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
             # Vacante
             vac = et.get("actualizar_vacante") or et.get("vacante_interes") or et.get("vacante")
             if vac:
-                # Sin limpiar los adornos, `{NINGUNA}` no coincidía con el
-                # literal "NINGUNA" y el placeholder se guardaba como vacante.
-                vac_clean = limpiar_vacante(vac).upper()
-                if not es_placeholder_vacante(vac_clean):
-                    result["vacante_detectada"] = vac_clean
-                    result["database_updates"]["vacante_interes"] = vac_clean
+                vac_match = emparejar_vacante(vac, catalogo=catalogo, sinonimos=sinonimos)
+                if vac_match:
+                    result["vacante_detectada"] = vac_match
+                    result["database_updates"]["vacante_interes"] = vac_match
                     result["database_updates"]["estado"] = "INTERESADO"
 
             # Nave
             nav = et.get("actualizar_nave") or et.get("nave_interes") or et.get("nave")
             if nav:
-                nav_clean = str(nav).strip().upper()
-                if nav_clean != "PENDIENTE":
-                    result["nave_detectada"] = nav_clean
+                nav_match = emparejar_nave(nav)
+                if nav_match:
+                    result["nave_detectada"] = nav_match
+                    result["database_updates"]["nave_interes"] = nav_match
 
             # Residencia
             lugar_res = et.get("lugar_residencia")
@@ -447,6 +502,11 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
                 if _es_ciudad_no_apta(l_str):
                     result["database_updates"]["estado"] = "OTRA_CIUDAD"
                     result["database_updates"]["resumen_ia"] = f"Descalificado automáticamente: Radica en otra ciudad ({l_str})"
+
+            # Estado explícito
+            estado_val = et.get("estado")
+            if estado_val and str(estado_val).strip():
+                result["database_updates"]["estado"] = str(estado_val).strip()
 
             # Privacidad
             priv_val = et.get("privacidad_aceptada")
@@ -486,7 +546,7 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
                 result["database_updates"]["estado"] = "CV_MANUAL"
                 result["database_updates"]["cv_manual"] = json.dumps(cv_man)
                 if _es_nombre_valido(cv_man.get("nombre")):
-                    nom_cv = re.sub(r"[{}\[\]\"'|]", "", str(cv_man["nombre"])).strip()
+                    nom_cv = _SIMBOLOS_SUCIOS_RE.sub("", str(cv_man["nombre"])).strip()
                     result["nombre_detectado"] = nom_cv
                     result["database_updates"]["nombre"] = nom_cv
                     result["database_updates"]["nombre_confirmado"] = True
@@ -520,15 +580,13 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
                     mensajes_candidato = [str(ha["mensaje_visible"]).strip()]
 
     def _strip_quotes_pipes(s: str) -> str:
-        s = re.sub(r'^["\s|]+', "", s)
-        s = re.sub(r'["\s|]+$', "", s)
-        return s
+        return s.strip(' \t\r\n"|')
 
     if not result.get("vacante_detectada"):
         vac_match = re.search(r'(?:ACTUALIZAR_VACANTE|"actualizar_vacante"|"vacante_interes")\s*[:|^"]\s*([^"|\n,}]+)', ai_response_str, re.IGNORECASE)
         if vac_match and vac_match.group(1):
-            val = limpiar_vacante(_strip_quotes_pipes(vac_match.group(1).strip())).upper()
-            if val and not es_placeholder_vacante(val):
+            val = emparejar_vacante(_strip_quotes_pipes(vac_match.group(1).strip()), catalogo=catalogo, sinonimos=sinonimos)
+            if val:
                 result["vacante_detectada"] = val
                 result["database_updates"]["vacante_interes"] = val
                 result["database_updates"]["estado"] = "INTERESADO"
@@ -538,45 +596,43 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
         resumen_cand = result.get("resumen_generado") or ""
         vac_mem_match = re.search(r'Vacante:\s*([^.\n|]+)', resumen_cand, re.IGNORECASE)
         if vac_mem_match and vac_mem_match.group(1):
-            val_mem = limpiar_vacante(_strip_quotes_pipes(vac_mem_match.group(1).strip())).upper()
-            if val_mem and not es_placeholder_vacante(val_mem):
+            val_mem = emparejar_vacante(_strip_quotes_pipes(vac_mem_match.group(1).strip()), catalogo=catalogo, sinonimos=sinonimos)
+            if val_mem:
                 result["vacante_detectada"] = val_mem
                 result["database_updates"]["vacante_interes"] = val_mem
                 result["database_updates"]["estado"] = "INTERESADO"
 
     if not result.get("vacante_detectada"):
-        # Rescate 2: Desde menciones en mensajes de la IA (ej. "postulación a Operador de Almacén", "vacante de Auxiliar de Sistemas")
+        # Rescate 2: Desde menciones en mensajes de la IA
         for texto_msg in (mensajes_candidato or [ai_response_str]):
-            v_phrase_match = re.search(
-                r'(?:vacante(?:\s+disponible)?\s+de|postulación\s+a(?:\s+la\s+vacante\s+de)?|interesa\s+la\s+vacante\s+de|proceso\s+para(?:\s+la\s+vacante\s+de)?|refieres\s+a\s+la\s+vacante\s+de)\s+\*?([A-ZÁÉÍÓÚÑa-záéíóúñ/\s]{4,35}?)\*?(?:,|\.|\?|!|\n|\s+está|\s+en\s+nuestra|\s+cuenta|\s+disponible|\s*¿|\s*\()',
-                str(texto_msg),
-                re.IGNORECASE,
-            )
-            if v_phrase_match and v_phrase_match.group(1):
-                val_phrase = limpiar_vacante(_strip_quotes_pipes(v_phrase_match.group(1).strip())).upper()
-                if not es_placeholder_vacante(val_phrase, _VACANTES_GENERICAS):
+            v_val = _extraer_mencion_vacante(texto_msg)
+            if v_val:
+                val_phrase = emparejar_vacante(_strip_quotes_pipes(v_val.strip()), catalogo=catalogo, sinonimos=sinonimos)
+                if val_phrase:
                     result["vacante_detectada"] = val_phrase
                     result["database_updates"]["vacante_interes"] = val_phrase
                     result["database_updates"]["estado"] = "INTERESADO"
                     break
 
     if not result.get("vacante_detectada") and candidato.get("vacante_interes"):
-        cand_v = limpiar_vacante(candidato.get("vacante_interes")).upper()
-        if cand_v and not es_placeholder_vacante(cand_v):
+        cand_v = emparejar_vacante(candidato.get("vacante_interes"), catalogo=catalogo, sinonimos=sinonimos)
+        if cand_v:
             result["vacante_detectada"] = cand_v
 
     if not result.get("nave_detectada"):
         nave_match = re.search(r'(?:ACTUALIZAR_NAVE|"actualizar_nave"|"nave_interes")\s*[:|^"]\s*([^"|\n,}]+)', ai_response_str, re.IGNORECASE)
         if nave_match and nave_match.group(1):
             val = _strip_quotes_pipes(nave_match.group(1).strip())
-            if val and val.upper() != "PENDIENTE":
-                result["nave_detectada"] = val.upper()
+            nav_match = emparejar_nave(val)
+            if nav_match:
+                result["nave_detectada"] = nav_match
+                result["database_updates"]["nave_interes"] = nav_match
 
     if not result.get("nombre_detectado"):
         nom_match = re.search(r'(?:ACTUALIZAR_NOMBRE|"actualizar_nombre")\s*[:|^"]\s*([^"|\n,}]+)', ai_response_str, re.IGNORECASE)
         if nom_match and nom_match.group(1):
             val = _strip_quotes_pipes(nom_match.group(1).strip())
-            val_clean = re.sub(r"[{}\[\]\"'|]", "", val).strip()
+            val_clean = _SIMBOLOS_SUCIOS_RE.sub("", val).strip()
             if _es_nombre_valido(val_clean):
                 result["nombre_detectado"] = val_clean
                 result["database_updates"]["nombre"] = val_clean
@@ -604,7 +660,8 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
                 result["resumen_generado"] = resumen_rescatado
                 result["database_updates"]["resumen_ia"] = resumen_rescatado
 
-    if "PRIVACIDAD_ACEPTADA" in ai_response_str:
+    # 4. Estado especial: Acepto privacidad / Cita creada / Cita cancelada
+    if not result.get("acepto_privacidad") and "ACEPTO_PRIVACIDAD" in ai_response_str:
         result["acepto_privacidad"] = True
         result["database_updates"]["privacidad_aceptada"] = True
     elif not result.get("acepto_privacidad"):
@@ -619,7 +676,7 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
         result["database_updates"]["estado"] = "INTERESADO"
 
     if not result.get("fecha_entrevista_detectada"):
-        cita_match = re.search(r"CITA_CONFIRMADA[\s:|]*(.*?)([|\n]|$)", ai_response_str, re.IGNORECASE)
+        cita_match = re.search(r"CITA_CONFIRMADA[\s:|]*([^|\n]+)", ai_response_str, re.IGNORECASE)
         if cita_match and cita_match.group(1):
             crudo = cita_match.group(1).replace("|", "").strip()
             iso = re.search(r"\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?", crudo)
@@ -644,7 +701,7 @@ def procesar_respuesta_ia(raw_response: Any, candidato: dict) -> list[dict]:
         m = _JSON_COLA_RE.sub("", m)
         m = _YAML_COLA_RE.sub("", m)
         m = _CLEANUP_RE.sub("", m).strip()
-        m = _MENU_FOOTER_RE.sub("", m).strip()
+        m = _limpiar_pie_menu(m).strip()
         if "|" in m:
             partes = [p.strip() for p in m.split("|") if p.strip()]
             m = partes[-1] if partes else ""

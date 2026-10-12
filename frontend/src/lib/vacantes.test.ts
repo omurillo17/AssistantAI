@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
-
-import { esPlaceholderVacante, limpiarVacante } from './vacantes';
+import { esPlaceholderVacante, limpiarVacante, normalizarVacante } from './vacantes';
 
 /**
  * En producción quedaron guardados '{Ninguna}', '{NINGUNA}' y 'General' como
@@ -36,5 +35,26 @@ describe('limpiarVacante', () => {
     expect(limpiarVacante('{OPERADOR DE VEHÍCULO}')).toBe('OPERADOR DE VEHÍCULO');
     expect(limpiarVacante('*CAJERO/A*')).toBe('CAJERO/A');
     expect(limpiarVacante(null)).toBe('');
+  });
+});
+
+describe('normalizarVacante', () => {
+  it.each([
+    ['Cajera o Escaner', 'CAJERA O ESCANER'],
+    ['Cajera O Escaner', 'CAJERA O ESCANER'],
+    ['Cajera o Escáner', 'CAJERA O ESCANER'],
+    ['cajera', 'CAJERA O ESCANER'],
+    ['cajero', 'CAJERA O ESCANER'],
+    ['escaner', 'CAJERA O ESCANER'],
+    ['Operador General', 'OPERADOR GENERAL'],
+    ['operador general', 'OPERADOR GENERAL'],
+    ['OPERADOR GENERAL', 'OPERADOR GENERAL'],
+    ['Operador de Reparto', 'OPERADOR DE REPARTO'],
+    ['', ''],
+    [null, ''],
+    ['General', ''],
+    ['{Ninguna}', ''],
+  ])('normaliza %j a %j', (entrada, esperado) => {
+    expect(normalizarVacante(entrada)).toBe(esperado);
   });
 });

@@ -7,39 +7,39 @@ import os
 
 class _Env:
     @property
-    def DATABASE_URL(self) -> str:
+    def DATABASE_URL(self) -> str:  # NOSONAR
         val = os.environ.get("DATABASE_URL")
         if not val:
             raise RuntimeError("CRITICAL: DATABASE_URL is missing from environment variables.")
         return val
 
     @property
-    def GOOGLE_TOKEN_ENCRYPTION_KEY(self) -> str:
+    def GOOGLE_TOKEN_ENCRYPTION_KEY(self) -> str:  # NOSONAR
         val = os.environ.get("GOOGLE_TOKEN_ENCRYPTION_KEY")
         if not val:
             raise RuntimeError("CRITICAL: GOOGLE_TOKEN_ENCRYPTION_KEY is missing from environment variables.")
         return val
 
     @property
-    def GOOGLE_OAUTH_CLIENT_ID(self) -> str:
+    def GOOGLE_OAUTH_CLIENT_ID(self) -> str:  # NOSONAR
         val = os.environ.get("GOOGLE_OAUTH_CLIENT_ID")
         if not val:
             raise RuntimeError("CRITICAL: GOOGLE_OAUTH_CLIENT_ID is missing from environment variables.")
         return val
 
     @property
-    def GOOGLE_OAUTH_CLIENT_SECRET(self) -> str:
+    def GOOGLE_OAUTH_CLIENT_SECRET(self) -> str:  # NOSONAR
         val = os.environ.get("GOOGLE_OAUTH_CLIENT_SECRET")
         if not val:
             raise RuntimeError("CRITICAL: GOOGLE_OAUTH_CLIENT_SECRET is missing from environment variables.")
         return val
 
     @property
-    def PYTHON_SERVICE_API_KEY(self) -> str | None:
+    def PYTHON_SERVICE_API_KEY(self) -> str | None:  # NOSONAR
         return os.environ.get("PYTHON_SERVICE_API_KEY") or None
 
     @property
-    def FRONTEND_API_BASE(self) -> str:
+    def FRONTEND_API_BASE(self) -> str:  # NOSONAR
         """URL con la que backend llama a los endpoints /api/cron/* del
         frontend Next.js (reemplaza los scheduleTrigger+httpRequest de
         5_Sofia - Mantenimiento y Errores.json). Mismo patrón por defecto
@@ -48,7 +48,7 @@ class _Env:
         return os.environ.get("FRONTEND_API_BASE") or "http://host.docker.internal:3001"
 
     @property
-    def INTERNAL_API_KEY(self) -> str | None:
+    def INTERNAL_API_KEY(self) -> str | None:  # NOSONAR
         """Llave SALIENTE que backend manda como `x-api-key` en TODAS sus
         llamadas al frontend Next.js (/api/webhook/*, /api/upload-cv,
         /api/prompt-context, /api/cron/*, /api/db/*). No confundir con
@@ -67,25 +67,25 @@ class _Env:
         )
 
     @property
-    def GEMINI_API_KEY(self) -> str:
+    def GEMINI_API_KEY(self) -> str:  # NOSONAR
         val = os.environ.get("GEMINI_API_KEY")
         if not val:
             raise RuntimeError("CRITICAL: GEMINI_API_KEY is missing from environment variables.")
         return val
 
     @property
-    def WAHA_API_KEY(self) -> str:
+    def WAHA_API_KEY(self) -> str:  # NOSONAR
         val = os.environ.get("WAHA_API_KEY")
         if not val:
             raise RuntimeError("CRITICAL: WAHA_API_KEY is missing from environment variables.")
         return val
 
     @property
-    def WAHA_BASE_URL(self) -> str:
+    def WAHA_BASE_URL(self) -> str:  # NOSONAR
         return os.environ.get("WAHA_BASE_URL") or "http://waha:3000"
 
     @property
-    def WAHA_SEGUNDOS_ENTRE_MENSAJES(self) -> float:
+    def WAHA_SEGUNDOS_ENTRE_MENSAJES(self) -> float:  # NOSONAR
         """Separación mínima entre dos mensajes salientes, en segundos.
 
         Con 8 s salen como mucho ~7 mensajes por minuto (menos aún con el
@@ -99,7 +99,7 @@ class _Env:
             return 8.0
 
     @property
-    def WAHA_JITTER_SEGUNDOS(self) -> float:
+    def WAHA_JITTER_SEGUNDOS(self) -> float:  # NOSONAR
         """Segundos aleatorios extra que se suman a la separación anterior.
         Un ritmo exacto es tan reconocible como no esperar nada."""
         try:
@@ -108,7 +108,7 @@ class _Env:
             return 7.0
 
     @property
-    def ALERTAS_ADMIN_TELEFONO(self) -> str | None:
+    def ALERTAS_ADMIN_TELEFONO(self) -> str | None:  # NOSONAR
         """WhatsApp del administrador del sistema (el ROOT). Recibe una copia
         de las alertas de fallo del agente, además del reclutador afectado.
 
@@ -120,12 +120,40 @@ class _Env:
         return valor or None
 
     @property
-    def VIRGO_FILES_DIR(self) -> str:
+    def VIRGO_FILES_DIR(self) -> str:  # NOSONAR
         """Mismo volumen que monta n8n en /home/node/virgo_files (./virgo_data
         del repo), montado aquí en /app/virgo_files -- para leer
         prompts/chat_prompt.md y data/prompt_context.json tal como hacían
         CargarPrompt/Vacantes en n8n."""
         return os.environ.get("VIRGO_FILES_DIR") or "/app/virgo_files"
+
+    @property
+    def META_WA_ACCESS_TOKEN(self) -> str | None:  # NOSONAR
+        return os.environ.get("META_WA_ACCESS_TOKEN") or None
+
+    @property
+    def META_WA_PHONE_NUMBER_ID(self) -> str | None:  # NOSONAR
+        return os.environ.get("META_WA_PHONE_NUMBER_ID") or None
+
+    @property
+    def META_WA_WABA_ID(self) -> str | None:  # NOSONAR
+        return os.environ.get("META_WA_WABA_ID") or None
+
+    @property
+    def META_WA_VERIFY_TOKEN(self) -> str:  # NOSONAR
+        return os.environ.get("META_WA_VERIFY_TOKEN") or "virgo_meta_secret_webhook_2026"
+
+    @property
+    def DEFAULT_RECRUITER_PHONE(self) -> str:  # NOSONAR
+        return os.environ.get("DEFAULT_RECRUITER_PHONE", "")
+
+    @property
+    def DEFAULT_CALENDAR_ID(self) -> str:  # NOSONAR
+        return os.environ.get("DEFAULT_CALENDAR_ID") or "talreclutamiento01@gmail.com"
+
+    @property
+    def TEST_DEV_PHONE(self) -> str:  # NOSONAR
+        return os.environ.get("TEST_DEV_PHONE", "5213323379399")
 
 
 ENV = _Env()

@@ -3,11 +3,235 @@ import { pool } from '@/lib/db';
 import { candidatoMachine } from '@/lib/stateMachine';
 import { createActor } from 'xstate';
 import { verifyInternalApiKey } from '@/lib/auth';
-import { WAHA_BASE, WAHA_API_KEY, WAHA_SESSION } from '@/lib/waha';
+import { enviarNotificacionReclutador } from '@/lib/messagingService';
 import { resolveEmpresaYGrupo } from '@/lib/empresaResolution';
 import { asignarReclutadorPorVacante } from '@/lib/asignacionReclutador';
 import { esPlaceholderVacante, limpiarVacante } from '@/lib/vacantes';
 import type { CandidatoEvent, CandidatoContext } from "@/lib/stateMachine";
+
+const CURP_REGEX = /^[A-Z0-9]{18}$/;
+const RFC_PERSONA_FISICA_REGEX = /^[A-ZÑ&]{4}\d{6}[A-Z0-9]{3}$/;
+
+function normalizeCurp(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const clean = value.trim().toUpperCase().slice(0, 50);
+  return clean || null;
+}
+
+function validateCurps(curp_ine: unknown, curp_rfc: unknown) {
+  const safe_curp_ine = normalizeCurp(curp_ine);
+  const safe_curp_rfc = normalizeCurp(curp_rfc);
+
+  const rfcCoincideConCurpIne = !!safe_curp_rfc && !!safe_curp_ine
+    && RFC_PERSONA_FISICA_REGEX.test(safe_curp_rfc)
+    && CURP_REGEX.test(safe_curp_ine)
+    && safe_curp_rfc.slice(0, 10) === safe_curp_ine.slice(0, 10);
+
+  const curpIneFormatoInvalido = !!safe_curp_ine && !CURP_REGEX.test(safe_curp_ine);
+  const curpRfcFormatoInvalido = !!safe_curp_rfc && !CURP_REGEX.test(safe_curp_rfc) && !rfcCoincideConCurpIne;
+
+  return { safe_curp_ine, safe_curp_rfc, curpIneFormatoInvalido, curpRfcFormatoInvalido };
+}
+
+function checkCurpMalFormada(esINE: boolean, esConstancia: boolean, esAmbos: boolean, curpIneFormatoInvalido: boolean, curpRfcFormatoInvalido: boolean): boolean {
+  if (esINE && curpIneFormatoInvalido) return true;
+  if (esConstancia && curpRfcFormatoInvalido) return true;
+  if (esAmbos && (curpIneFormatoInvalido || curpRfcFormatoInvalido)) return true;
+  return false;
+}
+
+function resolveIdAlertState(
+  isAlert: boolean,
+  curpMalFormada: boolean,
+  identidad_motivo: string | undefined,
+  tipo_origen: string,
+  dbCandidato: any
+) {
+  if (isAlert) {
+    const motivo = identidad_motivo || (curpMalFormada ? `CURP con formato irregular en ${tipo_origen}. Verifica el documento manualmente.` : (dbCandidato.alerta_identidad_motivo ?? null));
+    const notificar = dbCandidato.alerta_identidad_estado !== 'PENDIENTE';
+    return { alertaEstado: 'PENDIENTE', alertaMotivo: motivo, notificar };
+  }
+  return { alertaEstado: null, alertaMotivo: null, notificar: false };
+}
+
+function resolveIdDocsProgress(
+  tieneIne: boolean,
+  tieneRfc: boolean,
+  isAlert: boolean,
+  tipo_origen: string
+) {
+  if (tieneIne && tieneRfc) {
+    const resumen = isAlert
+      ? 'El candidato completó su INE y RFC (alerta de verificación de identidad pendiente en plataforma). El siguiente paso es agendar la cita.'
+      : 'El candidato completó su INE y RFC. El siguiente paso es agendar la cita.';
+    return { estado: 'INE_VALIDADA', resumen };
+  }
+  return {
+    estado: undefined,
+    resumen: `Candidato entregó documento parcial (${tipo_origen}). Esperando el faltante.`
+  };
+}
+
+function resolveDocumentStateAndAlerts({
+  esCV,
+  esINE,
+  esConstancia,
+  esAmbos,
+  esBloqueado,
+  esAlertaIdentidad,
+  curpIneFormatoInvalido,
+  curpRfcFormatoInvalido,
+  tipo_origen,
+  identidad_motivo,
+  newStateValue,
+  dbCandidato,
+}: {
+  esCV: boolean;
+  esINE: boolean;
+  esConstancia: boolean;
+  esAmbos: boolean;
+  esBloqueado: boolean;
+  esAlertaIdentidad: boolean;
+  curpIneFormatoInvalido: boolean;
+  curpRfcFormatoInvalido: boolean;
+  tipo_origen: string;
+  identidad_motivo?: string;
+  newStateValue: string;
+  dbCandidato: any;
+}) {
+  if (esCV) {
+    return {
+      estado_final: 'CV_RECIBIDO',
+      resumen_ia_final: 'CV Recibido y Analizado por Gemini',
+      alertaIdentidadEstadoFinal: dbCandidato.alerta_identidad_estado ?? null,
+      alertaIdentidadMotivoFinal: dbCandidato.alerta_identidad_motivo ?? null,
+      debeNotificarReclutador: false,
+    };
+  }
+
+  if (esINE || esConstancia || esAmbos || esBloqueado) {
+    const curpMalFormada = checkCurpMalFormada(esINE, esConstancia, esAmbos, curpIneFormatoInvalido, curpRfcFormatoInvalido);
+    const tieneIne = esINE || esAmbos || !!dbCandidato.datos_ine || !!dbCandidato.curp_ine || !!dbCandidato.nombre_ine;
+    const tieneRfc = esConstancia || esAmbos || !!dbCandidato.datos_rfc || !!dbCandidato.curp_rfc || !!dbCandidato.nombre_constancia;
+    const isAlert = esBloqueado || curpMalFormada || esAlertaIdentidad;
+
+    const { alertaEstado, alertaMotivo, notificar } = resolveIdAlertState(isAlert, curpMalFormada, identidad_motivo, tipo_origen, dbCandidato);
+    const progress = resolveIdDocsProgress(tieneIne, tieneRfc, isAlert, tipo_origen);
+
+    return {
+      estado_final: progress.estado || newStateValue,
+      resumen_ia_final: progress.resumen,
+      alertaIdentidadEstadoFinal: alertaEstado,
+      alertaIdentidadMotivoFinal: alertaMotivo,
+      debeNotificarReclutador: notificar,
+    };
+  }
+
+  return {
+    estado_final: newStateValue,
+    resumen_ia_final: dbCandidato.resumen_ia,
+    alertaIdentidadEstadoFinal: dbCandidato.alerta_identidad_estado ?? null,
+    alertaIdentidadMotivoFinal: dbCandidato.alerta_identidad_motivo ?? null,
+    debeNotificarReclutador: false,
+  };
+}
+
+function resolveSafeVacante(vacante: string | undefined, resumen_ia_final: string | null, dbVacanteInteres?: string | null): string {
+  let safe_vacante = limpiarVacante(vacante);
+  if (esPlaceholderVacante(safe_vacante)) {
+    const matchVacanteResumen = /Vacante:\s*([^.\n]+)/i.exec(resumen_ia_final || '');
+    if (matchVacanteResumen && !esPlaceholderVacante(matchVacanteResumen[1])) {
+      return limpiarVacante(matchVacanteResumen[1]);
+    }
+    if (!esPlaceholderVacante(dbVacanteInteres)) {
+      return limpiarVacante(dbVacanteInteres);
+    }
+    return '';
+  }
+  return safe_vacante;
+}
+
+function parseDocumentData(datos_documento: unknown, link_cv?: string) {
+  let parsedDatos: { nombre_completo?: string; nombre?: string; url?: string; [k: string]: unknown } = {};
+  if (typeof datos_documento === 'string') {
+    try { parsedDatos = JSON.parse(datos_documento); } catch { parsedDatos = {}; }
+  } else if (datos_documento && typeof datos_documento === 'object') {
+    parsedDatos = datos_documento as Record<string, unknown>;
+  }
+  if (parsedDatos && typeof parsedDatos === 'object' && link_cv) {
+    parsedDatos.url = link_cv;
+  }
+  const nombreDocExtrahido = (parsedDatos?.nombre_completo || parsedDatos?.nombre || '').replace(/[\uFE0F\u200B-\u200D\u200E\u200F\uFEFF]/g, '').trim();
+  return { parsedDatos, nombreDocExtrahido };
+}
+
+function cleanName(nombre: string | undefined, nombreDocExtrahido: string): string {
+  let safe_nombre = (nombre || '').replace(/[\uFE0F\u200B-\u200D\u200E\u200F\uFEFF]/g, '').trim();
+  if (!safe_nombre || safe_nombre === 'Candidato' || safe_nombre === 'No registrado' || /^\+?\d+$/.test(safe_nombre)) {
+    return nombreDocExtrahido || 'Candidato';
+  }
+  return safe_nombre;
+}
+
+function runCandidatoMachine(
+  currentState: string,
+  dbCandidato: any,
+  flags: { esBloqueado: boolean; esCV: boolean; esINE: boolean; esConstancia: boolean; esAmbos: boolean }
+): string {
+  let event: CandidatoEvent | null = null;
+  if (flags.esBloqueado) {
+    event = { type: 'BLOQUEO_IDENTIDAD' };
+  } else if (flags.esCV) {
+    event = { type: 'RECIBE_CV' };
+  } else if (flags.esINE || flags.esConstancia || flags.esAmbos) {
+    event = { type: 'ENTREGA_DOCS' };
+  }
+
+  if (!event) return currentState;
+
+  const actor = createActor(candidatoMachine, {
+    snapshot: candidatoMachine.resolveState({ value: currentState, context: { ...dbCandidato } }),
+  });
+  actor.start();
+  actor.send(event);
+  const snapshot = actor.getSnapshot();
+  return snapshot.value as string;
+}
+
+async function resolveReclutadorAsignadoId(nombre_reclutador?: string): Promise<string | null> {
+  if (!nombre_reclutador) return null;
+  const recRes = await pool.query(
+    `SELECT id FROM reclutadores WHERE UPPER(nombre) = UPPER($1) AND activo = true LIMIT 1`,
+    [nombre_reclutador]
+  );
+  if (recRes.rowCount && recRes.rowCount > 0) {
+    return recRes.rows[0].id;
+  }
+  return null;
+}
+
+async function notificarDiscrepanciaIdentidad({
+  debeNotificar,
+  telefono_reclutador,
+  safe_nombre,
+  telefono,
+  safe_vacante,
+  alertaIdentidadMotivoFinal,
+  reclutadorAsignadoId,
+}: {
+  debeNotificar: boolean;
+  telefono_reclutador?: string;
+  safe_nombre: string;
+  telefono: string;
+  safe_vacante: string;
+  alertaIdentidadMotivoFinal: string | null;
+  reclutadorAsignadoId: string | null;
+}) {
+  if (!debeNotificar || !telefono_reclutador) return;
+  const mensajeAlerta = `⚠️ *Verificación de identidad requerida*\n\nCandidato: ${safe_nombre}\nTel: wa.me/${telefono}\nVacante: ${safe_vacante || 'Sin vacante'}\n\n${alertaIdentidadMotivoFinal || 'La CURP del INE y del RFC no coinciden.'}\n\nRevisa el candidato en la plataforma para validar o rechazar.`;
+  await enviarNotificacionReclutador(String(telefono_reclutador), mensajeAlerta, reclutadorAsignadoId || null);
+}
 
 export async function POST(request: Request) {
   if (!verifyInternalApiKey(request)) {
@@ -41,33 +265,7 @@ export async function POST(request: Request) {
       telefono_destino
     } = data;
 
-    // Se guarda la CURP tal cual la leyó la IA (recortada a 50 chars como tope de
-    // seguridad) aunque no tenga el formato de 18 caracteres esperado, para que la
-    // reclutadora la valide visualmente desde el modal de alerta de identidad en vez
-    // de perder el dato. curp_ine/curp_rfc son VARCHAR(50) para dar margen.
-    const normalizeCurp = (value: unknown): string | null => {
-      if (typeof value !== 'string') return null;
-      const clean = value.trim().toUpperCase().slice(0, 50);
-      return clean || null;
-    };
-    const CURP_REGEX = /^[A-Z0-9]{18}$/;
-    // RFC de persona física: 4 letras + AAMMDD + 3 de homoclave. Sus primeros 10
-    // caracteres coinciden por construcción con los de la CURP del mismo titular.
-    const RFC_PERSONA_FISICA_REGEX = /^[A-ZÑ&]{4}\d{6}[A-Z0-9]{3}$/;
-    const safe_curp_ine = normalizeCurp(curp_ine);
-    const safe_curp_rfc = normalizeCurp(curp_rfc);
-    // La Constancia de Situación Fiscal trae RFC y CURP juntos y Gemini a veces
-    // copia el RFC en `curp_rfc`. Un RFC de 13 caracteres cuya raíz es la misma
-    // que la de la CURP del INE es la MISMA persona, no un documento ajeno: no
-    // debe mandar al candidato a DOCUMENTOS_NO_COINCIDEN (que además bloquea
-    // crear_evento en agente.py y lo deja sin poder agendar). Si la raíz NO
-    // coincide sí se sigue mandando a revisión manual.
-    const rfcCoincideConCurpIne = !!safe_curp_rfc && !!safe_curp_ine
-      && RFC_PERSONA_FISICA_REGEX.test(safe_curp_rfc)
-      && CURP_REGEX.test(safe_curp_ine)
-      && safe_curp_rfc.slice(0, 10) === safe_curp_ine.slice(0, 10);
-    const curpIneFormatoInvalido = !!safe_curp_ine && !CURP_REGEX.test(safe_curp_ine);
-    const curpRfcFormatoInvalido = !!safe_curp_rfc && !CURP_REGEX.test(safe_curp_rfc) && !rfcCoincideConCurpIne;
+    const { safe_curp_ine, safe_curp_rfc, curpIneFormatoInvalido, curpRfcFormatoInvalido } = validateCurps(curp_ine, curp_rfc);
 
     let safe_nombre_chat = (nombre_chat || '').replace(/[\uFE0F\u200B-\u200D\u200E\u200F\uFEFF]/g, '').trim();
     if (!safe_nombre_chat || safe_nombre_chat === telefono || safe_nombre_chat === 'Candidato' || /^\+?\d+$/.test(safe_nombre_chat)) {
@@ -81,8 +279,6 @@ export async function POST(request: Request) {
     // 1. Obtener estado actual
     const res = await pool.query('SELECT estado, tiene_cv, cv_manual as db_cv_manual, fecha_entrevista as db_fecha, privacidad_aceptada, escalado, datos_ine, datos_rfc, nombre_ine, nombre_constancia, curp_ine, curp_rfc, alerta_identidad_estado, alerta_identidad_motivo, asignado_a_id, vacante_interes FROM candidatos WHERE telefono = $1', [telefono]);
     let currentState = 'NUEVO';
-    // La fila que trae el SELECT de arriba: lo que la máquina de estados
-    // necesita como contexto, más las columnas que se leen luego aquí.
     let dbCandidato: CandidatoContext & {
       resumen_ia?: string | null;
       datos_ine?: unknown;
@@ -95,16 +291,9 @@ export async function POST(request: Request) {
       asignado_a_id?: string | null;
       db_cv_manual?: boolean;
       db_fecha?: string | null;
-      // nombre_ine y vacante_interes se leían más abajo pero faltaban en el
-      // SELECT, así que llegaban siempre en undefined: tieneIne perdía uno de
-      // sus tres criterios y la rama que conserva la vacante ya guardada nunca
-      // se ejecutaba (esPlaceholderVacante(undefined) es true), de modo que la
-      // vacante se vaciaba en vez de mantenerse.
       nombre_ine?: string | null;
       vacante_interes?: string | null;
     } = {
-      // Sin fila en la BD el contexto iba vacío y la máquina leía undefined en
-      // cada guarda; estos valores dicen lo mismo, pero explícitamente.
       telefono,
       tiene_cv: false,
       cv_manual: false,
@@ -119,153 +308,45 @@ export async function POST(request: Request) {
     }
 
     // 2. Determinar evento para la máquina de estados
-    let event: CandidatoEvent | null = null;
     const esBloqueado = identidad_bloqueada === 'true';
-    // Discrepancia MENOR de CURP (1-2 caracteres, típico de OCR): a diferencia de
-    // esBloqueado, NO detiene el agendamiento -- solo deja la alerta pendiente en
-    // el modal del reclutador. chat_prompt.md ya distingue esto ("1-2 caracteres
-    // → PERMITIDO AGENDAR"); antes backend forzaba DOCUMENTOS_NO_COINCIDEN también
-    // en este caso, bloqueando algo que el propio prompt permitía.
     const esAlertaIdentidad = identidad_alerta === 'true';
     const esCV = tipo_origen === 'CV' || tipo_origen === 'SOLICITUD';
     const esINE = tipo_origen === 'INE';
     const esConstancia = ['CONSTANCIA', 'CSF', 'RFC', 'SAT'].includes((tipo_origen || '').toUpperCase());
     const esAmbos = (tipo_origen || '').toUpperCase() === 'AMBOS_DOCS';
 
-    if (esBloqueado) {
-      event = { type: 'BLOQUEO_IDENTIDAD' };
-    } else if (esCV) {
-      event = { type: 'RECIBE_CV' };
-    } else if (esINE || esConstancia || esAmbos) {
-      event = { type: 'ENTREGA_DOCS' };
-    }
+    const newStateValue = runCandidatoMachine(currentState, dbCandidato, {
+      esBloqueado,
+      esCV,
+      esINE,
+      esConstancia,
+      esAmbos,
+    });
 
-    // Ejecutar máquina de estados si hay evento aplicable
-    let newStateValue = currentState;
-    let newContext = { ...dbCandidato };
+    const {
+      estado_final,
+      resumen_ia_final,
+      alertaIdentidadEstadoFinal,
+      alertaIdentidadMotivoFinal,
+      debeNotificarReclutador,
+    } = resolveDocumentStateAndAlerts({
+      esCV,
+      esINE,
+      esConstancia,
+      esAmbos,
+      esBloqueado,
+      esAlertaIdentidad,
+      curpIneFormatoInvalido,
+      curpRfcFormatoInvalido,
+      tipo_origen,
+      identidad_motivo,
+      newStateValue,
+      dbCandidato,
+    });
 
-    if (event) {
-      const actor = createActor(candidatoMachine, {
-        snapshot: candidatoMachine.resolveState({ value: currentState, context: newContext }),
-      });
-      actor.start();
-      actor.send(event);
-      const snapshot = actor.getSnapshot();
-      newStateValue = snapshot.value as string;
-      newContext = snapshot.context;
-    }
-
-    // Lógica adicional del SQL original para forzar el estado de documentos y el resumen IA
-    let resumen_ia_final = dbCandidato.resumen_ia;
-    let estado_final = newStateValue;
-
-    // --- Alerta de verificación de identidad (discrepancia de CURP) ---
-    // No bloquea de forma permanente: el candidato se queda en DOCUMENTOS_NO_COINCIDEN
-    // hasta que un reclutador valide o rechace desde la plataforma (bandeja + modal urgente),
-    // o hasta que un reenvío del documento ya no muestre discrepancia.
-    let alertaIdentidadEstadoFinal: string | null = dbCandidato.alerta_identidad_estado ?? null;
-    let alertaIdentidadMotivoFinal: string | null = dbCandidato.alerta_identidad_motivo ?? null;
-    let debeNotificarReclutador = false;
-
-    if (esBloqueado) {
-      estado_final = 'DOCUMENTOS_NO_COINCIDEN';
-      resumen_ia_final = identidad_motivo || 'Discrepancia de identidad detectada entre INE y RFC. Requiere validación de un reclutador.';
-      alertaIdentidadMotivoFinal = identidad_motivo || alertaIdentidadMotivoFinal;
-      if (dbCandidato.alerta_identidad_estado !== 'PENDIENTE') {
-        debeNotificarReclutador = true;
-      }
-      alertaIdentidadEstadoFinal = 'PENDIENTE';
-    } else if (esCV) {
-      estado_final = 'CV_RECIBIDO';
-      resumen_ia_final = 'CV Recibido y Analizado por Gemini';
-    } else if (esINE || esConstancia || esAmbos) {
-      const curpMalFormada = (esINE && curpIneFormatoInvalido) || (esConstancia && curpRfcFormatoInvalido) || (esAmbos && (curpIneFormatoInvalido || curpRfcFormatoInvalido));
-
-      const tieneIne = esINE || esAmbos || !!dbCandidato.datos_ine || !!dbCandidato.curp_ine || !!dbCandidato.nombre_ine;
-      const tieneRfc = esConstancia || esAmbos || !!dbCandidato.datos_rfc || !!dbCandidato.curp_rfc || !!dbCandidato.nombre_constancia;
-
-      if (curpMalFormada) {
-        // La CURP extraída no mide 18 caracteres: no se descarta, se guarda igual
-        // (abajo, en el upsert) y se manda a revisión manual por el mismo camino
-        // que la discrepancia INE/RFC (modal urgente + campana de notificaciones).
-        estado_final = 'DOCUMENTOS_NO_COINCIDEN';
-        resumen_ia_final = `La CURP extraída del documento ${tipo_origen} no tiene el formato esperado (18 caracteres). Requiere revisión manual del reclutador.`;
-        alertaIdentidadMotivoFinal = `CURP con formato inválido en documento ${tipo_origen}: "${esINE ? safe_curp_ine : safe_curp_rfc}". Verifica el documento manualmente.`;
-        if (dbCandidato.alerta_identidad_estado !== 'PENDIENTE') {
-          debeNotificarReclutador = true;
-        }
-        alertaIdentidadEstadoFinal = 'PENDIENTE';
-      } else if (esAlertaIdentidad) {
-        // Discrepancia menor (1-2 caracteres): queda pendiente de revisión para
-        // el reclutador, pero el candidato avanza normalmente -- SIN forzar
-        // DOCUMENTOS_NO_COINCIDEN ni tocar resumen_ia_final con un mensaje de bloqueo.
-        alertaIdentidadMotivoFinal = identidad_motivo || alertaIdentidadMotivoFinal;
-        if (dbCandidato.alerta_identidad_estado !== 'PENDIENTE') {
-          debeNotificarReclutador = true;
-        }
-        alertaIdentidadEstadoFinal = 'PENDIENTE';
-        if (tieneIne && tieneRfc) {
-          estado_final = 'INE_VALIDADA';
-          resumen_ia_final = 'El candidato completó su INE y RFC (con una discrepancia menor de CURP pendiente de revisión). El siguiente paso es agendar la cita.';
-        } else {
-          resumen_ia_final = `Candidato entregó documento parcial (${tipo_origen}). Esperando el faltante.`;
-        }
-      } else {
-        // La CURP recién comparada ya no muestra discrepancia (o no había una previa): se limpia la alerta.
-        alertaIdentidadEstadoFinal = null;
-        alertaIdentidadMotivoFinal = null;
-        if (tieneIne && tieneRfc) {
-          estado_final = 'INE_VALIDADA';
-          resumen_ia_final = 'El candidato completó su INE y RFC. El siguiente paso es agendar la cita.';
-        } else {
-          resumen_ia_final = `Candidato entregó documento parcial (${tipo_origen}). Esperando el faltante.`;
-        }
-      }
-    }
-
-    // Extraer vacante con fallbacks inteligentes.
-    // 'General'/'Ninguna' son PLACEHOLDERS, no vacantes: el analizador manda
-    // "General" por defecto cuando el documento no revela ninguna
-    // (analizador.py -> vacante_anuncio). Si tras los fallbacks seguimos con el
-    // placeholder hay que dejarlo VACÍO para que el UPSERT conserve lo que ya
-    // hubiera; si se guarda literal, definir_agenda lo lee como "vacante
-    // desconocida" y manda la cita al reclutador de respaldo (pasó en
-    // producción: se agendó "vacante de General" con el Equipo de Reclutamiento
-    // en vez de con la reclutadora dueña de la vacante).
-    // esPlaceholderVacante vive en @/lib/vacantes: la copia local comparaba
-    // el string crudo, así que '{NINGUNA}' (con las llaves que dejaba el
-    // prompt) no coincidía con 'NINGUNA' y pasaba como vacante real.
-    let safe_vacante = limpiarVacante(vacante);
-    if (esPlaceholderVacante(safe_vacante)) {
-      const matchVacanteResumen = (resumen_ia_final || '').match(/Vacante:\s*([^.\n]+)/i);
-      if (matchVacanteResumen && !esPlaceholderVacante(matchVacanteResumen[1])) {
-        safe_vacante = limpiarVacante(matchVacanteResumen[1]);
-      } else if (!esPlaceholderVacante(dbCandidato.vacante_interes)) {
-        safe_vacante = limpiarVacante(dbCandidato.vacante_interes);
-      } else {
-        safe_vacante = '';
-      }
-    }
-
-    // Parseo seguro
-    // El JSON del documento: la IA decide qué campos trae, así que solo se
-    // nombran los que este handler lee.
-    let parsedDatos: { nombre_completo?: string; nombre?: string; url?: string; [k: string]: unknown } = {};
-    if (typeof datos_documento === 'string') {
-      try { parsedDatos = JSON.parse(datos_documento); } catch { parsedDatos = {}; }
-    } else if (datos_documento && typeof datos_documento === 'object') {
-      parsedDatos = datos_documento;
-    }
-    if (parsedDatos && typeof parsedDatos === 'object' && link_cv) {
-      parsedDatos.url = link_cv;
-    }
-
-    const nombreDocExtrahido = (parsedDatos?.nombre_completo || parsedDatos?.nombre || '').replace(/[\uFE0F\u200B-\u200D\u200E\u200F\uFEFF]/g, '').trim();
-
-    let safe_nombre = (nombre || '').replace(/[\uFE0F\u200B-\u200D\u200E\u200F\uFEFF]/g, '').trim();
-    if (!safe_nombre || safe_nombre === 'Candidato' || safe_nombre === 'No registrado' || /^\+?\d+$/.test(safe_nombre)) {
-      safe_nombre = nombreDocExtrahido || 'Candidato';
-    }
+    const safe_vacante = resolveSafeVacante(vacante, resumen_ia_final, dbCandidato.vacante_interes);
+    const { parsedDatos, nombreDocExtrahido } = parseDocumentData(datos_documento, link_cv);
+    const safe_nombre = cleanName(nombre, nombreDocExtrahido);
 
     // Obtener empresa_id si viene en el payload o resolverlo por el número que recibió el mensaje
     let targetEmpresaId = data.empresa_id || null;
@@ -274,20 +355,10 @@ export async function POST(request: Request) {
       targetEmpresaId = resuelto.empresa_id;
     }
 
-    // Resolver nombre_reclutador (nombre de texto que manda n8n) -> reclutador_id real,
-    // para asignar por FK en vez de por nombre.
-    let reclutadorAsignadoId: string | null = null;
-    if (nombre_reclutador) {
-      const recRes = await pool.query(
-        `SELECT id FROM reclutadores WHERE UPPER(nombre) = UPPER($1) AND activo = true LIMIT 1`,
-        [nombre_reclutador]
-      );
-      if (recRes.rowCount && recRes.rowCount > 0) {
-        reclutadorAsignadoId = recRes.rows[0].id;
-      }
-    }
+    // Resolver reclutador asignado por FK
+    const reclutadorAsignadoId = await resolveReclutadorAsignadoId(nombre_reclutador);
 
-    // Construcción del upsert gigante pero ahora en backend
+    // Construcción del upsert
     const upsertQuery = `
       INSERT INTO candidatos (
         telefono, nombre, vacante_interes, experiencia, resumen_ia, tiene_cv, estado,
@@ -298,13 +369,11 @@ export async function POST(request: Request) {
       ) VALUES (
         $1,
         CAST($2 AS text),
-        -- NULL (no 'General') cuando el candidato aún no ha elegido vacante:
-        -- ver la nota del UPDATE de más abajo.
         NULLIF($3, ''),
         CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $5 ELSE NULL END,
-        $6, -- resumen ia final
+        $6,
         CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN TRUE ELSE FALSE END,
-        $7, -- estado final
+        $7,
         NOW(),
         CASE WHEN $4 IN ('INE', 'AMBOS_DOCS') THEN CAST($8 AS jsonb) ELSE NULL END,
         CASE WHEN $4 IN ('CONSTANCIA', 'CSF', 'RFC', 'SAT', 'AMBOS_DOCS') THEN CAST($18 AS text) ELSE NULL END,
@@ -340,13 +409,6 @@ export async function POST(request: Request) {
           WHEN candidatos.nombre IS NULL OR candidatos.nombre = '' OR candidatos.nombre = 'Candidato' THEN CAST($2 AS text)
           ELSE candidatos.nombre
         END,
-        -- Sin 'General' como último recurso: escribirlo aquí anulaba el filtro
-        -- de placeholders de arriba (safe_vacante ya llega vacío cuando no se
-        -- conoce la vacante) y dejaba 'General' guardado como si fuera una
-        -- vacante real. definir_agenda lo leía como "vacante desconocida" y
-        -- mandaba la cita al reclutador de respaldo; el bot además le decía al
-        -- candidato "tu entrevista para la vacante de General".
-        -- NULL es la respuesta honesta: todavía no eligió vacante.
         vacante_interes = COALESCE(NULLIF($3, ''), candidatos.vacante_interes),
         vacante_solicitada = COALESCE(NULLIF($3, ''), candidatos.vacante_solicitada, candidatos.vacante_interes),
         experiencia = CASE WHEN $4 IN ('CV', 'SOLICITUD') THEN $5 ELSE candidatos.experiencia END,
@@ -382,11 +444,6 @@ export async function POST(request: Request) {
     const upsertRes = await pool.query(upsertQuery, [
       telefono,                 // $1
       safe_nombre,              // $2
-      // safe_vacante, NO `vacante`: el valor crudo trae el placeholder
-      // 'General' que manda el analizador cuando el documento no revela
-      // ninguna vacante. Se calculaba la versión limpia arriba pero la query
-      // seguía recibiendo la cruda, así que el filtro de placeholders no
-      // servía de nada y 'General' acababa guardado como vacante real.
       safe_vacante,             // $3
       tipo_origen,              // $4
       experiencia,               // $5
@@ -411,50 +468,26 @@ export async function POST(request: Request) {
       reclutadorAsignadoId        // $24
     ]);
 
-    // Asignación al reclutador dueño de la vacante elegida. Un candidato puede subir
-    // documentos (este endpoint) antes de que la IA etiquete la vacante en el chat
-    // (n8n-incoming) — el helper es idempotente, solo asigna si sigue sin reclutador.
     const candidatoIdExpediente = upsertRes.rows[0]?.id;
     if (candidatoIdExpediente) {
       await asignarReclutadorPorVacante(candidatoIdExpediente, safe_vacante, null, targetEmpresaId);
     }
 
-    // Insertar el mensaje del usuario (usualmente un archivo adjunto enviado por WhatsApp)
     if (mensaje_usuario) {
        await pool.query(`INSERT INTO conversation_history (telefono, role, content, message_type) VALUES ($1, 'user', $2, 'text')`,
         [telefono, mensaje_usuario]
       );
     }
 
-    // Alertar al reclutador (campana en plataforma + WhatsApp) solo cuando se detecta
-    // una discrepancia de CURP nueva (no en cada reenvío mientras sigue pendiente).
-    if (debeNotificarReclutador && (nombre_reclutador || telefono_reclutador)) {
-      const mensajeAlerta = `⚠️ *Verificación de identidad requerida*\n\nCandidato: ${safe_nombre}\nTel: wa.me/${telefono}\nVacante: ${safe_vacante}\n\n${alertaIdentidadMotivoFinal || 'La CURP del INE y del RFC no coinciden.'}\n\nRevisa el candidato en la plataforma para validar o rechazar.`;
-
-      if (reclutadorAsignadoId) {
-        try {
-          await pool.query(
-            `INSERT INTO notificaciones (reclutador_id, mensaje) VALUES ($1, $2)`,
-            [reclutadorAsignadoId, mensajeAlerta]
-          );
-        } catch (notifyErr) {
-          console.error('Error guardando notificación de identidad:', notifyErr);
-        }
-      }
-
-      if (telefono_reclutador) {
-        try {
-          const chatId = String(telefono_reclutador).includes('@') ? telefono_reclutador : `${telefono_reclutador}@c.us`;
-          await fetch(`${WAHA_BASE}/api/sendText`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Api-Key': WAHA_API_KEY },
-            body: JSON.stringify({ session: WAHA_SESSION, chatId, text: mensajeAlerta }),
-          });
-        } catch (wahaErr) {
-          console.error('Error enviando WhatsApp de alerta de identidad:', wahaErr);
-        }
-      }
-    }
+    await notificarDiscrepanciaIdentidad({
+      debeNotificar: debeNotificarReclutador,
+      telefono_reclutador,
+      safe_nombre,
+      telefono,
+      safe_vacante,
+      alertaIdentidadMotivoFinal,
+      reclutadorAsignadoId,
+    });
 
     return NextResponse.json({ success: true, estado: estado_final });
   } catch (err) {

@@ -26,7 +26,7 @@ export async function asignarReclutadorPorVacante(
       [empresaId]
     );
 
-    const cleanStr = (s: string) => s ? s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim() : '';
+    const cleanStr = (s: string) => (s ? s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim() : '');
     const vacanteClean = cleanStr(vacanteEntrante);
     const naveClean = nave ? String(nave).trim() : null;
 

@@ -82,7 +82,7 @@ async def test_se_puede_desactivar(monkeypatch):
 async def test_send_text_pasa_por_el_regulador(monkeypatch):
     """Blindaje: si alguien envía por otro camino que no sea send_text, el
     límite se lo salta. Este test falla si se quita esa llamada."""
-    from app import waha_client
+    from app import meta_client, waha_client
 
     _fijar_ritmo(monkeypatch, base=0.05)
     llamadas = []
@@ -92,8 +92,13 @@ async def test_send_text_pasa_por_el_regulador(monkeypatch):
         return 0.0
 
     class _FakeResp:
+        status_code = 200
+
         def raise_for_status(self):
             return None
+
+        def json(self):
+            return {"messages": [{"id": "wamid.123"}]}
 
     class _FakeClient:
         async def __aenter__(self):
@@ -105,7 +110,10 @@ async def test_send_text_pasa_por_el_regulador(monkeypatch):
         async def post(self, *a, **k):
             return _FakeResp()
 
-    monkeypatch.setattr(waha_client.throttle, "esperar_turno", _fake_esperar_turno)
+    monkeypatch.setattr(type(ENV), "META_WA_PHONE_NUMBER_ID", property(lambda self: "123456789"))
+    monkeypatch.setattr(throttle, "esperar_turno", _fake_esperar_turno)
+    monkeypatch.setattr(meta_client, "_get_client", lambda: _FakeClient())
+    monkeypatch.setattr(waha_client, "_get_client", lambda: _FakeClient())
     monkeypatch.setattr(waha_client.httpx, "AsyncClient", lambda **k: _FakeClient())
 
     await waha_client.send_text("default", "521@c.us", "hola")

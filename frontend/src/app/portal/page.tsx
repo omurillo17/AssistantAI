@@ -82,7 +82,7 @@ export default function PortalCandidatoPage() {
 
   const navesDisponibles = empresas.find(e => e.id === selectedEmpresaId)?.naves || [];
 
-  const handleBuscar = async (e: React.FormEvent) => {
+  const handleBuscar = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     setNotFoundMsg("");
     setUploadError("");
@@ -133,7 +133,7 @@ export default function PortalCandidatoPage() {
 
   const puedeEnviar = ineValida && rfcValido && cvValido;
 
-  const handleSubirDocumentos = async (e: React.FormEvent) => {
+  const handleSubirDocumentos = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     if (!puedeEnviar || !candidato) {
       setUploadError("Debes adjuntar todos los documentos requeridos (INE y RFC obligatorios).");
@@ -545,19 +545,27 @@ export default function PortalCandidatoPage() {
                       : "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
                       }`}
                   >
-                    {uploading ? (
-                      <>
-                        <RefreshCw size={18} className="animate-spin" /> Guardando expedientes...
-                      </>
-                    ) : puedeEnviar ? (
-                      <>
-                        <CheckCircle2 size={18} /> Confirmar y Enviar Documentos
-                      </>
-                    ) : (
-                      <>
-                        <Lock size={16} /> Adjunta INE y RFC para habilitar el envío
-                      </>
-                    )}
+                    {(() => {
+                      if (uploading) {
+                        return (
+                          <>
+                            <RefreshCw size={18} className="animate-spin" /> Guardando expedientes...
+                          </>
+                        );
+                      }
+                      if (puedeEnviar) {
+                        return (
+                          <>
+                            <CheckCircle2 size={18} /> Confirmar y Enviar Documentos
+                          </>
+                        );
+                      }
+                      return (
+                        <>
+                          <Lock size={16} /> Adjunta INE y RFC para habilitar el envío
+                        </>
+                      );
+                    })()}
                   </button>
 
                   {!puedeEnviar && (

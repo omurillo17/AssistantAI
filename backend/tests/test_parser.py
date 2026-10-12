@@ -143,11 +143,11 @@ def test_formato_pipe_tampoco_guarda_placeholders():
 def test_una_vacante_real_si_se_registra():
     respuesta = (
         '{"mensaje_al_usuario": "Perfecto", '
-        '"etiquetas_internas": {"actualizar_vacante": "CHECADOR DE ALMACÉN"}}'
+        '"etiquetas_internas": {"actualizar_vacante": "OPERADOR DE REPARTO"}}'
     )
     items = parser.procesar_respuesta_ia(respuesta, CANDIDATO)
 
-    assert items[0]["vacante_detectada"] == "CHECADOR DE ALMACÉN"
+    assert items[0]["vacante_detectada"] == "OPERADOR DE REPARTO"
 
 
 def test_rescate_vacante_desde_memoria_update():
@@ -170,8 +170,8 @@ def test_rescate_vacante_desde_frase_conversacional_ia():
     )
     items = parser.procesar_respuesta_ia(respuesta, CANDIDATO)
 
-    assert items[0]["vacante_detectada"] == "OPERADOR DE ALMACÉN"
-    assert items[0]["database_updates"]["vacante_interes"] == "OPERADOR DE ALMACÉN"
+    assert items[0]["vacante_detectada"] == "OPERADOR DE ALMACEN"
+    assert items[0]["database_updates"]["vacante_interes"] == "OPERADOR DE ALMACEN"
 
 
 # --- [SPLIT] ----------------------------------------------------------------
@@ -271,3 +271,17 @@ def test_la_etiqueta_del_modelo_sigue_teniendo_prioridad():
     )
     items = parser.procesar_respuesta_ia(respuesta, CANDIDATO)
     assert items[0]["database_updates"]["lugar_residencia"] == "Tlaquepaque"
+
+
+def test_descalificacion_otra_ciudad_emite_mensaje_comun():
+    """Cuando el estado es OTRA_CIUDAD, el mensaje limpio debe ser DESCALIFICACION_CIUDAD_MSG sin lanzar NameError."""
+    from app.chat.mensajes_comunes import DESCALIFICACION_CIUDAD_MSG
+
+    respuesta = (
+        '{"mensaje_al_usuario": "Lo siento, no estamos en esa ciudad.", '
+        '"etiquetas_internas": {"estado": "OTRA_CIUDAD"}}'
+    )
+    items = parser.procesar_respuesta_ia(respuesta, CANDIDATO)
+    assert items[0]["message_to_user"] == DESCALIFICACION_CIUDAD_MSG
+    assert items[0]["database_updates"]["estado"] == "OTRA_CIUDAD"
+

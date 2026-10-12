@@ -12,11 +12,66 @@ const normalize = (str?: string | null) => str ? str.trim().toUpperCase() : "";
 /** "todos" sólo se ofrece a ROOT/ADMIN (ver `puedeVerTodo`). */
 export type TabBandeja = "todos" | "mis_chats" | "compartida" | "descartados";
 
-// La ref del contenedor de scroll la crea la pantalla y se pasa aquí, en vez
-// de crearla dentro y devolverla en el objeto de retorno. Leer una ref desde
-// ese objeto durante el render (`const r = m.chatScrollRef`) es lo que React
-// desaconseja, y bastaba ese único acceso para que el compilador diera por
-// contaminado el render entero de la pantalla de Mensajes.
+function parseReclutadoresResponse(data: unknown): {
+  grupos: GrupoReclutadores[];
+  firstId: string | null;
+} {
+  if (data && typeof data === "object" && "grupos" in data && Array.isArray((data as { grupos?: unknown }).grupos)) {
+    const grupos = (data as { grupos: GrupoReclutadores[] }).grupos;
+    const allRecs = grupos.flatMap((g: GrupoReclutadores) => g.reclutadores || []);
+    return { grupos, firstId: allRecs[0]?.id || null };
+  }
+  if (Array.isArray(data)) {
+    const fallbackGrupos = [{
+      grupo_nombre: "Otros",
+      reclutadores: data.map((r: unknown) => {
+        if (typeof r === "string") return { nombre: r };
+        const recObj = r as { nombre?: string };
+        return { nombre: recObj.nombre || "" };
+      })
+    }];
+    const first = data[0] as unknown;
+    const firstId = typeof first === "string" ? first : ((first as { nombre?: string })?.nombre || null);
+    return { grupos: fallbackGrupos, firstId };
+  }
+  return { grupos: [], firstId: null };
+}
+
+function cleanConversacionesData(data: unknown): Conversacion[] {
+  const safeData: Conversacion[] = Array.isArray(data) ? data : [];
+  return safeData.map(c => {
+    let n = c.nombre?.replace(/[\uFE0F\u200B\u200D]/g, '').trim();
+    if (!n) n = c.telefono;
+    return { ...c, nombre: n };
+  });
+}
+
+function resolveDefaultTab(safeData: Conversacion[]): TabBandeja {
+  const rol = localStorage.getItem("tci_role") || "";
+  if (rol === "ROOT" || rol === "ADMIN") {
+    return "todos";
+  }
+  const rId = localStorage.getItem("tci_reclutador_id");
+  const hasMine = rId ? safeData.some(c => c.asignado_a_id === rId) : false;
+  return hasMine ? "mis_chats" : "compartida";
+}
+
+function findTargetReclutador(reclutadores: GrupoReclutadores[], selectedReclutador: string) {
+  let targetEmpresaId: string | null = null;
+  let targetNombre: string = selectedReclutador;
+
+  for (const grupo of reclutadores) {
+    const found = grupo.reclutadores?.find((r) => r.id === selectedReclutador);
+    if (found) {
+      targetNombre = found.nombre || targetNombre;
+      if (grupo.empresa_id) targetEmpresaId = grupo.empresa_id;
+      break;
+    }
+  }
+
+  return { targetEmpresaId, targetNombre };
+}
+
 export function useMensajes({ chatScrollRef }: { chatScrollRef: RefObject<HTMLDivElement | null> }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -112,19 +167,10 @@ export function useMensajes({ chatScrollRef }: { chatScrollRef: RefObject<HTMLDi
       const res = await fetch(`/api/db/reclutadores${query}`);
       if (res.ok) {
         const data = await res.json();
-        if (data.grupos && Array.isArray(data.grupos)) {
-          setReclutadores(data.grupos);
-          const allRecs = data.grupos.flatMap((g: GrupoReclutadores) => g.reclutadores || []);
-          if (allRecs.length > 0) {
-            setSelectedReclutador(allRecs[0].id);
-          }
-        } else if (Array.isArray(data)) {
-          // Fallback legacy
-          setReclutadores([{
-            grupo_nombre: "Otros",
-            reclutadores: data.map(r => ({ nombre: r }))
-          }]);
-          if (data.length > 0) setSelectedReclutador(typeof data[0] === 'string' ? data[0] : data[0].nombre);
+        const { grupos, firstId } = parseReclutadoresResponse(data);
+        setReclutadores(grupos);
+        if (firstId) {
+          setSelectedReclutador(firstId);
         }
       }
     } catch (e) {
@@ -148,26 +194,10 @@ export function useMensajes({ chatScrollRef }: { chatScrollRef: RefObject<HTMLDi
         throw new Error("Failed to fetch");
       }
       const data = await res.json();
-      let safeData = Array.isArray(data) ? data : [];
-      safeData = safeData.map(c => {
-        let n = c.nombre?.replace(/[\uFE0F\u200B\u200D]/g, '').trim();
-        if (!n) n = c.telefono;
-        return { ...c, nombre: n };
-      });
+      const safeData = cleanConversacionesData(data);
       setConversaciones(safeData);
       if (showLoad && safeData.length > 0) {
-        // Se lee de localStorage y no del hook: esto corre dentro de un
-        // callback estable (deps vacías) que no se recrea al hidratar.
-        const rol = localStorage.getItem("tci_role") || "";
-        if (rol === "ROOT" || rol === "ADMIN") {
-          setActiveTab("todos");
-        } else {
-          const rId = localStorage.getItem("tci_reclutador_id");
-          const hasMine = rId ? safeData.some(c => c.asignado_a_id === rId) : false;
-          if (!hasMine) {
-            setActiveTab("compartida");
-          }
-        }
+        setActiveTab(resolveDefaultTab(safeData));
       }
     } catch {
       if (showLoad) showToast("Error al cargar", true);
@@ -373,7 +403,7 @@ export function useMensajes({ chatScrollRef }: { chatScrollRef: RefObject<HTMLDi
           asignado_a_id: reclutadorId
         }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) throw new Error("Error al actualizar candidato al tomar control");
       setCandidatoActivo(prev => prev ? { ...prev, escalado: true, estado: "ESCALADO", asignado_a_id: reclutadorId } : prev);
       setConversaciones(prev =>
         prev.map(c => c.telefono === activePhone ? { ...c, escalado: true, asignado_a_id: reclutadorId, asignado_a_nombre: nombre } : c)
@@ -406,7 +436,7 @@ export function useMensajes({ chatScrollRef }: { chatScrollRef: RefObject<HTMLDi
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ telefono: activePhone, asignado_a_id: reclutadorId }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) throw new Error("Error al tomar chat");
       setConversaciones(prev =>
         prev.map(c => c.telefono === activePhone ? { ...c, asignado_a_id: reclutadorId, asignado_a_nombre: nombre } : c)
       );
@@ -440,7 +470,7 @@ export function useMensajes({ chatScrollRef }: { chatScrollRef: RefObject<HTMLDi
           asignado_a_id: null
         }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) throw new Error("Error al devolver chat al bot");
       await fetch(`/api/db/mensajes${query}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -467,19 +497,7 @@ export function useMensajes({ chatScrollRef }: { chatScrollRef: RefObject<HTMLDi
   const confirmTransferir = async () => {
     if (!activePhone || !selectedReclutador) return;
 
-    // Find the target reclutador (por id) para saber su nombre y si hay que cambiar empresa_id
-    let targetEmpresaId: string | null = null;
-    let targetNombre: string = selectedReclutador;
-    if (reclutadores && reclutadores.length > 0) {
-      for (const grupo of reclutadores) {
-        const found = grupo.reclutadores?.find((r) => r.id === selectedReclutador);
-        if (found) {
-          targetNombre = found.nombre || targetNombre;
-          if (grupo.empresa_id) targetEmpresaId = grupo.empresa_id;
-          break;
-        }
-      }
-    }
+    const { targetEmpresaId, targetNombre } = findTargetReclutador(reclutadores, selectedReclutador);
 
     setActionLoading("transferir");
     try {
@@ -513,7 +531,7 @@ export function useMensajes({ chatScrollRef }: { chatScrollRef: RefObject<HTMLDi
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(bodyData),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) throw new Error("Error al reasignar candidato");
       setCandidatoActivo(prev => prev ? { ...prev, escalado: true, estado: "ESCALADO", asignado_a_id: selectedReclutador } : prev);
       setConversaciones(prev =>
         prev.map(c => c.telefono === activePhone ? { ...c, escalado: true, asignado_a_id: selectedReclutador, asignado_a_nombre: targetNombre } : c)
@@ -559,14 +577,14 @@ export function useMensajes({ chatScrollRef }: { chatScrollRef: RefObject<HTMLDi
     .filter((v): v is string => Boolean(v) && !isPlaceholderVal(v));
   const uniqueVacantes = Array.from(
     new Set([...todasVacantes.filter(v => !isPlaceholderVal(v)), ...convVacantes])
-  ).sort() as string[];
+  ).sort((a, b) => a.localeCompare(b)) as string[];
 
   const convNaves = conversaciones
     .map(c => normalizarNave(c.nave_interes))
     .filter((n): n is string => Boolean(n) && !isPlaceholderVal(n));
   const uniqueNaves = Array.from(
     new Set([...todasNaves.map(n => normalizarNave(n)).filter((n): n is string => Boolean(n) && !isPlaceholderVal(n)), ...convNaves])
-  ).sort() as string[];
+  ).sort((a, b) => a.localeCompare(b)) as string[];
 
   const filtradas = conversaciones.filter(c => {
     const matchesSearch = c.nombre.toLowerCase().includes(search.toLowerCase()) || c.telefono.includes(search);

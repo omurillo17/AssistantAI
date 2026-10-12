@@ -6,7 +6,7 @@ import { TopNavbar } from "@/components/TopNavbar";
 import { WahaStatusBanner } from "@/components/WahaStatusBanner";
 import { IdentityAlertModal } from "@/components/IdentityAlertModal";
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children }: Readonly<{ children: React.ReactNode }>) {
   const pathname = usePathname();
   const isStandalone = pathname === "/login" || pathname.startsWith("/portal");
 

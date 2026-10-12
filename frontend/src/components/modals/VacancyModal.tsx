@@ -39,7 +39,7 @@ export default function VacancyModal({
   availableNaves,
   onSave,
   onCancel,
-}: Props) {
+}: Readonly<Props>) {
   const backdropHandlers = useBackdropClose(onCancel);
   // Estado local para el borrador del chip que se está escribiendo.
   const [chipBorrador, setChipBorrador] = useState("");
@@ -70,7 +70,8 @@ export default function VacancyModal({
       e.preventDefault();
       agregarChip(chipBorrador);
     } else if (e.key === "Backspace" && !chipBorrador && chips.length > 0) {
-      quitarChip(chips[chips.length - 1]);
+      const ultimo = chips.at(-1);
+      if (ultimo) quitarChip(ultimo);
     }
   };
 
@@ -84,7 +85,6 @@ export default function VacancyModal({
           a bajar por toda la ventana. */}
       <div
         className="bg-white w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl p-6 md:p-8 shadow-2xl relative"
-        onClick={(e) => e.stopPropagation()}
       >
         <h3 className="text-xl font-bold text-slate-800 mb-6 pb-4 border-b border-black/10">
           {isEditing ? "Editar Vacante" : "Agregar Vacante"}
@@ -92,7 +92,7 @@ export default function VacancyModal({
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
           <div>
-            <label className={ETIQUETA}>Nombre de la Vacante</label>
+            <label htmlFor="vacancy-nombre" className={ETIQUETA}>Nombre de la Vacante</label>
             <input
               id="vacancy-nombre"
               name="nombre"
@@ -115,12 +115,13 @@ export default function VacancyModal({
           </div>
 
           <div>
-            <label className={ETIQUETA}>Nave / Sucursal (Selecciona una o varias)</label>
+            <span className={ETIQUETA}>Nave / Sucursal (Selecciona una o varias)</span>
             <div className="flex flex-col gap-3 p-4 bg-slate-50 border border-black/10 rounded-xl max-h-[104px] overflow-y-auto">
               {availableNaves.length > 0 ? (
                 availableNaves.map((n) => (
                   <label
                     key={n.id}
+                    htmlFor={`vacancy-nave-${n.id}`}
                     className="flex items-center gap-2 cursor-pointer text-sm font-medium text-slate-700"
                   >
                     <input
@@ -141,7 +142,7 @@ export default function VacancyModal({
           </div>
 
           <div className="md:col-span-2">
-            <label className={ETIQUETA}>Palabras Clave</label>
+            <label htmlFor="vacancy-palabras-clave" className={ETIQUETA}>Palabras Clave</label>
             <div className="flex flex-wrap items-center gap-2 p-2 rounded-lg border border-black/10 bg-slate-50 focus-within:bg-white focus-within:border-indigo-500 transition-all shadow-sm">
               {chips.map((chip) => (
                 <span
@@ -188,7 +189,7 @@ export default function VacancyModal({
           </div>
 
           <div>
-            <label className={ETIQUETA}>Detalles (Sueldo, Horario, Requisitos)</label>
+            <label htmlFor="vacancy-detalles" className={ETIQUETA}>Detalles (Sueldo, Horario, Requisitos)</label>
             <textarea
               id="vacancy-detalles"
               name="detalles"
@@ -200,7 +201,7 @@ export default function VacancyModal({
           </div>
 
           <div>
-            <label className={ETIQUETA}>Actividades a realizar</label>
+            <label htmlFor="vacancy-funciones" className={ETIQUETA}>Actividades a realizar</label>
             <textarea
               id="vacancy-funciones"
               name="funciones"

@@ -19,7 +19,7 @@ interface SaasGrupoModalProps {
 // prop y se limpia al cerrar. Antes eso se hacía copiando el prop al estado
 // desde un useEffect, lo que provoca un render en cascada
 // (react-hooks/set-state-in-effect).
-export default function SaasGrupoModal(props: SaasGrupoModalProps) {
+export default function SaasGrupoModal(props: Readonly<SaasGrupoModalProps>) {
   const { empresa } = props;
   if (!props.isOpen || !empresa) return null;
   // `empresa` va aparte para conservar el estrechamiento que el spread perdería.
@@ -34,7 +34,7 @@ function SaasGrupoModalContent({
   empresa,
   grupo,
   showToast,
-}: SaasGrupoModalContentProps) {
+}: Readonly<SaasGrupoModalContentProps>) {
   const backdropHandlers = useBackdropClose(onClose);
   const [grupoNombre, setGrupoNombre] = useState(grupo?.nombre || "");
   const [grupoNaves, setGrupoNaves] = useState<string[]>(grupo?.naves_asignadas || []);
@@ -76,12 +76,21 @@ function SaasGrupoModalContent({
     }
   };
 
+  let submitLabel = "Crear Grupo";
+  if (savingGrupo) {
+    submitLabel = "Guardando...";
+  } else if (isEditing) {
+    submitLabel = "Actualizar Grupo";
+  }
+
   return (
     <div
       className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
       {...backdropHandlers}
     >
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95"
+      >
         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
           <h2 className="text-xl font-bold text-slate-800">{isEditing ? "Editar Grupo de Naves" : "Nuevo Grupo de Naves"}</h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1 bg-white rounded-md shadow-sm border border-slate-200"><X size={20} /></button>
@@ -114,10 +123,10 @@ function SaasGrupoModalContent({
           </div>
           {empresa.naves && empresa.naves.length > 0 && (
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">Naves que pertenecen a este grupo</label>
+              <span className="block text-sm font-bold text-slate-700 mb-2">Naves que pertenecen a este grupo</span>
               <div className="flex flex-col gap-2 max-h-52 overflow-y-auto border border-slate-200 rounded-xl p-3 bg-slate-50">
                 {(empresa.naves || []).map((n: Nave) => (
-                  <label key={n.id} className="flex items-center gap-2.5 cursor-pointer p-1.5 hover:bg-white rounded-lg transition-colors">
+                  <label key={n.id} htmlFor={`saas-grupo-nave-${n.id}`} className="flex items-center gap-2.5 cursor-pointer p-1.5 hover:bg-white rounded-lg transition-colors">
                     <input
                       id={`saas-grupo-nave-${n.id}`}
                       name="grupo_naves"
@@ -139,7 +148,7 @@ function SaasGrupoModalContent({
         <div className="p-6 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
           <button onClick={onClose} className="px-5 py-2.5 font-bold text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-xl transition-colors">Cancelar</button>
           <button onClick={handleSaveGrupo} disabled={savingGrupo} className="px-5 py-2.5 font-bold text-white bg-violet-600 hover:bg-violet-700 rounded-xl shadow-md transition-all disabled:opacity-60">
-            {savingGrupo ? "Guardando..." : (isEditing ? "Actualizar Grupo" : "Crear Grupo")}
+            {submitLabel}
           </button>
         </div>
       </div>

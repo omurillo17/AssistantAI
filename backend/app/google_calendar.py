@@ -42,14 +42,23 @@ async def _build_service(calendar_id: str):
     return await asyncio.to_thread(_refresh_and_build)
 
 
-async def create_event(calendar_id: str, summary: str, description: str, start: str, end: str) -> str:
+async def create_event(
+    calendar_id: str,
+    summary: str,
+    description: str,
+    start: str,
+    end: str,
+    recurrence: list[str] | None = None,
+) -> str:
     service = await _build_service(calendar_id)
-    body = {
+    body: dict = {
         "summary": summary,
         "description": description,
         "start": {"dateTime": start, "timeZone": _CALENDAR_TZ},
         "end": {"dateTime": end, "timeZone": _CALENDAR_TZ},
     }
+    if recurrence:
+        body["recurrence"] = recurrence
 
     def _insert():
         return service.events().insert(calendarId=calendar_id, body=body).execute()

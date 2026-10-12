@@ -1,5 +1,5 @@
 import { jwtVerify, type JWTPayload } from "jose";
-import { timingSafeEqual } from "crypto";
+import { timingSafeEqual } from "node:crypto";
 import { ENV } from "@/lib/env";
 
 export interface SessionPayload extends JWTPayload {

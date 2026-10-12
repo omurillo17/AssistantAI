@@ -1,9 +1,7 @@
 "use client";
 
 import { useCallback, useState, useEffect } from "react";
-import type { Recruiter, Vacante } from "@/types";
-import { COUNTRY_CODES } from "@/types";
-import type { Empresa, Nave } from "@/types";
+import { COUNTRY_CODES, type Recruiter, type Vacante, type Empresa, type Nave } from "@/types";
 import { useTenant, useTenantChange } from "./useTenant";
 import { useIsHydrated, useLocalStorageValue } from "./useLocalStorageValue";
 
@@ -94,7 +92,7 @@ export function useVacantes() {
       if (storedNaveId) query += (query ? `&` : `?`) + `nave_id=${storedNaveId}`;
       
       const res = await fetch(`${API_URL}${query}`);
-      if (!res.ok) throw new Error();
+      if (!res.ok) throw new Error("Error al obtener reclutadores");
       const data = await res.json();
       const raw = Array.isArray(data) ? data : data.data || [];
 
@@ -184,7 +182,7 @@ export function useVacantes() {
           transfer_map: transferMap
         }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) throw new Error("Error al guardar cambios de reclutadores");
       showToast("✅ Cambios guardados con éxito", false);
       setTransferMap([]); // Clear transfer map after successful save
     } catch {
@@ -302,7 +300,13 @@ export function useVacantes() {
       setVDetalles(vac.detalles || "");
       setVFunciones(vac.funciones || "");
       setVPalabrasClave(vac.palabras_clave || "");
-      setVNaves(Array.isArray(vac.naves) ? vac.naves : typeof vac.naves === "string" ? [vac.naves] : []);
+      let navesList: string[] = [];
+      if (Array.isArray(vac.naves)) {
+        navesList = vac.naves;
+      } else if (typeof vac.naves === "string") {
+        navesList = [vac.naves];
+      }
+      setVNaves(navesList);
     } else {
       setModalVacancyId(null);
       setVNombre("");
@@ -325,26 +329,17 @@ export function useVacantes() {
     }
 
     const updated = [...recruiters];
-
-    // Evitar duplicados revisando en todas las vacantes de todos los reclutadores
-    let duplicateExists = false;
-    for (const r of updated) {
-      for (const v of r.vacantes) {
-        if (v.nombre === normalizedName && v.id !== modalVacancyId) {
-          duplicateExists = true;
-          break;
-        }
-      }
-      if (duplicateExists) break;
-    }
-
-    if (duplicateExists) {
-      showToast(`La vacante "${normalizedName}" ya existe. Búscala en tu lista y actívala si está inactiva.`, true);
-      return;
-    }
-
     const recIndex = updated.findIndex((r) => r.reclutador_id === modalRecruiterId);
     if (recIndex === -1) return;
+
+    const duplicateExists = updated[recIndex].vacantes.some(
+      (v) => v.nombre === normalizedName && v.id !== modalVacancyId
+    );
+
+    if (duplicateExists) {
+      showToast(`La vacante "${normalizedName}" ya existe en este reclutador. Búscala en su lista y actívala si está inactiva.`, true);
+      return;
+    }
 
     if (modalVacancyId) {
       const vacIndex = updated[recIndex].vacantes.findIndex((v) => v.id === modalVacancyId);

@@ -57,6 +57,13 @@ services:
       - WAHA_BASE_URL=${WAHA_BASE_URL:-http://waha:3000}
       # WhatsApp del ROOT: recibe copia de las alertas de fallo del agente.
       - ALERTAS_ADMIN_TELEFONO=${ALERTAS_ADMIN_TELEFONO:-}
+      - TEST_DEV_PHONE=${TEST_DEV_PHONE:-5213323379399}
+      # Meta Cloud API (WhatsApp Business Platform Oficial)
+      - WHATSAPP_PROVIDER=${WHATSAPP_PROVIDER:-waha}
+      - META_WA_ACCESS_TOKEN=${META_WA_ACCESS_TOKEN:-}
+      - META_WA_PHONE_NUMBER_ID=${META_WA_PHONE_NUMBER_ID:-}
+      - META_WA_WABA_ID=${META_WA_WABA_ID:-}
+      - META_WA_VERIFY_TOKEN=${META_WA_VERIFY_TOKEN:-virgo_meta_secret_webhook_2026}
       # Ritmo de salida de WhatsApp: evita el baneo por responder en ráfaga.
       - WAHA_SEGUNDOS_ENTRE_MENSAJES=${WAHA_SEGUNDOS_ENTRE_MENSAJES:-8}
       - WAHA_JITTER_SEGUNDOS=${WAHA_JITTER_SEGUNDOS:-7}
@@ -161,6 +168,11 @@ services:
       - BACKEND_API_BASE=http://backend:8000
       - PYTHON_SERVICE_API_KEY=${PYTHON_SERVICE_API_KEY:-}
       - INTERNAL_API_KEY=${INTERNAL_API_KEY:-}
+      - WHATSAPP_PROVIDER=${WHATSAPP_PROVIDER:-waha}
+      - META_WA_ACCESS_TOKEN=${META_WA_ACCESS_TOKEN:-}
+      - META_WA_PHONE_NUMBER_ID=${META_WA_PHONE_NUMBER_ID:-}
+      - META_WA_WABA_ID=${META_WA_WABA_ID:-}
+      - META_WA_VERIFY_TOKEN=${META_WA_VERIFY_TOKEN:-virgo_meta_secret_webhook_2026}
       - TZ=America/Mexico_City
     volumes:
       - ./virgo_data:/app/virgo_data

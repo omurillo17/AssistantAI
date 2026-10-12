@@ -18,13 +18,15 @@ export async function GET(request: Request) {
   const filter_nave_id = searchParams.get('nave_id');
   const time_range = searchParams.get('time_range') || searchParams.get('dias') || '7d';
 
-  let intervalStr = "INTERVAL '7 days'";
-  if (time_range === '1d') intervalStr = "INTERVAL '1 day'";
-  else if (time_range === '7d') intervalStr = "INTERVAL '7 days'";
-  else if (time_range === '1m') intervalStr = "INTERVAL '30 days'";
-  else if (time_range === '6m') intervalStr = "INTERVAL '180 days'";
-  else if (time_range === '1y') intervalStr = "INTERVAL '365 days'";
-  else if (time_range === '90d') intervalStr = "INTERVAL '90 days'";
+  const INTERVALOS: Record<string, string> = {
+    '1d': "INTERVAL '1 day'",
+    '7d': "INTERVAL '7 days'",
+    '1m': "INTERVAL '30 days'",
+    '6m': "INTERVAL '180 days'",
+    '1y': "INTERVAL '365 days'",
+    '90d': "INTERVAL '90 days'",
+  };
+  const intervalStr = INTERVALOS[time_range] || "INTERVAL '7 days'";
 
   let filter_empresa_id = searchParams.get('empresa_id');
   if (payload.rol !== 'ROOT') {

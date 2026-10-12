@@ -16,6 +16,9 @@ const PLACEHOLDERS = new Set([
   "usuario",
 ]);
 
+const LEADING_NAME_SYMBOLS = new Set('{}[])()<>"\'`~*_.,;:!¡¿?@#/\\|-');
+const TRAILING_NAME_SYMBOLS = new Set('{}[])()<>"\'`~*_,;:!¡¿?@#/\\|-');
+
 /**
  * Deja el pushname de WhatsApp en algo presentable, o cadena vacía si no queda
  * nada que parezca el nombre de una persona.
@@ -43,11 +46,16 @@ export function cleanName(str?: string | null): string {
     .replace(/[\uFE0F\uFE0E\u200B-\u200D\u200E\u200F\uFEFF]/g, "");
 
   // Puntuación envolvente y espacios repetidos que deja la limpieza anterior.
-  cleaned = cleaned
-    .replace(/^[\s{}[\]()<>"'`~*_.,;:!¡¿?@#/\\|-]+/, "")
-    .replace(/[\s{}[\]()<>"'`~*_,;:!¡¿?@#/\\|-]+$/, "")
-    .replace(/\s+/g, " ")
-    .trim();
+  cleaned = cleaned.trim();
+  let start = 0;
+  while (start < cleaned.length && LEADING_NAME_SYMBOLS.has(cleaned[start])) {
+    start++;
+  }
+  let end = cleaned.length;
+  while (end > start && TRAILING_NAME_SYMBOLS.has(cleaned[end - 1])) {
+    end--;
+  }
+  cleaned = cleaned.slice(start, end).replace(/\s+/g, " ").trim();
 
   if (!cleaned) return "";
   if (PLACEHOLDERS.has(cleaned.toLowerCase())) return "";
@@ -111,21 +119,42 @@ export function getCandidateDisplayName(c: {
   return "Candidato";
 }
 
+const PLACEHOLDERS_NAVE = new Set([
+  "NINGUNA",
+  "GENERAL",
+  "PENDIENTE",
+  "DESCONOCIDA",
+  "X",
+  "NONE",
+  "NULL",
+  "SIN SUCURSAL",
+  "NO DEFINIDA",
+  "SIN ASIGNAR",
+  "TODAS",
+  "CUALQUIERA",
+  "{NINGUNA}",
+  "{GENERAL}",
+  "{PENDIENTE}",
+]);
+
 /**
  * Maps numeric nave IDs or strings (e.g. "1", "2", "3") to human-readable Nave names.
+ * Returns empty string for unrecognized values or placeholders.
  */
 export function formatNaveName(nave?: string | number | null): string {
   if (!nave) return "";
   const clean = String(nave).trim();
   const normalized = clean.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
 
-  if (clean === "1" || normalized === "NAVE 1" || normalized.includes("DULCERIA")) return "DULCERIA";
+  if (PLACEHOLDERS_NAVE.has(normalized)) return "";
+
+  if (clean === "1" || normalized === "NAVE 1" || normalized.includes("DULCERIA") || normalized.includes("MANDARINA")) return "DULCERIA";
   if (clean === "2" || normalized === "NAVE 2" || normalized.includes("CEDIS")) return "CEDIS";
   if (clean === "3" || normalized === "NAVE 3" || normalized.includes("MATERIAS PRIMAS")) return "MATERIAS PRIMAS";
   if (normalized.includes("MATRIZ")) return "MATRIZ";
   if (normalized.includes("SUCURSAL")) return "SUCURSAL";
   if (normalized.includes("VITALI")) return "VITALI";
-  return clean.toUpperCase();
+  return "";
 }
 
 /**
@@ -143,7 +172,7 @@ export function proxyMediaUrl(url?: string | null): string {
  */
 export function detectMediaUrl(content?: string | null): string | null {
   if (!content) return null;
-  const match = content.match(/https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp|mp4|ogg|opus|mp3|m4a|pdf|doc|docx)/i);
+  const match = /https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp|mp4|ogg|opus|mp3|m4a|pdf|doc|docx)/i.exec(content);
   return match ? match[0] : null;
 }
 

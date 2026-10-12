@@ -5,7 +5,7 @@ import { z } from "zod";
 import { pool } from '@/lib/db';
 import { getSession, normalizeUsername } from '@/lib/auth';
 
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 
 // Nombre de usuario: solo letras, números y . _ - (sin espacios, acentos ni
 // símbolos). Es una credencial, no un nombre para mostrar -- para eso está
@@ -33,10 +33,10 @@ const userSchema = z.object({
     .min(5, "La contraseña debe tener al menos 5 caracteres")
     .max(100),
   rol: z.enum(["ADMIN", "USER", "RECLUTADOR", "ENCARGADO", "ROOT"], { error: "Rol inválido" }),
-  correo: z.string().email("Correo inválido").optional().or(z.literal("")),
+  correo: z.email("Correo inválido").optional().or(z.literal("")),
   telefono: z.string().max(20).optional().or(z.literal("")),
-  grupo_id: z.string().uuid().optional().nullable(),
-  empresa_id: z.string().uuid().optional().nullable(),
+  grupo_id: z.uuid().optional().nullable(),
+  empresa_id: z.uuid().optional().nullable(),
 });
 
 /**
@@ -64,8 +64,11 @@ export async function GET(request: Request) {
     const userEmpresaId = payload.empresa_id as string | null;
     const soySuperusuario = await esSuperusuario(payload.usuario);
 
+    const puedeVerPassword = userRole === 'ROOT' || userRole === 'ADMIN';
+
     let query = `
-      SELECT u.id, u.usuario, u.nombre, u.rol, u.created_at, u.grupo_id, u.empresa_id, u.reclutador_id,
+      SELECT u.id, u.usuario, u.nombre, u.rol, ${puedeVerPassword ? 'u.actual_password' : 'NULL as actual_password'},
+             u.created_at, u.grupo_id, u.empresa_id, u.reclutador_id,
              r.calendar_id as correo, r.telefono
       FROM usuarios u
       LEFT JOIN reclutadores r ON u.reclutador_id = r.id
@@ -100,6 +103,74 @@ export async function GET(request: Request) {
   }
 }
 
+function validateNewUserPayload({
+  rol,
+  nombre,
+  correo,
+  telefono,
+  grupo_id,
+  creatorRole,
+}: {
+  rol: string;
+  nombre?: string;
+  correo?: string;
+  telefono?: string;
+  grupo_id?: string | null;
+  creatorRole: string;
+}): string | null {
+  if (creatorRole === 'ENCARGADO' && rol !== 'RECLUTADOR') {
+    return "Un encargado solo puede crear usuarios reclutadores";
+  }
+
+  const rolOperativo = rol === "RECLUTADOR" || rol === "ENCARGADO" || rol === "USER";
+  if (rolOperativo) {
+    if (!(nombre || "").trim()) {
+      return "El nombre completo es obligatorio";
+    }
+    if (!(correo || "").trim()) {
+      return "El correo es obligatorio para este rol";
+    }
+    if ((telefono || "").trim().length < 10) {
+      return "El teléfono es obligatorio para este rol";
+    }
+    if (!grupo_id) {
+      return "El grupo de reclutamiento es obligatorio para este rol";
+    }
+  }
+  return null;
+}
+
+async function resolveNewUserEmpresaId({
+  creatorRole,
+  creatorEmpresaId,
+  parsed_empresa_id,
+  grupo_id,
+}: {
+  creatorRole: string;
+  creatorEmpresaId: string | null;
+  parsed_empresa_id?: string | null;
+  grupo_id?: string | null;
+}): Promise<{ empresa_id: string | null; error?: string }> {
+  let empresa_id = parsed_empresa_id || null;
+
+  if (creatorRole === 'ENCARGADO') {
+    empresa_id = creatorEmpresaId;
+  }
+
+  if (grupo_id) {
+    const grupoRes = await pool.query(`SELECT empresa_id FROM grupos_reclutamiento WHERE id = $1`, [grupo_id]);
+    if (grupoRes.rows.length > 0) {
+      const grupoEmpresaId = grupoRes.rows[0].empresa_id;
+      if (creatorRole === 'ENCARGADO' && grupoEmpresaId !== creatorEmpresaId) {
+        return { empresa_id: null, error: "No tienes permiso para asignar este grupo" };
+      }
+      empresa_id = grupoEmpresaId;
+    }
+  }
+
+  return { empresa_id };
+}
+
 export async function POST(request: Request) {
   try {
     const payload = await getSession(request);
@@ -115,9 +186,6 @@ export async function POST(request: Request) {
     const body = await request.json();
     const parsed = userSchema.safeParse(body);
     if (!parsed.success) {
-      // Se devuelve el motivo concreto (usuario con símbolos, correo mal
-      // formado, teléfono corto...) en vez de un "datos inválidos" genérico,
-      // que obliga a adivinar cuál de los seis campos está mal.
       return NextResponse.json(
         { error: parsed.error.issues[0]?.message || "Datos inválidos" },
         { status: 400 }
@@ -126,8 +194,6 @@ export async function POST(request: Request) {
 
     const { usuario, nombre, password, rol, correo, telefono, grupo_id, empresa_id: parsed_empresa_id } = parsed.data;
 
-    // Solo el superusuario reparte el rol ROOT. Un ROOT normal administra la
-    // plataforma pero no puede fabricarse pares ni escalar a otros a su nivel.
     if (rol === 'ROOT' && !(await esSuperusuario(payload.usuario))) {
       return NextResponse.json(
         { error: "No autorizado para crear usuarios ROOT" },
@@ -135,34 +201,16 @@ export async function POST(request: Request) {
       );
     }
 
-    if (creatorRole === 'ENCARGADO') {
-      if (rol !== 'RECLUTADOR') {
-        return NextResponse.json({ error: "Un encargado solo puede crear usuarios reclutadores" }, { status: 403 });
-      }
-    }
-
-    // Roles operativos: atienden candidatos sobre una nave concreta, agendan en
-    // su propio calendario y reciben avisos por WhatsApp, así que su expediente
-    // tiene que estar completo. ADMIN y ROOT solo administran -- el panel SaaS
-    // los crea con usuario y contraseña y nada más.
-    const rolOperativo = rol === "RECLUTADOR" || rol === "ENCARGADO" || rol === "USER";
-
-    if (rolOperativo) {
-      if (!(nombre || "").trim()) {
-        return NextResponse.json({ error: "El nombre completo es obligatorio" }, { status: 400 });
-      }
-      if (!(correo || "").trim()) {
-        return NextResponse.json({ error: "El correo es obligatorio para este rol" }, { status: 400 });
-      }
-      if ((telefono || "").trim().length < 10) {
-        return NextResponse.json({ error: "El teléfono es obligatorio para este rol" }, { status: 400 });
-      }
-      if (!grupo_id) {
-        return NextResponse.json(
-          { error: "El grupo de reclutamiento es obligatorio para este rol" },
-          { status: 400 }
-        );
-      }
+    const validationError = validateNewUserPayload({
+      rol,
+      nombre,
+      correo,
+      telefono,
+      grupo_id,
+      creatorRole,
+    });
+    if (validationError) {
+      return NextResponse.json({ error: validationError }, { status: 400 });
     }
 
     const normalizedUser = normalizeUsername(usuario);
@@ -174,46 +222,32 @@ export async function POST(request: Request) {
     }
 
     const hash = await bcrypt.hash(password, 10);
+    const { empresa_id, error: empresaError } = await resolveNewUserEmpresaId({
+      creatorRole,
+      creatorEmpresaId,
+      parsed_empresa_id,
+      grupo_id,
+    });
+    if (empresaError) {
+      return NextResponse.json({ error: empresaError }, { status: 403 });
+    }
 
     let reclutador_id = null;
-    let empresa_id = parsed_empresa_id || null;
-
-    if (creatorRole === 'ENCARGADO') {
-      empresa_id = creatorEmpresaId;
-    }
-
-    if (grupo_id) {
-      const grupoRes = await pool.query(`SELECT empresa_id FROM grupos_reclutamiento WHERE id = $1`, [grupo_id]);
-      if (grupoRes.rows.length > 0) {
-        const grupoEmpresaId = grupoRes.rows[0].empresa_id;
-        if (creatorRole === 'ENCARGADO' && grupoEmpresaId !== creatorEmpresaId) {
-          return NextResponse.json({ error: "No tienes permiso para asignar este grupo" }, { status: 403 });
-        }
-        empresa_id = grupoEmpresaId;
-      }
-    }
-
     // Si es reclutador o encargado, creamos también su perfil
     if (rol === "RECLUTADOR" || rol === "ENCARGADO") {
       reclutador_id = crypto.randomUUID();
       await pool.query(
         `INSERT INTO reclutadores (id, nombre, activo, telefono, calendar_id, color, updated_at, empresa_id) 
          VALUES ($1, $2, $3, $4, $5, $6, NOW(), $7)`,
-        // El reclutador se llama como la PERSONA, no como su usuario de login:
-        // este nombre es el que ve el candidato por WhatsApp ("pregunta por
-        // MICHELLE en recepción") y el que aparece en el calendario.
         [reclutador_id, (nombre || usuario).toUpperCase(), true, telefono || '', correo || '', '#6366f1', empresa_id]
       );
     }
 
-    // Nunca se guarda la contraseña en texto plano; solo el hash bcrypt.
+    // Guardamos hash bcrypt para login y actual_password para visualización de administradores
     const res = await pool.query(
-      `INSERT INTO usuarios (usuario, nombre, password_hash, rol, reclutador_id, grupo_id, empresa_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, usuario, nombre, rol`,
-      // Sin nombre propio (alta mínima de ADMIN desde el panel SaaS) se guarda
-      // vacío: la interfaz ya cae al usuario cuando no hay nombre, y así se
-      // distingue "no lo capturaron" de "se llama igual que su usuario".
-      [normalizedUser, (nombre || "").trim(), hash, rol, reclutador_id, grupo_id || null, empresa_id]
+      `INSERT INTO usuarios (usuario, nombre, password_hash, actual_password, rol, reclutador_id, grupo_id, empresa_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, usuario, nombre, rol`,
+      [normalizedUser, (nombre || "").trim(), hash, password, rol, reclutador_id, grupo_id || null, empresa_id]
     );
 
     return NextResponse.json(res.rows[0]);
@@ -221,6 +255,191 @@ export async function POST(request: Request) {
     console.error('Error creating usuario:', err);
     return NextResponse.json({ error: 'Error al crear usuario' }, { status: 500 });
   }
+}
+
+function verifyProtegidoOrRootPermissions(
+  currentUser: any,
+  soySuperusuario: boolean,
+  newRol?: string
+): { error?: string; status?: number } | null {
+  if (currentUser.protegido && !soySuperusuario) {
+    return { error: "Usuario a modificar no encontrado", status: 404 };
+  }
+  if (currentUser.protegido && newRol && newRol !== 'ROOT') {
+    return { error: "El superusuario no puede cambiar de rol", status: 403 };
+  }
+  if (newRol === 'ROOT' && !soySuperusuario) {
+    return { error: "No autorizado para asignar el rol ROOT", status: 403 };
+  }
+  return null;
+}
+
+function verifyEncargadoPermissions(
+  currentUser: any,
+  adminGrupoId: string | null,
+  grupo_id?: string,
+  newRol?: string
+): { error?: string; status?: number } | null {
+  if (currentUser.rol !== 'RECLUTADOR' || currentUser.grupo_id !== adminGrupoId) {
+    return { error: "No tienes permiso para modificar este usuario", status: 403 };
+  }
+  if (grupo_id && grupo_id !== adminGrupoId) {
+    return { error: "No puedes cambiar el grupo fuera de tu propio grupo", status: 403 };
+  }
+  if (newRol && newRol !== 'RECLUTADOR') {
+    return { error: "No tienes permiso para cambiar el rol de este usuario", status: 403 };
+  }
+  return null;
+}
+
+async function verifyAdminPermissions({
+  adminUsername,
+  adminRole,
+  adminPassword,
+  adminGrupoId,
+  currentUser,
+  newRol,
+  grupo_id,
+}: {
+  adminUsername: string;
+  adminRole: string;
+  adminPassword: string;
+  adminGrupoId: string | null;
+  currentUser: any;
+  newRol?: string;
+  grupo_id?: string;
+}): Promise<{ error?: string; status?: number }> {
+  const adminRes = await pool.query(`SELECT password_hash FROM usuarios WHERE usuario = $1`, [adminUsername]);
+  if (adminRes.rowCount === 0) return { error: "Admin no encontrado", status: 404 };
+  const adminHash = adminRes.rows[0].password_hash;
+
+  const isValidAdmin = await bcrypt.compare(adminPassword, adminHash);
+  if (!isValidAdmin) return { error: "Contraseña de administrador incorrecta", status: 403 };
+
+  const soySuperusuario = await esSuperusuario(adminUsername);
+  const protErr = verifyProtegidoOrRootPermissions(currentUser, soySuperusuario, newRol);
+  if (protErr) return protErr;
+
+  if (adminRole === 'ENCARGADO') {
+    const encErr = verifyEncargadoPermissions(currentUser, adminGrupoId, grupo_id, newRol);
+    if (encErr) return encErr;
+  }
+
+  return {};
+}
+
+async function applyRoleChange({
+  targetUserId,
+  currentUser,
+  newRol,
+  telefono,
+  correo,
+  transferTo,
+}: {
+  targetUserId: string;
+  currentUser: any;
+  newRol: string;
+  telefono?: string;
+  correo?: string;
+  transferTo?: string;
+}) {
+  if (newRol === "RECLUTADOR" || newRol === "ENCARGADO") {
+    let recId = currentUser.reclutador_id;
+    if (!recId) {
+      recId = "rec_" + crypto.randomUUID().replace(/-/g, "").substring(0, 10);
+      await pool.query(
+        `INSERT INTO reclutadores (id, nombre, activo, telefono, calendar_id, color, updated_at) 
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [recId, currentUser.usuario.toUpperCase(), true, telefono || '', correo || '', '#6366f1']
+      );
+    } else {
+      await pool.query(`UPDATE reclutadores SET activo = true, updated_at = NOW() WHERE id = $1`, [recId]);
+    }
+    await pool.query(`UPDATE usuarios SET rol = $1, reclutador_id = $2 WHERE id = $3`, [newRol, recId, targetUserId]);
+  } else if (currentUser.rol === "RECLUTADOR" || currentUser.rol === "ENCARGADO") {
+    if (transferTo && currentUser.reclutador_id) {
+      await pool.query(
+        `UPDATE candidatos SET asignado_a_id = $1 WHERE asignado_a_id = $2`,
+        [transferTo, currentUser.reclutador_id]
+      );
+      await pool.query(
+        `UPDATE mensajes_bandeja SET asignado_a_id = $1, updated_at = NOW() WHERE asignado_a_id = $2`,
+        [transferTo, currentUser.reclutador_id]
+      );
+    }
+    if (currentUser.reclutador_id) {
+      await pool.query(`UPDATE reclutadores SET activo = false, updated_at = NOW() WHERE id = $1`, [currentUser.reclutador_id]);
+    }
+    await pool.query(`UPDATE usuarios SET rol = $1 WHERE id = $2`, [newRol, targetUserId]);
+  } else {
+    await pool.query(`UPDATE usuarios SET rol = $1 WHERE id = $2`, [newRol, targetUserId]);
+  }
+}
+
+async function applyGrupoUpdate(targetUserId: string, currentUser: any, grupo_id?: string, newRol?: string) {
+  if (grupo_id === undefined) return;
+  let empresa_id = null;
+  if (grupo_id) {
+    const grupoRes = await pool.query(`SELECT empresa_id FROM grupos_reclutamiento WHERE id = $1`, [grupo_id]);
+    if (grupoRes.rows.length > 0) {
+      empresa_id = grupoRes.rows[0].empresa_id;
+    }
+  }
+
+  await pool.query(
+    `UPDATE usuarios SET grupo_id = $1, empresa_id = $2 WHERE id = $3 RETURNING reclutador_id`, 
+    [grupo_id || null, empresa_id, targetUserId]
+  );
+
+  if (empresa_id && (currentUser.reclutador_id || (newRol === "RECLUTADOR" || newRol === "ENCARGADO"))) {
+    const getRec = await pool.query(`SELECT reclutador_id FROM usuarios WHERE id = $1`, [targetUserId]);
+    const recId = getRec.rows[0]?.reclutador_id;
+    if (recId) {
+      await pool.query(`UPDATE reclutadores SET empresa_id = $1 WHERE id = $2`, [empresa_id, recId]);
+    }
+  }
+}
+
+async function applyProfileUpdate(targetUserId: string, currentUser: any, nombre?: string, correo?: string, telefono?: string) {
+  if (typeof nombre === 'string' && nombre.trim()) {
+    await pool.query(`UPDATE usuarios SET nombre = $1 WHERE id = $2`, [nombre.trim(), targetUserId]);
+  }
+
+  if (currentUser.reclutador_id) {
+    const nombreReclutador = (typeof nombre === 'string' && nombre.trim())
+      ? nombre.trim().toUpperCase()
+      : null;
+    await pool.query(
+      `UPDATE reclutadores
+          SET calendar_id = $1,
+              telefono = $2,
+              nombre = COALESCE($4, nombre),
+              updated_at = NOW()
+        WHERE id = $3`,
+      [correo || '', telefono || '', currentUser.reclutador_id, nombreReclutador]
+    );
+  }
+}
+
+async function applyGroupAndProfileUpdates({
+  targetUserId,
+  currentUser,
+  grupo_id,
+  nombre,
+  correo,
+  telefono,
+  newRol,
+}: {
+  targetUserId: string;
+  currentUser: any;
+  grupo_id?: string;
+  nombre?: string;
+  correo?: string;
+  telefono?: string;
+  newRol?: string;
+}) {
+  await applyGrupoUpdate(targetUserId, currentUser, grupo_id, newRol);
+  await applyProfileUpdate(targetUserId, currentUser, nombre, correo, telefono);
 }
 
 export async function PATCH(request: Request) {
@@ -236,7 +455,6 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "El correo es obligatorio para Reclutadores y Encargados" }, { status: 400 });
     }
 
-    // Obtener el admin actual desde el JWT
     const payload = await getSession(request);
     if (!payload) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
@@ -244,169 +462,75 @@ export async function PATCH(request: Request) {
     const adminRole = payload.rol as string;
     const adminGrupoId = payload.grupo_id as string | null;
 
-    // Defensa en profundidad: aunque el middleware ya restringe /api/db/usuarios,
-    // verificamos el rol también aquí.
     if (adminRole !== 'ADMIN' && adminRole !== 'ROOT' && adminRole !== 'ENCARGADO') {
       return NextResponse.json({ error: "No autorizado para modificar usuarios" }, { status: 403 });
     }
 
-    // Verificar la contraseña del administrador
-    const adminRes = await pool.query(`SELECT password_hash FROM usuarios WHERE usuario = $1`, [adminUsername]);
-    if (adminRes.rowCount === 0) return NextResponse.json({ error: "Admin no encontrado" }, { status: 404 });
-    const adminHash = adminRes.rows[0].password_hash;
-
-    const isValidAdmin = await bcrypt.compare(adminPassword, adminHash);
-    if (!isValidAdmin) return NextResponse.json({ error: "Contraseña de administrador incorrecta" }, { status: 403 });
-
-    // Obtener usuario objetivo actual
     const userRes = await pool.query(`SELECT * FROM usuarios WHERE id = $1`, [targetUserId]);
     if (userRes.rowCount === 0) return NextResponse.json({ error: "Usuario a modificar no encontrado" }, { status: 404 });
     const currentUser = userRes.rows[0];
 
-    // El superusuario solo se administra a sí mismo. Se responde 404 y no 403
-    // para no confirmarle a un tercero que la cuenta existe -- para el resto
-    // del sistema es invisible, y un 403 sería una filtración.
-    const soySuperusuario = await esSuperusuario(adminUsername);
-    if (currentUser.protegido && !soySuperusuario) {
-      return NextResponse.json({ error: "Usuario a modificar no encontrado" }, { status: 404 });
-    }
-    // Ni siquiera él puede degradarse: dejaría al sistema sin nadie capaz de
-    // repartir el rol ROOT.
-    if (currentUser.protegido && newRol && newRol !== 'ROOT') {
-      return NextResponse.json(
-        { error: "El superusuario no puede cambiar de rol" },
-        { status: 403 }
-      );
-    }
-    // Ascender a otro a ROOT también es privilegio exclusivo del superusuario.
-    if (newRol === 'ROOT' && !soySuperusuario) {
-      return NextResponse.json({ error: "No autorizado para asignar el rol ROOT" }, { status: 403 });
+    const permCheck = await verifyAdminPermissions({
+      adminUsername,
+      adminRole,
+      adminPassword,
+      adminGrupoId,
+      currentUser,
+      newRol,
+      grupo_id,
+    });
+    if (permCheck.error) {
+      return NextResponse.json({ error: permCheck.error }, { status: permCheck.status || 403 });
     }
 
-    // Restricciones de encargado
-    if (adminRole === 'ENCARGADO') {
-      if (currentUser.rol !== 'RECLUTADOR' || currentUser.grupo_id !== adminGrupoId) {
-        return NextResponse.json({ error: "No tienes permiso para modificar este usuario" }, { status: 403 });
-      }
-      if (grupo_id && grupo_id !== adminGrupoId) {
-        return NextResponse.json({ error: "No puedes cambiar el grupo fuera de tu propio grupo" }, { status: 403 });
-      }
-      if (newRol && newRol !== 'RECLUTADOR') {
-        return NextResponse.json({ error: "No tienes permiso para cambiar el rol de este usuario" }, { status: 403 });
-      }
-    }
-
-    // Actualizar Contraseña si se provee (solo se guarda el hash bcrypt)
     if (newPassword && newPassword.trim().length > 0) {
       const newHash = await bcrypt.hash(newPassword, 10);
-      await pool.query(`UPDATE usuarios SET password_hash = $1 WHERE id = $2`, [newHash, targetUserId]);
+      await pool.query(
+        `UPDATE usuarios SET password_hash = $1, actual_password = $2 WHERE id = $3`,
+        [newHash, newPassword.trim(), targetUserId]
+      );
     }
 
-    // Actualizar Rol si se provee y es distinto
     if (newRol && newRol !== currentUser.rol) {
-
-      // Ascenso a RECLUTADOR o ENCARGADO
-      if (newRol === "RECLUTADOR" || newRol === "ENCARGADO") {
-        let recId = currentUser.reclutador_id;
-
-        // Si no tenía perfil de reclutador, crearlo
-        if (!recId) {
-          recId = "rec_" + crypto.randomUUID().replace(/-/g, "").substring(0, 10);
-          await pool.query(
-            `INSERT INTO reclutadores (id, nombre, activo, telefono, calendar_id, color, updated_at) 
-             VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
-            [recId, currentUser.usuario.toUpperCase(), true, telefono || '', correo || '', '#6366f1']
-          );
-        } else {
-          // Si ya tenía uno inactivo, reactivarlo
-          await pool.query(`UPDATE reclutadores SET activo = true, updated_at = NOW() WHERE id = $1`, [recId]);
-        }
-
-        await pool.query(`UPDATE usuarios SET rol = $1, reclutador_id = $2 WHERE id = $3`, [newRol, recId, targetUserId]);
-      }
-
-      // Descenso desde RECLUTADOR o ENCARGADO
-      else if (currentUser.rol === "RECLUTADOR" || currentUser.rol === "ENCARGADO") {
-        // Transferir chats si se especifica (transferTo = reclutador_id destino)
-        if (transferTo && currentUser.reclutador_id) {
-          await pool.query(
-            `UPDATE candidatos SET asignado_a_id = $1 WHERE asignado_a_id = $2`,
-            [transferTo, currentUser.reclutador_id]
-          );
-          await pool.query(
-            `UPDATE mensajes_bandeja SET asignado_a_id = $1, updated_at = NOW() WHERE asignado_a_id = $2`,
-            [transferTo, currentUser.reclutador_id]
-          );
-        }
-
-        // Desactivar el perfil de reclutador en lugar de borrarlo
-        if (currentUser.reclutador_id) {
-          await pool.query(`UPDATE reclutadores SET activo = false, updated_at = NOW() WHERE id = $1`, [currentUser.reclutador_id]);
-        }
-
-        await pool.query(`UPDATE usuarios SET rol = $1 WHERE id = $2`, [newRol, targetUserId]);
-      }
-
-      // Cambio entre ADMIN y USER
-      else {
-        await pool.query(`UPDATE usuarios SET rol = $1 WHERE id = $2`, [newRol, targetUserId]);
-      }
+      await applyRoleChange({
+        targetUserId,
+        currentUser,
+        newRol,
+        telefono,
+        correo,
+        transferTo,
+      });
     }
 
-    // Actualizar Grupo y Empresa Asignada
-    if (grupo_id !== undefined) {
-      let empresa_id = null;
-      if (grupo_id) {
-        const grupoRes = await pool.query(`SELECT empresa_id FROM grupos_reclutamiento WHERE id = $1`, [grupo_id]);
-        if (grupoRes.rows.length > 0) {
-          empresa_id = grupoRes.rows[0].empresa_id;
-        }
-      }
-
-      await pool.query(
-        `UPDATE usuarios SET grupo_id = $1, empresa_id = $2 WHERE id = $3 RETURNING reclutador_id`, 
-        [grupo_id || null, empresa_id, targetUserId]
-      );
-
-      // Si el usuario tiene perfil de reclutador, actualizar su empresa_id tambien
-      if (empresa_id && (currentUser.reclutador_id || (newRol === "RECLUTADOR" || newRol === "ENCARGADO"))) {
-        // En caso de que se haya creado apenas en este bloque, lo recuperamos
-        const getRec = await pool.query(`SELECT reclutador_id FROM usuarios WHERE id = $1`, [targetUserId]);
-        const recId = getRec.rows[0]?.reclutador_id;
-        if (recId) {
-          await pool.query(`UPDATE reclutadores SET empresa_id = $1 WHERE id = $2`, [empresa_id, recId]);
-        }
-      }
-    }
-
-    // Nombre para mostrar. El `usuario` (credencial de login) no se toca aquí
-    // a propósito: renombrar a alguien en pantalla no debe cambiarle la forma
-    // de entrar al sistema.
-    if (typeof nombre === 'string' && nombre.trim()) {
-      await pool.query(`UPDATE usuarios SET nombre = $1 WHERE id = $2`, [nombre.trim(), targetUserId]);
-    }
-
-    // Actualizar datos del reclutador (nombre visible, correo y telefono) si existe
-    if (currentUser.reclutador_id) {
-      const nombreReclutador = (typeof nombre === 'string' && nombre.trim())
-        ? nombre.trim().toUpperCase()
-        : null;
-      await pool.query(
-        `UPDATE reclutadores
-            SET calendar_id = $1,
-                telefono = $2,
-                nombre = COALESCE($4, nombre),
-                updated_at = NOW()
-          WHERE id = $3`,
-        [correo || '', telefono || '', currentUser.reclutador_id, nombreReclutador]
-      );
-    }
+    await applyGroupAndProfileUpdates({
+      targetUserId,
+      currentUser,
+      grupo_id,
+      nombre,
+      correo,
+      telefono,
+      newRol,
+    });
 
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error(err);
     return NextResponse.json({ error: 'Error al actualizar usuario' }, { status: 500 });
   }
+}
+
+function checkDeletePermissions(
+  requesterRole: string,
+  requesterGrupoId: string | null,
+  targetUser: { rol: string; grupo_id: string | null }
+): boolean {
+  if (requesterRole === "ENCARGADO" && (targetUser.rol !== "RECLUTADOR" || targetUser.grupo_id !== requesterGrupoId)) {
+    return false;
+  }
+  if (targetUser.rol === "ROOT" && requesterRole !== "ROOT") {
+    return false;
+  }
+  return true;
 }
 
 export async function DELETE(request: Request) {
@@ -443,12 +567,7 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
     }
 
-    // Mismas restricciones que en PATCH: un encargado solo gestiona reclutadores de su grupo
-    if (requesterRole === 'ENCARGADO' && (targetUser.rol !== 'RECLUTADOR' || targetUser.grupo_id !== requesterGrupoId)) {
-      return NextResponse.json({ error: "No tienes permiso para eliminar este usuario" }, { status: 403 });
-    }
-    // Solo ROOT puede eliminar cuentas ROOT
-    if (targetUser.rol === 'ROOT' && requesterRole !== 'ROOT') {
+    if (!checkDeletePermissions(requesterRole, requesterGrupoId, targetUser)) {
       return NextResponse.json({ error: "No tienes permiso para eliminar este usuario" }, { status: 403 });
     }
 
