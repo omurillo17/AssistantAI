@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import {
   Send, Bot, User,
   Phone, AlertTriangle,
-  Search, Loader2, Check, UserPlus, X, Copy, Image as ImageIcon
+  Search, Loader2, Check, UserPlus, X, Copy, Image as ImageIcon,
+  ArrowLeft
 } from "lucide-react";
 
 import { useMensajes } from "@/hooks/useMensajes";
@@ -235,29 +236,29 @@ function MensajesListaConversaciones({ m }: Readonly<{ m: MensajesHook }>) {
 
 function MensajesSidebar({ m }: Readonly<{ m: MensajesHook }>) {
   return (
-    <aside className="w-80 bg-white border-r border-slate-200 flex flex-col z-10">
-      <div className="flex text-[11px] font-bold border-b border-slate-200">
+    <aside className={`${m.activePhone ? "hidden md:flex" : "flex"} w-full md:w-80 bg-white border-r border-slate-200 flex-col z-10 shrink-0`}>
+      <div className="flex text-[11px] font-bold border-b border-slate-200 overflow-x-auto shrink-0">
         {m.puedeVerTodo && (
-          <button onClick={() => m.setActiveTab("todos")} className={`flex-1 py-2.5 text-center transition-colors ${m.activeTab === "todos" ? "bg-primary text-white" : "bg-[#f0f2f5] text-slate-600 hover:bg-slate-200"}`}>
+          <button onClick={() => m.setActiveTab("todos")} className={`flex-1 min-w-[70px] py-2.5 text-center transition-colors ${m.activeTab === "todos" ? "bg-primary text-white" : "bg-[#f0f2f5] text-slate-600 hover:bg-slate-200"}`}>
             Todos
           </button>
         )}
-        <button onClick={() => m.setActiveTab("mis_chats")} className={`flex-1 py-2.5 text-center transition-colors ${m.activeTab === "mis_chats" ? "bg-primary text-white" : "bg-[#f0f2f5] text-slate-600 hover:bg-slate-200"}`}>
+        <button onClick={() => m.setActiveTab("mis_chats")} className={`flex-1 min-w-[75px] py-2.5 text-center transition-colors ${m.activeTab === "mis_chats" ? "bg-primary text-white" : "bg-[#f0f2f5] text-slate-600 hover:bg-slate-200"}`}>
           Mis Chats
         </button>
-        <button onClick={() => m.setActiveTab("compartida")} className={`flex-1 py-2.5 text-center transition-colors ${m.activeTab === "compartida" ? "bg-primary text-white" : "bg-[#f0f2f5] text-slate-600 hover:bg-slate-200"}`}>
+        <button onClick={() => m.setActiveTab("compartida")} className={`flex-1 min-w-[75px] py-2.5 text-center transition-colors ${m.activeTab === "compartida" ? "bg-primary text-white" : "bg-[#f0f2f5] text-slate-600 hover:bg-slate-200"}`}>
           General
         </button>
-        <button onClick={() => m.setActiveTab("descartados")} className={`flex-1 py-2.5 text-center transition-colors ${m.activeTab === "descartados" ? "bg-rose-600 text-white" : "bg-[#f0f2f5] text-rose-600 hover:bg-rose-100"}`}>
+        <button onClick={() => m.setActiveTab("descartados")} className={`flex-1 min-w-[85px] py-2.5 text-center transition-colors ${m.activeTab === "descartados" ? "bg-rose-600 text-white" : "bg-[#f0f2f5] text-rose-600 hover:bg-rose-100"}`}>
           Descartados
         </button>
       </div>
-      <div className="px-3 py-2 bg-[#f0f2f5] border-b border-slate-200 flex flex-col gap-2">
+      <div className="px-3 py-2 bg-[#f0f2f5] border-b border-slate-200 flex flex-col gap-2 shrink-0">
         <div className="relative">
           <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
           <input id="mensajes-search" name="search" type="text" placeholder="Buscar candidato..." className="w-full pl-8 pr-3 py-1.5 bg-white border-none rounded-lg text-sm focus:outline-none transition-colors" value={m.search} onChange={e => m.setSearch(e.target.value)} />
         </div>
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col sm:flex-row md:flex-col gap-2">
           <select id="mensajes-vacante-filter" name="vacante_filter" className="w-full bg-white border-none rounded-lg text-xs py-1.5 px-2 focus:outline-none text-slate-600" value={m.filterVacante} onChange={e => m.setFilterVacante(e.target.value)}>
             <option value="">Todas las vacantes</option>
             {m.uniqueVacantes.map(v => <option key={v} value={v}>{v}</option>)}
@@ -269,7 +270,7 @@ function MensajesSidebar({ m }: Readonly<{ m: MensajesHook }>) {
         </div>
       </div>
 
-      <div className="px-4 py-2 flex justify-between items-center border-b border-slate-100 bg-slate-50/50">
+      <div className="px-4 py-2 flex justify-between items-center border-b border-slate-100 bg-slate-50/50 shrink-0">
         <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Activas ({m.filtradas.length})</span>
       </div>
 
@@ -282,16 +283,26 @@ function MensajesSidebar({ m }: Readonly<{ m: MensajesHook }>) {
 
 function MensajesChatHeader({ m, router }: Readonly<{ m: MensajesHook; router: ReturnType<typeof useRouter> }>) {
   return (
-    <div className="flex-shrink-0 bg-[#f0f2f5] px-4 py-2 border-b border-slate-200 flex justify-between items-center shadow-sm relative z-10">
-      <div className="flex items-center gap-3">
+    <div className="flex-shrink-0 bg-[#f0f2f5] px-3 sm:px-4 py-2 border-b border-slate-200 flex flex-wrap sm:flex-nowrap justify-between items-center gap-2 shadow-sm relative z-10">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        {/* Botón Volver en móvil */}
+        <button
+          onClick={() => m.setActivePhone(null)}
+          className="md:hidden p-1.5 -ml-1 text-slate-600 hover:bg-black/5 rounded-lg shrink-0"
+          title="Volver a la lista de chats"
+          aria-label="Volver a la lista"
+        >
+          <ArrowLeft size={18} />
+        </button>
+
         <AvatarCandidato
           telefono={m.candidatoActivo?.telefono || m.convActiva?.telefono || m.activePhone}
           nombre={m.candidatoActivo?.nombre || m.convActiva?.nombre}
           escalado={m.candidatoActivo?.escalado}
-          size={40}
+          size={36}
         />
-        <div className="relative">
-          <button onClick={() => m.setShowPhoneModal(!m.showPhoneModal)} className="font-bold text-[#111b21] hover:underline text-left cursor-pointer focus:outline-none">
+        <div className="relative min-w-0">
+          <button onClick={() => m.setShowPhoneModal(!m.showPhoneModal)} className="font-bold text-[#111b21] hover:underline text-left cursor-pointer focus:outline-none text-xs sm:text-sm truncate block max-w-[140px] sm:max-w-[200px]">
             {m.candidatoActivo?.nombre || m.convActiva?.nombre || m.activePhone}
           </button>
           {m.showPhoneModal && (
@@ -329,22 +340,22 @@ function MensajesChatHeader({ m, router }: Readonly<{ m: MensajesHook; router: R
           )}
         </div>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1 sm:gap-2 flex-wrap sm:flex-nowrap shrink-0">
         {m.candidatoActivo?.escalado ? (
-          <span className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 bg-danger/10 text-danger rounded-lg"><User size={12} /> Humano</span>
+          <span className="flex items-center gap-1 text-[11px] sm:text-xs font-bold px-2 py-1 bg-danger/10 text-danger rounded-lg"><User size={12} /> Humano</span>
         ) : (
-          <span className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 bg-slate-200 text-slate-600 rounded-lg"><Bot size={12} /> Bot</span>
+          <span className="flex items-center gap-1 text-[11px] sm:text-xs font-bold px-2 py-1 bg-slate-200 text-slate-600 rounded-lg"><Bot size={12} /> Bot</span>
         )}
 
-        <button onClick={() => router.push(`/expedientes?tel=${m.activePhone}`)} className="px-3 py-1.5 hover:bg-black/5 text-slate-600 rounded-lg text-sm font-semibold transition-colors">Ver Perfil</button>
+        <button onClick={() => router.push(`/expedientes?tel=${m.activePhone}`)} className="px-2 sm:px-3 py-1 sm:py-1.5 hover:bg-black/5 text-slate-600 rounded-lg text-xs sm:text-sm font-semibold transition-colors">Perfil</button>
 
-        <button onClick={m.transferir} disabled={!!m.actionLoading} className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-70 text-white rounded-lg transition-colors shadow-sm">
-          {m.actionLoading === "transferir" ? <Loader2 size={12} className="animate-spin" /> : <UserPlus size={12} />} Transferir
+        <button onClick={m.transferir} disabled={!!m.actionLoading} className="flex items-center gap-1 text-[11px] sm:text-xs font-bold px-2 sm:px-2.5 py-1 sm:py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-70 text-white rounded-lg transition-colors shadow-sm">
+          {m.actionLoading === "transferir" ? <Loader2 size={12} className="animate-spin" /> : <UserPlus size={12} />} <span className="hidden sm:inline">Transferir</span>
         </button>
 
         {m.candidatoActivo?.escalado && !m.estaAtendidoPorOtro && (
-          <button onClick={m.devolverAlBot} disabled={!!m.actionLoading} className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 bg-[#00a884] hover:bg-[#008f6f] disabled:opacity-70 text-white rounded-lg transition-colors shadow-sm">
-            {m.actionLoading === "devolverAlBot" ? <Loader2 size={12} className="animate-spin" /> : <Bot size={12} />} Devolver al Bot
+          <button onClick={m.devolverAlBot} disabled={!!m.actionLoading} className="flex items-center gap-1 text-[11px] sm:text-xs font-bold px-2 sm:px-2.5 py-1 sm:py-1.5 bg-[#00a884] hover:bg-[#008f6f] disabled:opacity-70 text-white rounded-lg transition-colors shadow-sm">
+            {m.actionLoading === "devolverAlBot" ? <Loader2 size={12} className="animate-spin" /> : <Bot size={12} />} <span className="hidden sm:inline">Al Bot</span>
           </button>
         )}
 
@@ -358,9 +369,9 @@ function MensajesChatHeader({ m, router }: Readonly<{ m: MensajesHook; router: R
               }
             }}
             disabled={!!m.actionLoading}
-            className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 bg-danger hover:bg-danger/90 disabled:opacity-70 text-white rounded-lg transition-colors shadow-sm"
+            className="flex items-center gap-1 text-[11px] sm:text-xs font-bold px-2 sm:px-2.5 py-1 sm:py-1.5 bg-danger hover:bg-danger/90 disabled:opacity-70 text-white rounded-lg transition-colors shadow-sm"
           >
-            {m.actionLoading === "tomarControl" ? <Loader2 size={12} className="animate-spin" /> : <User size={12} />} Tomar Control
+            {m.actionLoading === "tomarControl" ? <Loader2 size={12} className="animate-spin" /> : <User size={12} />} Control
           </button>
         )}
       </div>
@@ -437,15 +448,15 @@ function MensajesChatArea({
   router: ReturnType<typeof useRouter>;
 }>) {
   return (
-    <main className="flex-1 flex flex-col bg-[#efeae2] relative overflow-hidden">
+    <main className={`${m.activePhone ? "flex" : "hidden md:flex"} flex-1 flex-col bg-[#efeae2] relative overflow-hidden`}>
       {!m.activePhone ? (
-        <div className="flex-1 flex items-center justify-center text-slate-400">Selecciona una conversación</div>
+        <div className="flex-1 flex items-center justify-center text-slate-400 p-4 text-center">Selecciona una conversación</div>
       ) : (
         <>
           {!m.convActiva?.asignado_a_id && (
-            <div className="bg-primary text-white px-4 py-2 flex justify-between items-center z-20 shadow-sm">
-              <div className="text-sm">Este candidato está en la <strong>Bandeja General</strong>.</div>
-              <button onClick={m.tomarChat} disabled={m.actionLoading === "tomarChat"} className="bg-white text-primary font-bold text-xs px-4 py-1.5 rounded shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50">
+            <div className="bg-primary text-white px-3 sm:px-4 py-2 flex justify-between items-center z-20 shadow-sm text-xs sm:text-sm">
+              <div className="truncate mr-2">Este candidato está en la <strong>Bandeja General</strong>.</div>
+              <button onClick={m.tomarChat} disabled={m.actionLoading === "tomarChat"} className="bg-white text-primary font-bold text-xs px-3 sm:px-4 py-1.5 rounded shadow-sm hover:bg-slate-50 transition-colors disabled:opacity-50 shrink-0">
                 {m.actionLoading === "tomarChat" ? "Tomando..." : "Tomar Chat"}
               </button>
             </div>
@@ -521,7 +532,7 @@ function MensajesInner() {
   }
 
   return (
-    <div className="flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 text-[#111b21] overflow-hidden" style={{ height: 'calc(100vh - 130px)' }}>
+    <div className="flex flex-col bg-white rounded-xl shadow-sm border border-slate-200 text-[#111b21] overflow-hidden h-[calc(100dvh-115px)] min-h-[500px]">
       <div className="flex flex-1 overflow-hidden">
         <MensajesSidebar m={m} />
         <MensajesChatArea

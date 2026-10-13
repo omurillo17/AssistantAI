@@ -108,7 +108,25 @@ export type PromptContext = {
   };
 };
 
-function groupEquipoReclutadores(rows: Record<string, any>[]): PromptContext['equipo_reclutadores'] {
+/** Fila del SELECT de reclutadores + vacantes para el catálogo de la IA (LEFT JOIN). */
+type EquipoRow = {
+  reclutador_id: string;
+  nombre: string;
+  telefono: string | null;
+  calendar_id: string | null;
+  color: string | null;
+  usuario: string | null;
+  empresa_id: string;
+  vacante_id: string | null;
+  vacante_nombre: string;
+  vacante_naves: string | string[] | null;
+  detalles: string | null;
+  funciones: string | null;
+  palabras_clave: string | null;
+  filtros: Filtro[] | null;
+};
+
+function groupEquipoReclutadores(rows: EquipoRow[]): PromptContext['equipo_reclutadores'] {
   const recMap = new Map<string, PromptContext['equipo_reclutadores'][number]>();
   for (const row of rows) {
     if (!recMap.has(row.reclutador_id)) {

@@ -1,0 +1,121 @@
+{
+  "$schema": "../../../Vid/packages/content-schema/schema/video-script.schema.json",
+  "id": "usuarios",
+  "title": "Gestión de Usuarios",
+  "lang": "es",
+  "status": "verified",
+  "format": {
+    "orientation": "landscape",
+    "size": 1920,
+    "fps": 30
+  },
+  "theme": {
+    "primary": "#0C66AC",
+    "background": "#0B1E33"
+  },
+  "burnCaptions": false,
+  "capture": [
+    {
+      "use": "login-admin"
+    },
+    {
+      "goto": "/usuarios",
+      "wait": 5000
+    },
+    {
+      "shot": "01-lista",
+      "regions": {
+        "nuevo": "text=+ Nuevo Usuario",
+        "tabla": "table",
+        "grupos": "js=[...document.querySelectorAll('button')].find(b => b.innerText.includes('Grupos'))"
+      }
+    },
+    {
+      "click": "text=+ Nuevo Usuario"
+    },
+    {
+      "sleep": 1200
+    },
+    {
+      "shot": "02-nuevo",
+      "regions": {
+        "nombre": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === 'Nombre completo').parentElement",
+        "rol": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === 'Rol del sistema').parentElement",
+        "grupo": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === 'Grupo de reclutamiento').parentElement",
+        "crear": "js=[...document.querySelectorAll('button')].find(b => b.innerText.trim() === 'Crear Usuario')"
+      }
+    }
+  ],
+  "scenes": [
+    {
+      "template": "intro",
+      "durationSec": 5,
+      "title": "Gestión de Usuarios",
+      "chapter": "Introducción",
+      "objective": "Dar de alta reclutadores y asignarles su rol y su grupo.",
+      "narration": {
+        "text": "En este video aprenderás a dar de alta a un reclutador y a asignarle su rol y su grupo de reclutamiento."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 7,
+      "title": "Los usuarios",
+      "screenshot": "captures/01-lista.png",
+      "highlights": [
+        {
+          "region": "tabla",
+          "label": "Usuarios"
+        },
+        {
+          "region": "nuevo",
+          "label": "Nuevo Usuario"
+        }
+      ],
+      "narration": {
+        "text": "Aquí ves a las personas de tu equipo con su rol y su grupo asignado. Para dar de alta a alguien, pulsa Nuevo Usuario."
+      }
+    },
+    {
+      "template": "steps",
+      "durationSec": 12,
+      "title": "Crear un usuario",
+      "screenshot": "captures/02-nuevo.png",
+      "steps": [
+        "Nombre completo, usuario y contraseña temporal.",
+        "Elige su rol.",
+        "Asígnale su grupo de reclutamiento.",
+        "Pídele cambiar la contraseña al entrar."
+      ],
+      "highlights": [
+        {
+          "region": "nombre"
+        },
+        {
+          "region": "rol"
+        },
+        {
+          "region": "grupo",
+          "label": "Define qué naves verá"
+        }
+      ],
+      "narration": {
+        "text": "Captura el nombre, el usuario y una contraseña temporal. Elige su rol y asígnale su grupo de reclutamiento: el grupo define qué naves podrá ver. Al entregarle sus datos, pídele que cambie la contraseña."
+      }
+    },
+    {
+      "template": "outro",
+      "durationSec": 7,
+      "title": "Antes de terminar",
+      "chapter": "Errores frecuentes",
+      "mistakes": [
+        "Crear usuarios sin grupo: entran a una plataforma vacía.",
+        "Compartir un mismo usuario entre varias personas."
+      ],
+      "conclusion": "Un usuario por persona, con su grupo correcto.",
+      "narration": {
+        "text": "Un usuario por persona y siempre con su grupo correcto."
+      }
+    }
+  ]
+}

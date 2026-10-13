@@ -1,0 +1,125 @@
+{
+  "$schema": "../../../Vid/packages/content-schema/schema/video-script.schema.json",
+  "id": "portal-candidato",
+  "title": "Portal del Candidato",
+  "lang": "es",
+  "status": "verified",
+  "format": {
+    "orientation": "landscape",
+    "size": 1920,
+    "fps": 30
+  },
+  "theme": {
+    "primary": "#0C66AC",
+    "background": "#0B1E33"
+  },
+  "burnCaptions": false,
+  "capture": [
+    {
+      "goto": "/portal",
+      "wait": 4000
+    },
+    {
+      "fill": "input[placeholder^=\"Ej.\"]",
+      "value": "3310000004"
+    },
+    {
+      "shot": "01-identifica",
+      "regions": {
+        "empresa": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === 'Empresa').parentElement",
+        "telefono": "input[placeholder^=\"Ej.\"]",
+        "buscar": "js=[...document.querySelectorAll('button')].find(b => b.innerText.includes('Buscar Solicitud'))"
+      }
+    },
+    {
+      "click": "js=[...document.querySelectorAll('button')].find(b => b.innerText.includes('Buscar Solicitud'))"
+    },
+    {
+      "waitFor": "text=Adjunta los Archivos Solicitados"
+    },
+    {
+      "sleep": 1500
+    },
+    {
+      "shot": "02-documentos",
+      "regions": {
+        "candidato": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === 'Roberto Navarro Gil').closest('.rounded-xl, .rounded-2xl')",
+        "ine": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && /^1.{0,3}INE/i.test(e.textContent.trim())).closest('.rounded-xl, .rounded-2xl')",
+        "rfc": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && /^2.{0,3}CONSTANCIA/i.test(e.textContent.trim())).closest('.rounded-xl, .rounded-2xl')",
+        "cv": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && /^3.{0,3}CV/i.test(e.textContent.trim())).closest('.rounded-xl, .rounded-2xl')"
+      }
+    }
+  ],
+  "scenes": [
+    {
+      "template": "intro",
+      "durationSec": 5,
+      "title": "Portal del Candidato",
+      "chapter": "Introducción",
+      "objective": "Conocer la página donde los candidatos suben sus documentos.",
+      "narration": {
+        "text": "El Portal del Candidato es una página pública donde los candidatos suben sus documentos cuando WhatsApp no alcanza."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 8,
+      "title": "El candidato se identifica",
+      "screenshot": "captures/01-identifica.png",
+      "highlights": [
+        {
+          "region": "empresa",
+          "label": "Empresa"
+        },
+        {
+          "region": "telefono",
+          "label": "Su teléfono"
+        },
+        {
+          "region": "buscar",
+          "label": "Buscar"
+        }
+      ],
+      "narration": {
+        "text": "No necesita usuario: elige la empresa, escribe el teléfono con el que escribió por WhatsApp y busca su solicitud."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 9,
+      "title": "Sube sus documentos",
+      "screenshot": "captures/02-documentos.png",
+      "highlights": [
+        {
+          "region": "ine",
+          "label": "INE"
+        },
+        {
+          "region": "rfc",
+          "label": "Constancia"
+        },
+        {
+          "region": "cv",
+          "label": "CV ya recibido"
+        }
+      ],
+      "narration": {
+        "text": "Ve su vacante y su sucursal, y sube su INE y su constancia. Los documentos llegan directo a su expediente, igual que si los hubiera mandado por WhatsApp."
+      }
+    },
+    {
+      "template": "outro",
+      "durationSec": 7,
+      "title": "Cuándo usarlo",
+      "chapter": "Errores frecuentes",
+      "mistakes": [
+        "Mandar el portal a quien aún no escribe por WhatsApp.",
+        "No avisar que use el mismo teléfono."
+      ],
+      "conclusion": "Úsalo cuando el archivo pesa demasiado o el envío por WhatsApp falló.",
+      "narration": {
+        "text": "Comparte el portal cuando el archivo pesa demasiado o el envío por WhatsApp falló."
+      }
+    }
+  ]
+}

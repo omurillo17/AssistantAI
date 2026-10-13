@@ -3,11 +3,18 @@
  *
  * Todo el material vive aquí como datos planos para que ampliar el curso sea
  * editar este archivo y no tocar componentes: agregar una lección es agregar un
- * objeto al arreglo `LECCIONES`, y publicar un video es cambiar `url: null` por
- * la ruta del archivo (por ejemplo "/videos/mensajes.mp4") o el `embed` de
- * YouTube. Mientras `url` sea null la vista muestra un marcador de
- * "video en producción" en lugar del reproductor.
+ * objeto al arreglo `CONTENIDO`.
+ *
+ * Los videos se generan con `training build` (ver capacitacion-videos/README.md):
+ * cada guion cuyo id coincide con el `slug` de una lección escribe en
+ * `capacitacion-videos.json` la URL, la miniatura, los subtítulos y los
+ * capítulos, y `LECCIONES` los incorpora solo. Una lección sin video generado
+ * conserva su `video` de aquí (`url: null` → marcador "video en producción"),
+ * o puede apuntar a mano a un mp4 o a un `embed` de YouTube.
  */
+
+import generados from "./capacitacion-videos.json";
+import { formatoTiempo } from "./vtt";
 
 export type Rol = "USER" | "ENCARGADO" | "ADMIN" | "ROOT";
 
@@ -34,6 +41,12 @@ export type Video = {
   embed?: string | null;
   titulo: string;
   duracion?: string;
+  /** Miniatura que se muestra antes de reproducir. */
+  poster?: string;
+  /** Subtítulos WebVTT; la transcripción de la lección se arma con este mismo archivo. */
+  subtitulos?: string;
+  /** Capítulos navegables: segundo de inicio y título. */
+  capitulos?: { inicio: number; titulo: string }[];
 };
 
 export type Leccion = {
@@ -66,7 +79,7 @@ export const CATEGORIAS: Categoria[] = [
   "Referencia",
 ];
 
-export const LECCIONES: Leccion[] = [
+const CONTENIDO: Leccion[] = [
   // ─── Primeros pasos ───────────────────────────────────────────────────────
   {
     slug: "primeros-pasos",
@@ -216,7 +229,7 @@ export const LECCIONES: Leccion[] = [
             items: [
               "El propio candidato pide hablar con una persona.",
               "El asistente detecta una situación que no sabe resolver.",
-              "Tú pulsas Tomar Control en la bandeja de Mensajes.",
+              "Tú pulsas Control en la bandeja de Mensajes.",
             ],
           },
           {
@@ -280,7 +293,7 @@ export const LECCIONES: Leccion[] = [
           {
             tipo: "parrafo",
             texto:
-              "Debajo de las tarjetas de color, los perfiles ADMIN y ROOT ven un segundo bloque con Usuarios y SaaS Admin. Si no lo ves, es porque tu rol no tiene esos permisos y es normal.",
+              "Debajo de las tarjetas de color, los perfiles ADMIN y ROOT ven un segundo bloque con Usuarios (ROOT además ve SaaS Admin). Si no lo ves, es porque tu rol no tiene esos permisos y es normal.",
           },
         ],
       },
@@ -305,27 +318,28 @@ export const LECCIONES: Leccion[] = [
           {
             tipo: "parrafo",
             texto:
-              "A la izquierda la lista de conversaciones, al centro el chat y a la derecha la información del candidato. Es la misma conversación real de WhatsApp: lo que escribes aquí le llega a la persona a su teléfono.",
+              "A la izquierda la lista de conversaciones y a la derecha el chat. Es la misma conversación real de WhatsApp: lo que escribes aquí le llega a la persona a su teléfono.",
           },
           {
             tipo: "lista",
             items: [
+              "Las pestañas de arriba separan Mis Chats (los asignados a ti), General (los que aún no tienen dueño) y Descartados.",
               "En cada conversación de la lista, el prefijo 'Bot:' o 'Tú:' te dice quién mandó el último mensaje.",
-              "Los filtros de arriba te permiten acotar por nave y por vacante.",
-              "El botón Ver Perfil abre el expediente completo del candidato.",
+              "Los filtros te permiten acotar por vacante y por nave.",
+              "El botón Perfil, en el encabezado del chat, abre el expediente completo del candidato.",
             ],
           },
           {
             tipo: "imagen",
-            src: null,
-            titulo: "Las tres columnas de la bandeja",
-            pie: "Captura pendiente: lista de chats, conversación e info del candidato.",
+            src: "/capacitacion/capturas/mensajes-bandeja.png",
+            titulo: "Las dos columnas de la bandeja",
+            pie: "Lista de conversaciones a la izquierda y chat a la derecha (datos de demostración).",
           },
         ],
       },
       {
         id: "tomar-control",
-        titulo: "Tomar Control y Tomar Chat",
+        titulo: "Control y Tomar Chat",
         bloques: [
           {
             tipo: "parrafo",
@@ -335,17 +349,17 @@ export const LECCIONES: Leccion[] = [
           {
             tipo: "lista",
             items: [
-              "Tomar Control: silencia al bot en esa conversación y habilita la caja de texto para que escribas tú. El chat pasa a estado Humano.",
-              "Tomar Chat: te asignas a ti la conversación cuando otro reclutador la tenía tomada o cuando aún no tiene dueño.",
+              "Control (botón rojo en el encabezado del chat): silencia al bot en esa conversación y habilita la caja de texto para que escribas tú. El chat pasa a estado Humano.",
+              "Tomar Chat (en la franja azul de arriba): te asigna la conversación cuando está en la Bandeja General, es decir, cuando todavía no tiene dueño.",
             ],
           },
           {
             tipo: "pasos",
             items: [
               "Abre la conversación en la lista de la izquierda.",
-              "Pulsa Tomar Control. La etiqueta cambia de 'Bot' a 'Humano'.",
+              "Pulsa Control. La etiqueta cambia de 'Bot' a 'Humano'.",
               "Escribe y envía tus mensajes con normalidad.",
-              "Cuando termines, devuelve el control al bot para que retome el proceso automático.",
+              "Cuando termines, pulsa Al Bot para que el asistente retome el proceso automático.",
             ],
           },
           {
@@ -603,9 +617,9 @@ export const LECCIONES: Leccion[] = [
             tipo: "lista",
             items: [
               "Candidatos Totales y Nuevos (Hoy): el tamaño del embudo y cuánto entró en el día.",
-              "Chats Activos: conversaciones vivas en este momento.",
               "Contratados: los cierres del periodo.",
-              "Conversión: qué porcentaje de los que entraron terminó contratado.",
+              "Chats Activos: conversaciones vivas en este momento.",
+              "La tasa de conversión (contratados entre candidatos asignados) aparece más abajo, por reclutador y por vacante.",
             ],
           },
         ],
@@ -617,8 +631,8 @@ export const LECCIONES: Leccion[] = [
           {
             tipo: "lista",
             items: [
-              "Distribución de Estados: el embudo. Al hacer clic en una etapa se listan los candidatos que están ahí.",
-              "Escalados a humano: cuántos chats necesitaron intervención, un buen termómetro de qué tan bien está respondiendo la IA.",
+              "Embudo de Reclutamiento y Distribución de Estados: en qué etapa está cada candidato. Al hacer clic en una etapa se listan los candidatos que están ahí.",
+              "Pestaña IA Sofía: qué porcentaje de candidatos se atendió sin intervención humana y cuántos chats se escalaron, un buen termómetro de qué tan bien está respondiendo la IA.",
               "Actividad horaria: en qué horas escribe la gente, útil para acomodar turnos.",
             ],
           },
@@ -655,14 +669,14 @@ export const LECCIONES: Leccion[] = [
             items: [
               "Pulsa Nuevo Usuario y captura nombre, usuario y contraseña temporal.",
               "Asígnale su rol.",
-              "Asígnale las naves y el grupo de reclutamiento que le corresponden.",
+              "Asígnale su grupo de reclutamiento: el grupo define qué naves podrá ver.",
               "Entrégale sus datos y pídele que cambie la contraseña en su primer ingreso.",
             ],
           },
           {
             tipo: "aviso",
             texto:
-              "Las naves asignadas determinan qué candidatos puede ver. Un usuario sin naves asignadas entra a una plataforma vacía.",
+              "El grupo determina qué naves y candidatos puede ver. Un usuario sin grupo puede entrar a una plataforma vacía.",
           },
         ],
       },
@@ -678,90 +692,6 @@ export const LECCIONES: Leccion[] = [
               "ADMIN: administra usuarios y puede filtrar la vista por nave o por grupo.",
               "ROOT: acceso total, incluidos SaaS Admin y el editor del prompt de la IA.",
             ],
-          },
-        ],
-      },
-    ],
-  },
-  {
-    slug: "saas-admin",
-    titulo: "SaaS Admin (empresas, naves y grupos)",
-    resumen:
-      "La estructura sobre la que se apoya todo lo demás: empresas, sus naves y los grupos de reclutamiento.",
-    categoria: "Administración",
-    icono: "🌐",
-    color: "bg-amber-500",
-    ruta: "/saas",
-    lectura: "4 min",
-    roles: ["ROOT"],
-    video: { url: null, titulo: "Alta de una empresa nueva", duracion: "Próximamente" },
-    secciones: [
-      {
-        id: "jerarquia",
-        titulo: "La jerarquía",
-        bloques: [
-          {
-            tipo: "lista",
-            items: [
-              "Empresa: el cliente. Tiene su propio WhatsApp, sus vacantes y su prompt de IA.",
-              "Nave: cada sucursal, planta o centro de trabajo de esa empresa.",
-              "Grupo: el equipo de reclutamiento que atiende a un conjunto de naves.",
-            ],
-          },
-          {
-            tipo: "aviso",
-            texto:
-              "Una empresa sin naves no puede recibir vacantes. Al dar de alta una empresa, crea de inmediato al menos una nave.",
-          },
-        ],
-      },
-    ],
-  },
-  {
-    slug: "prompt-ia",
-    titulo: "Prompt de la IA",
-    resumen:
-      "Dónde se edita la personalidad y las reglas del asistente, y por qué hay que tener cuidado al tocarlo.",
-    categoria: "Administración",
-    icono: "🧠",
-    color: "bg-slate-700",
-    ruta: "/prompt",
-    lectura: "4 min",
-    roles: ["ROOT"],
-    video: { url: null, titulo: "Editar el prompt sin romper el flujo", duracion: "Próximamente" },
-    secciones: [
-      {
-        id: "que-es",
-        titulo: "Qué es el prompt",
-        bloques: [
-          {
-            tipo: "parrafo",
-            texto:
-              "Es el instructivo que la IA lee antes de cada respuesta: su tono, sus reglas y lo que tiene prohibido hacer. Cada empresa tiene el suyo, y se guarda en la base de datos, no en un archivo del repositorio.",
-          },
-          {
-            tipo: "nota",
-            texto:
-              "Ctrl+S guarda desde el editor. El cambio aplica a la siguiente respuesta que dé el asistente, sin reiniciar nada.",
-          },
-        ],
-      },
-      {
-        id: "cuidado",
-        titulo: "Cuidados",
-        bloques: [
-          {
-            tipo: "lista",
-            items: [
-              "Cambia una cosa a la vez y pruébala en un chat real antes de seguir.",
-              "No borres las secciones de reglas: sostienen el flujo de filtros, documentos y agendamiento.",
-              "Guarda una copia del texto anterior antes de una edición grande.",
-            ],
-          },
-          {
-            tipo: "aviso",
-            texto:
-              "Este editor afecta a todas las conversaciones de la empresa en producción. Un error aquí se nota de inmediato en los chats de candidatos reales.",
           },
         ],
       },
@@ -862,7 +792,7 @@ export const LECCIONES: Leccion[] = [
             items: [
               "No veo ningún candidato: revisa el selector de empresa/nave de la barra superior y quita los filtros de la tabla.",
               "El bot dejó de responderle a un candidato: probablemente el chat está escalado (etiqueta Humano). Contesta tú o devuelve el control al bot.",
-              "No puedo escribir en un chat: te falta pulsar Tomar Control, o el chat lo está atendiendo otro reclutador.",
+              "No puedo escribir en un chat: te falta pulsar Control, o el chat lo está atendiendo otro reclutador.",
               "La IA no ofrece una vacante: verifica que esté activa, con plazas disponibles y asignada a la nave correcta.",
               "La IA agendó encima de mi junta: bloquea ese rango de horario en el Calendario.",
               "No aparecen los mensajes nuevos: recarga la página; si sigue igual, revisa el aviso de conexión de WhatsApp en la parte superior.",
@@ -878,6 +808,28 @@ export const LECCIONES: Leccion[] = [
     ],
   },
 ];
+
+type VideoGenerado = (typeof generados.videos)[keyof typeof generados.videos];
+const VIDEOS: Record<string, VideoGenerado | undefined> = generados.videos;
+
+/** Completa la lección con su video generado por `training build`, si existe. */
+function conVideo(l: Leccion): Leccion {
+  const v = VIDEOS[l.slug];
+  if (!v) return l;
+  return {
+    ...l,
+    video: {
+      ...l.video,
+      url: v.src,
+      poster: v.poster,
+      subtitulos: v.captions[0]?.src,
+      duracion: formatoTiempo(v.durationSec),
+      capitulos: v.chapters.map((c) => ({ inicio: c.startSec, titulo: c.title })),
+    },
+  };
+}
+
+export const LECCIONES: Leccion[] = CONTENIDO.map(conVideo);
 
 export function getLeccion(slug: string): Leccion | undefined {
   return LECCIONES.find((l) => l.slug === slug);

@@ -467,73 +467,73 @@ function ExpedientesPageInner() {
   return (
     <div className="flex flex-col h-full bg-[#f8fafc] text-slate-800">
       {/* ─── HEADER ─── */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 z-10 shadow-sm relative">
-        <h1 className="text-2xl font-extrabold text-slate-800">Expedientes Operativos</h1>
+      <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 sm:py-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-2 sm:gap-4 z-10 shadow-sm relative">
+        <h1 className="text-xl sm:text-2xl font-extrabold text-slate-800">Expedientes Operativos</h1>
       </div>
 
       {loading ? (
-        <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
+        <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-6">
           <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4" />
           <p className="font-medium animate-pulse">Cargando expedientes...</p>
         </div>
       ) : (
-        <main className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-[1600px] mx-auto space-y-6">
+        <main className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6">
+          <div className="max-w-[1600px] mx-auto space-y-4 sm:space-y-6">
 
             {/* PANEL DE ALERTAS */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-rose-50 border border-rose-200 p-5 rounded-2xl flex items-center justify-between shadow-sm">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 bg-white text-rose-600 rounded-xl shadow-sm"><MessageSquare size={24} /></div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
+              <div className="bg-rose-50 border border-rose-200 p-4 sm:p-5 rounded-2xl flex items-center justify-between shadow-sm">
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <div className="p-2.5 sm:p-3 bg-white text-rose-600 rounded-xl shadow-sm"><MessageSquare size={22} /></div>
                   <div>
-                    <div className="text-xs text-rose-800 font-bold uppercase tracking-wider">Chats Pendientes</div>
-                    <div className="text-3xl font-extrabold text-rose-600">{pendingChats.length}</div>
+                    <div className="text-[11px] sm:text-xs text-rose-800 font-bold uppercase tracking-wider">Chats Pendientes</div>
+                    <div className="text-2xl sm:text-3xl font-extrabold text-rose-600">{pendingChats.length}</div>
                   </div>
                 </div>
                 {pendingChats.length > 0 && (
-                  <button onClick={() => router.push('/mensajes')} className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-sm shadow-sm transition-colors">
-                    Ir a Bandeja →
+                  <button onClick={() => router.push('/mensajes')} className="px-3 sm:px-4 py-1.5 sm:py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg text-xs sm:text-sm shadow-sm transition-colors">
+                    Bandeja →
                   </button>
                 )}
               </div>
 
-              <div className="bg-amber-50 border border-amber-200 p-5 rounded-2xl flex items-center justify-between shadow-sm">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 bg-white text-amber-600 rounded-xl shadow-sm"><CalendarDays size={24} /></div>
+              <div className="bg-amber-50 border border-amber-200 p-4 sm:p-5 rounded-2xl flex items-center justify-between shadow-sm">
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <div className="p-2.5 sm:p-3 bg-white text-amber-600 rounded-xl shadow-sm"><CalendarDays size={22} /></div>
                   <div>
-                    <div className="text-xs text-amber-800 font-bold uppercase tracking-wider">Entrevistas para Hoy</div>
-                    <div className="text-3xl font-extrabold text-amber-600">{todayInterviews.length}</div>
+                    <div className="text-[11px] sm:text-xs text-amber-800 font-bold uppercase tracking-wider">Entrevistas para Hoy</div>
+                    <div className="text-2xl sm:text-3xl font-extrabold text-amber-600">{todayInterviews.length}</div>
                   </div>
                 </div>
               </div>
             </div>
 
             {/* CONTROLES Y FILTROS */}
-            <div className="bg-white p-5 rounded-2xl border border-black/5 shadow-sm flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
-              <div className="flex bg-slate-100 p-1 rounded-lg gap-1 border border-slate-200">
-                <button onClick={() => setVista("kanban")} className={`flex items-center gap-2 px-4 py-2 rounded-md font-bold text-sm transition-all ${vista === "kanban" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+            <div className="bg-white p-3 sm:p-5 rounded-2xl border border-black/5 shadow-sm flex flex-col xl:flex-row justify-between items-start xl:items-center gap-3 sm:gap-4">
+              <div className="flex bg-slate-100 p-1 rounded-lg gap-1 border border-slate-200 w-full sm:w-auto">
+                <button onClick={() => setVista("kanban")} className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-md font-bold text-xs sm:text-sm transition-all ${vista === "kanban" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
                   <LayoutGrid size={16} /> Tablero
                 </button>
-                <button onClick={() => setVista("tabla")} className={`flex items-center gap-2 px-4 py-2 rounded-md font-bold text-sm transition-all ${vista === "tabla" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                <button onClick={() => setVista("tabla")} className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-md font-bold text-xs sm:text-sm transition-all ${vista === "tabla" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
                   <List size={16} /> Directorio
                 </button>
               </div>
-              <div className="flex gap-2 w-full xl:w-auto flex-wrap">
-                <div className="relative flex-1 min-w-[200px]">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:flex gap-2 w-full xl:w-auto flex-wrap">
+                <div className="relative col-span-1 sm:col-span-2 md:flex-1 md:min-w-[200px]">
                   <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
                   <input id="expedientes-search" name="search" type="text" placeholder="Buscar por nombre o teléfono..." className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-indigo-500 focus:bg-white transition-colors" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
                 </div>
-                <select id="expedientes-nave-filter" name="nave_filter" className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer min-w-[140px]" value={naveFilter} onChange={e => setNaveFilter(e.target.value)}>
+                <select id="expedientes-nave-filter" name="nave_filter" className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer w-full sm:w-auto min-w-[130px]" value={naveFilter} onChange={e => setNaveFilter(e.target.value)}>
                   <option value="TODAS">Todas las Naves</option>
                   <option value="SIN_SELECCIONAR">SIN NAVE</option>
                   {uniqueNaves.map(n => <option key={String(n)} value={String(n)}>{n}</option>)}
                 </select>
-                <select id="expedientes-vacante-filter" name="vacante_filter" className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer min-w-[140px]" value={vacanteFilter} onChange={e => setVacanteFilter(e.target.value)}>
+                <select id="expedientes-vacante-filter" name="vacante_filter" className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer w-full sm:w-auto min-w-[130px]" value={vacanteFilter} onChange={e => setVacanteFilter(e.target.value)}>
                   <option value="TODAS">Todas las Vacantes</option>
                   <option value="SIN_SELECCIONAR">SIN VACANTE</option>
                   {uniqueVacantes.map(v => <option key={String(v)} value={String(v)}>{v}</option>)}
                 </select>
-                <select id="expedientes-status-filter" name="status_filter" className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer min-w-[140px]" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+                <select id="expedientes-status-filter" name="status_filter" className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-700 focus:outline-none focus:border-indigo-500 cursor-pointer w-full sm:w-auto min-w-[130px]" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
                   <option value="TODOS">Todos los estados</option>
                   <optgroup label="── En Proceso ──">
                     {GRUPOS.pipeline.estados.map((k: EstadoKey) => <option key={k} value={k}>{ESTADOS[k].emoji} {ESTADOS[k].label}</option>)}

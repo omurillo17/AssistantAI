@@ -1,0 +1,169 @@
+{
+  "$schema": "../../../Vid/packages/content-schema/schema/video-script.schema.json",
+  "id": "vacantes",
+  "title": "Vacantes",
+  "lang": "es",
+  "status": "verified",
+  "format": {
+    "orientation": "landscape",
+    "size": 1920,
+    "fps": 30
+  },
+  "theme": {
+    "primary": "#0C66AC",
+    "background": "#0B1E33"
+  },
+  "burnCaptions": false,
+  "capture": [
+    {
+      "use": "login"
+    },
+    {
+      "goto": "/vacantes",
+      "wait": 4000
+    },
+    {
+      "shot": "01-listado",
+      "regions": {
+        "anadir": "js=[...document.querySelectorAll('button')].find(b => b.innerText.includes('Añadir Vacante'))",
+        "tarjeta": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === 'MONTACARGUISTA').closest('.rounded-xl, .rounded-2xl')",
+        "filtros": "text=Filtros (3)",
+        "guardar": "js=[...document.querySelectorAll('button')].find(b => b.innerText.trim() === 'Guardar')",
+        "activa": "js=document.querySelector('input[type=checkbox]')"
+      }
+    },
+    {
+      "click": "text=Editar"
+    },
+    {
+      "sleep": 1200
+    },
+    {
+      "shot": "02-editar",
+      "regions": {
+        "naves": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === 'Nave / Sucursal (Selecciona una o varias)').parentElement",
+        "claves": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === 'Palabras Clave').parentElement",
+        "detalles": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === 'Detalles (Sueldo, Horario, Requisitos)').parentElement",
+        "actividades": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === 'Actividades a realizar').parentElement"
+      }
+    },
+    {
+      "goto": "/vacantes",
+      "wait": 4000
+    },
+    {
+      "click": "text=Filtros (3)"
+    },
+    {
+      "sleep": 1200
+    },
+    {
+      "shot": "03-filtros",
+      "regions": {
+        "lista": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === 'Filtros Configurados').closest('div').parentElement",
+        "nuevo": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === 'Filtro Personalizado').closest('.rounded-2xl, .rounded-xl')",
+        "edad": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === 'Rango de edad').closest('.rounded-xl, .rounded-2xl')"
+      }
+    }
+  ],
+  "scenes": [
+    {
+      "template": "intro",
+      "durationSec": 5,
+      "title": "Vacantes",
+      "chapter": "Introducción",
+      "objective": "Dar de alta plazas y definir los filtros que la IA preguntará.",
+      "narration": {
+        "text": "En este video aprenderás a dar de alta vacantes y a definir los filtros que Sofía preguntará a los candidatos."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 9,
+      "title": "Tus vacantes",
+      "screenshot": "captures/01-listado.png",
+      "highlights": [
+        {
+          "region": "tarjeta",
+          "label": "Vacante"
+        },
+        {
+          "region": "activa",
+          "label": "Activa"
+        },
+        {
+          "region": "anadir",
+          "label": "Añadir Vacante"
+        },
+        {
+          "region": "guardar",
+          "label": "Guardar cambios"
+        }
+      ],
+      "narration": {
+        "text": "Sofía solo ofrece las vacantes que existen aquí y están activas. Con Añadir Vacante creas una nueva, y al terminar pulsa Guardar para aplicar los cambios."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 10,
+      "title": "Datos de la vacante",
+      "screenshot": "captures/02-editar.png",
+      "highlights": [
+        {
+          "region": "naves",
+          "label": "Naves"
+        },
+        {
+          "region": "claves",
+          "label": "Palabras clave"
+        },
+        {
+          "region": "detalles",
+          "label": "Sueldo y horario"
+        },
+        {
+          "region": "actividades",
+          "label": "Actividades"
+        }
+      ],
+      "narration": {
+        "text": "Elige las naves donde aplica, agrega palabras clave para que la IA la reconozca con otros nombres, y describe sueldo, horario y actividades: Sofía se los envía al candidato."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 9,
+      "title": "Los filtros",
+      "screenshot": "captures/03-filtros.png",
+      "highlights": [
+        {
+          "region": "lista",
+          "label": "Filtros activos"
+        },
+        {
+          "region": "nuevo",
+          "label": "Nuevo filtro"
+        }
+      ],
+      "narration": {
+        "text": "Cada filtro es una pregunta que Sofía hará, con la respuesta esperada. Escríbela como se la dirías a la persona por WhatsApp."
+      }
+    },
+    {
+      "template": "outro",
+      "durationSec": 7,
+      "title": "Antes de terminar",
+      "chapter": "Errores frecuentes",
+      "mistakes": [
+        "Olvidar pulsar Guardar.",
+        "Dejar una vacante sin nave.",
+        "Preguntas ambiguas en los filtros."
+      ],
+      "conclusion": "Una vacante bien capturada es una vacante que Sofía sí ofrece.",
+      "narration": {
+        "text": "Recuerda guardar tus cambios. Una vacante bien capturada es una vacante que Sofía sí ofrece."
+      }
+    }
+  ]
+}

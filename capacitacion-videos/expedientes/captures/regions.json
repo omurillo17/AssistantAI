@@ -1,0 +1,109 @@
+{
+  "01-tablero": {
+    "contadores": {
+      "x": 0.088,
+      "y": 0.23,
+      "width": 0.877,
+      "height": 0.122
+    },
+    "filtros": {
+      "x": 0.088,
+      "y": 0.384,
+      "width": 0.877,
+      "height": 0.115
+    },
+    "tablero": {
+      "x": 0.088,
+      "y": 0.53,
+      "width": 0.877,
+      "height": 0.47
+    },
+    "revisar": null
+  },
+  "02-directorio": {
+    "tabla": {
+      "x": 0.089,
+      "y": 0.531,
+      "width": 0.876,
+      "height": 0.469
+    },
+    "vista": {
+      "x": 0.187,
+      "y": 0.418,
+      "width": 0.089,
+      "height": 0.047
+    }
+  },
+  "03-expediente": {
+    "estado": {
+      "x": 0.096,
+      "y": 0.234,
+      "width": 0.316,
+      "height": 0.063
+    },
+    "resumen": {
+      "x": 0.096,
+      "y": 0.327,
+      "width": 0.316,
+      "height": 0.303
+    },
+    "documentos": {
+      "x": 0.096,
+      "y": 0.661,
+      "width": 0.316,
+      "height": 0.656
+    },
+    "historial": {
+      "x": 0.43,
+      "y": 0.171,
+      "width": 0.492,
+      "height": 0.059
+    }
+  },
+  "04-alerta-identidad": {
+    "motivo": {
+      "x": 0.255,
+      "y": 0.272,
+      "width": 0.489,
+      "height": 0.534
+    },
+    "curpIne": {
+      "x": 0.267,
+      "y": 0.394,
+      "width": 0.23,
+      "height": 0.086
+    },
+    "curpConstancia": {
+      "x": 0.503,
+      "y": 0.394,
+      "width": 0.23,
+      "height": 0.086
+    },
+    "validar": {
+      "x": 0.267,
+      "y": 0.681,
+      "width": 0.23,
+      "height": 0.057
+    },
+    "noValidar": {
+      "x": 0.503,
+      "y": 0.681,
+      "width": 0.23,
+      "height": 0.057
+    },
+    "despues": {
+      "x": 0.267,
+      "y": 0.762,
+      "width": 0.466,
+      "height": 0.021
+    }
+  },
+  "05-validado": {
+    "sofia": {
+      "x": 0.788,
+      "y": 0.607,
+      "width": 0.206,
+      "height": 0.219
+    }
+  }
+}

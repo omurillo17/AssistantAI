@@ -1,0 +1,123 @@
+{
+  "$schema": "../../../Vid/packages/content-schema/schema/video-script.schema.json",
+  "id": "estados-candidato",
+  "title": "Estados del candidato",
+  "lang": "es",
+  "status": "verified",
+  "format": {
+    "orientation": "landscape",
+    "size": 1920,
+    "fps": 30
+  },
+  "theme": {
+    "primary": "#0C66AC",
+    "background": "#0B1E33"
+  },
+  "burnCaptions": false,
+  "capture": [
+    {
+      "use": "login"
+    },
+    {
+      "goto": "/capacitacion/estados-candidato",
+      "wait": 4000
+    },
+    {
+      "eval": "document.getElementById('catalogo')?.scrollIntoView()"
+    },
+    {
+      "sleep": 1000
+    },
+    {
+      "shot": "01-catalogo",
+      "regions": {
+        "nuevo": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === 'Nuevo').closest('.rounded-xl, .rounded-2xl')",
+        "ia": "js=[...document.querySelectorAll('span')].find(s => s.textContent.trim() === 'La IA')",
+        "ambos": "js=[...document.querySelectorAll('span')].find(s => s.textContent.trim() === 'Ambos')"
+      }
+    },
+    {
+      "goto": "/expedientes",
+      "wait": 4000
+    },
+    {
+      "click": "text=ANA RAMIREZ SOTO"
+    },
+    {
+      "waitFor": "text=Resumen de IA Sofía"
+    },
+    {
+      "sleep": 1200
+    },
+    {
+      "shot": "02-cambiar",
+      "regions": {
+        "estado": "js=[...document.querySelectorAll('label')].find(l => l.textContent.includes('Estado del Proceso')).nextElementSibling"
+      }
+    }
+  ],
+  "scenes": [
+    {
+      "template": "intro",
+      "durationSec": 5,
+      "title": "Estados del candidato",
+      "chapter": "Introducción",
+      "objective": "Saber qué significa cada estado y quién lo asigna.",
+      "narration": {
+        "text": "Cada candidato tiene un estado que indica en qué parte del proceso va. Veamos qué significa cada uno y quién lo pone."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 10,
+      "title": "El catálogo",
+      "screenshot": "captures/01-catalogo.png",
+      "highlights": [
+        {
+          "region": "nuevo",
+          "label": "Primer estado"
+        },
+        {
+          "region": "ia",
+          "label": "Lo pone la IA"
+        },
+        {
+          "region": "ambos",
+          "label": "IA o tú"
+        }
+      ],
+      "narration": {
+        "text": "En la lección escrita está el catálogo completo, en el orden del proceso. La etiqueta de cada estado indica quién lo mueve: la IA sola, tú desde el expediente, o ambos."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 9,
+      "title": "Los estados finales los pones tú",
+      "screenshot": "captures/02-cambiar.png",
+      "highlights": [
+        {
+          "region": "estado",
+          "label": "Estado del proceso"
+        }
+      ],
+      "narration": {
+        "text": "La IA avanza el estado durante la conversación, pero Entrevistado, Contratado o Rechazado los pones tú desde el expediente, en Estado del proceso."
+      }
+    },
+    {
+      "template": "outro",
+      "durationSec": 7,
+      "title": "Antes de terminar",
+      "chapter": "Errores frecuentes",
+      "mistakes": [
+        "Dejar a un contratado como Cita Agendada.",
+        "No marcar a los descartados."
+      ],
+      "conclusion": "Estados al día, números confiables en Dashboards.",
+      "narration": {
+        "text": "Mantén los estados al día: de ellos salen el embudo y la conversión de Dashboards."
+      }
+    }
+  ]
+}

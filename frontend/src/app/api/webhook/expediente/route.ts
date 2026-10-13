@@ -40,12 +40,29 @@ function checkCurpMalFormada(esINE: boolean, esConstancia: boolean, esAmbos: boo
   return false;
 }
 
+/** Estado actual del candidato leído de la BD antes de aplicar el webhook. */
+type DbCandidato = CandidatoContext & {
+  resumen_ia?: string | null;
+  datos_ine?: unknown;
+  datos_rfc?: unknown;
+  nombre_constancia?: string | null;
+  curp_ine?: string | null;
+  curp_rfc?: string | null;
+  alerta_identidad_estado?: string | null;
+  alerta_identidad_motivo?: string | null;
+  asignado_a_id?: string | null;
+  db_cv_manual?: boolean;
+  db_fecha?: string | null;
+  nombre_ine?: string | null;
+  vacante_interes?: string | null;
+};
+
 function resolveIdAlertState(
   isAlert: boolean,
   curpMalFormada: boolean,
   identidad_motivo: string | undefined,
   tipo_origen: string,
-  dbCandidato: any
+  dbCandidato: DbCandidato
 ) {
   if (isAlert) {
     const motivo = identidad_motivo || (curpMalFormada ? `CURP con formato irregular en ${tipo_origen}. Verifica el documento manualmente.` : (dbCandidato.alerta_identidad_motivo ?? null));
@@ -98,7 +115,7 @@ function resolveDocumentStateAndAlerts({
   tipo_origen: string;
   identidad_motivo?: string;
   newStateValue: string;
-  dbCandidato: any;
+  dbCandidato: DbCandidato;
 }) {
   if (esCV) {
     return {
@@ -130,7 +147,7 @@ function resolveDocumentStateAndAlerts({
 
   return {
     estado_final: newStateValue,
-    resumen_ia_final: dbCandidato.resumen_ia,
+    resumen_ia_final: dbCandidato.resumen_ia ?? null,
     alertaIdentidadEstadoFinal: dbCandidato.alerta_identidad_estado ?? null,
     alertaIdentidadMotivoFinal: dbCandidato.alerta_identidad_motivo ?? null,
     debeNotificarReclutador: false,
@@ -138,7 +155,7 @@ function resolveDocumentStateAndAlerts({
 }
 
 function resolveSafeVacante(vacante: string | undefined, resumen_ia_final: string | null, dbVacanteInteres?: string | null): string {
-  let safe_vacante = limpiarVacante(vacante);
+  const safe_vacante = limpiarVacante(vacante);
   if (esPlaceholderVacante(safe_vacante)) {
     const matchVacanteResumen = /Vacante:\s*([^.\n]+)/i.exec(resumen_ia_final || '');
     if (matchVacanteResumen && !esPlaceholderVacante(matchVacanteResumen[1])) {
@@ -167,7 +184,7 @@ function parseDocumentData(datos_documento: unknown, link_cv?: string) {
 }
 
 function cleanName(nombre: string | undefined, nombreDocExtrahido: string): string {
-  let safe_nombre = (nombre || '').replace(/[\uFE0F\u200B-\u200D\u200E\u200F\uFEFF]/g, '').trim();
+  const safe_nombre = (nombre || '').replace(/[\uFE0F\u200B-\u200D\u200E\u200F\uFEFF]/g, '').trim();
   if (!safe_nombre || safe_nombre === 'Candidato' || safe_nombre === 'No registrado' || /^\+?\d+$/.test(safe_nombre)) {
     return nombreDocExtrahido || 'Candidato';
   }
@@ -176,7 +193,7 @@ function cleanName(nombre: string | undefined, nombreDocExtrahido: string): stri
 
 function runCandidatoMachine(
   currentState: string,
-  dbCandidato: any,
+  dbCandidato: DbCandidato,
   flags: { esBloqueado: boolean; esCV: boolean; esINE: boolean; esConstancia: boolean; esAmbos: boolean }
 ): string {
   let event: CandidatoEvent | null = null;
@@ -279,21 +296,7 @@ export async function POST(request: Request) {
     // 1. Obtener estado actual
     const res = await pool.query('SELECT estado, tiene_cv, cv_manual as db_cv_manual, fecha_entrevista as db_fecha, privacidad_aceptada, escalado, datos_ine, datos_rfc, nombre_ine, nombre_constancia, curp_ine, curp_rfc, alerta_identidad_estado, alerta_identidad_motivo, asignado_a_id, vacante_interes FROM candidatos WHERE telefono = $1', [telefono]);
     let currentState = 'NUEVO';
-    let dbCandidato: CandidatoContext & {
-      resumen_ia?: string | null;
-      datos_ine?: unknown;
-      datos_rfc?: unknown;
-      nombre_constancia?: string | null;
-      curp_ine?: string | null;
-      curp_rfc?: string | null;
-      alerta_identidad_estado?: string | null;
-      alerta_identidad_motivo?: string | null;
-      asignado_a_id?: string | null;
-      db_cv_manual?: boolean;
-      db_fecha?: string | null;
-      nombre_ine?: string | null;
-      vacante_interes?: string | null;
-    } = {
+    let dbCandidato: DbCandidato = {
       telefono,
       tiene_cv: false,
       cv_manual: false,

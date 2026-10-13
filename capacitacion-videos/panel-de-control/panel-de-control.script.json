@@ -1,0 +1,105 @@
+{
+  "$schema": "../../../Vid/packages/content-schema/schema/video-script.schema.json",
+  "id": "panel-de-control",
+  "title": "Panel de Control (Inicio)",
+  "lang": "es",
+  "status": "verified",
+  "format": {
+    "orientation": "landscape",
+    "size": 1920,
+    "fps": 30
+  },
+  "theme": {
+    "primary": "#0C66AC",
+    "background": "#0B1E33"
+  },
+  "burnCaptions": false,
+  "capture": [
+    {
+      "use": "login"
+    },
+    {
+      "goto": "/",
+      "wait": 3500
+    },
+    {
+      "shot": "01-panel",
+      "regions": {
+        "tarjetas": "js=[...document.querySelectorAll('a')].find(a => a.innerText.includes('Mensajes')).parentElement",
+        "chats": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === '3 chats')",
+        "mensajes": "js=[...document.querySelectorAll('a')].find(a => a.innerText.includes('Mensajes'))"
+      }
+    },
+    {
+      "use": "login-admin"
+    },
+    {
+      "goto": "/",
+      "wait": 3500
+    },
+    {
+      "shot": "02-panel-admin",
+      "regions": {
+        "admin": "js=[...document.querySelectorAll('a')].find(a => a.getAttribute('href') === '/usuarios').parentElement"
+      }
+    }
+  ],
+  "scenes": [
+    {
+      "template": "intro",
+      "durationSec": 4,
+      "title": "Panel de Control",
+      "chapter": "Introducción",
+      "objective": "Conocer la pantalla de inicio y el número que debes revisar primero.",
+      "narration": {
+        "text": "El Panel de Control es la pantalla de inicio. Desde aquí entras a cada módulo de la plataforma."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 8,
+      "title": "Una tarjeta por módulo",
+      "screenshot": "captures/01-panel.png",
+      "highlights": [
+        {
+          "region": "tarjetas"
+        },
+        {
+          "region": "chats",
+          "label": "Chats sin leer"
+        }
+      ],
+      "narration": {
+        "text": "Cada tarjeta de color abre un módulo. La etiqueta roja de Mensajes indica cuántas conversaciones activas tienen mensajes sin leer: es el primer número que debes revisar al empezar tu turno."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 6,
+      "title": "Bloque de administración",
+      "screenshot": "captures/02-panel-admin.png",
+      "highlights": [
+        {
+          "region": "admin",
+          "label": "Solo ADMIN y ROOT"
+        }
+      ],
+      "narration": {
+        "text": "Los perfiles ADMIN y ROOT ven además un bloque de administración. Si no lo ves, es normal: tu rol no tiene esos permisos."
+      }
+    },
+    {
+      "template": "outro",
+      "durationSec": 7,
+      "title": "Consejo",
+      "chapter": "Errores frecuentes",
+      "mistakes": [
+        "Ignorar el contador de chats sin leer."
+      ],
+      "conclusion": "Empieza cada turno revisando el contador de Mensajes.",
+      "narration": {
+        "text": "Empieza cada turno revisando el contador de Mensajes."
+      }
+    }
+  ]
+}

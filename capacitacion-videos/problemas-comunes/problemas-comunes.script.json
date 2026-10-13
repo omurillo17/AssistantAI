@@ -1,0 +1,190 @@
+{
+  "$schema": "../../../Vid/packages/content-schema/schema/video-script.schema.json",
+  "id": "problemas-comunes",
+  "title": "Problemas comunes",
+  "lang": "es",
+  "status": "verified",
+  "format": {
+    "orientation": "landscape",
+    "size": 1920,
+    "fps": 30
+  },
+  "theme": {
+    "primary": "#0C66AC",
+    "background": "#0B1E33"
+  },
+  "burnCaptions": false,
+  "capture": [
+    {
+      "use": "login"
+    },
+    {
+      "run": "node -e \"require('fs').writeFileSync('demo/.waha-caida','')\""
+    },
+    {
+      "goto": "/",
+      "wait": 9000
+    },
+    {
+      "shot": "01-whatsapp",
+      "regions": {
+        "aviso": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount === 0 && e.textContent.includes('Conexión con WhatsApp Perdida')).closest('div').parentElement.parentElement"
+      }
+    },
+    {
+      "run": "node -e \"require('fs').rmSync('demo/.waha-caida',{force:true})\""
+    },
+    {
+      "goto": "/",
+      "wait": 4000
+    },
+    {
+      "click": "[title=\"Cambiar empresa o nave\"]"
+    },
+    {
+      "shot": "02-selector",
+      "regions": {
+        "boton": "[title=\"Cambiar empresa o nave\"]",
+        "empresa": "text=Grupo Industrial Demo (Todo)"
+      }
+    },
+    {
+      "goto": "/mensajes",
+      "wait": 3500
+    },
+    {
+      "click": "text=General"
+    },
+    {
+      "sleep": 1200
+    },
+    {
+      "click": "text=Jorge Castillo"
+    },
+    {
+      "waitFor": "js=[...document.querySelector('#mensajes-chat-input').closest('main').querySelectorAll('*')].find(e => e.childElementCount === 0 && e.textContent.trim().startsWith('Antes quiero saber'))"
+    },
+    {
+      "sleep": 800
+    },
+    {
+      "use": "cerrar-avisos"
+    },
+    {
+      "shot": "03-humano",
+      "regions": {
+        "humano": "js=[...document.querySelectorAll('span')].find(s => s.textContent.trim() === 'Humano')",
+        "alBot": "text=Al Bot"
+      }
+    },
+    {
+      "goto": "/vacantes",
+      "wait": 4000
+    },
+    {
+      "shot": "04-vacante",
+      "regions": {
+        "activa": "js=document.querySelector('input[type=checkbox]')",
+        "tarjeta": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === 'MONTACARGUISTA').closest('.rounded-xl, .rounded-2xl')"
+      }
+    }
+  ],
+  "scenes": [
+    {
+      "template": "intro",
+      "durationSec": 4,
+      "title": "Problemas comunes",
+      "chapter": "Introducción",
+      "objective": "Resolver en minutos lo que más se pregunta.",
+      "narration": {
+        "text": "Estos son los problemas más comunes y cómo resolverlos en un par de minutos."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 8,
+      "title": "Aviso de WhatsApp desconectado",
+      "screenshot": "captures/01-whatsapp.png",
+      "highlights": [
+        {
+          "region": "aviso",
+          "label": "WhatsApp desconectado"
+        }
+      ],
+      "narration": {
+        "text": "Si aparece este aviso rojo, no entra ni sale ningún mensaje hasta que se restablezca la conexión. Avisa a soporte en lugar de seguir intentando."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 8,
+      "title": "No veo candidatos",
+      "screenshot": "captures/02-selector.png",
+      "highlights": [
+        {
+          "region": "boton",
+          "label": "Selector"
+        },
+        {
+          "region": "empresa",
+          "label": "Toda la empresa"
+        }
+      ],
+      "narration": {
+        "text": "Si tu bandeja o tus expedientes aparecen vacíos, revisa primero el selector de empresa y nave, y quita los filtros de la tabla."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 8,
+      "title": "El bot no responde",
+      "screenshot": "captures/03-humano.png",
+      "highlights": [
+        {
+          "region": "humano",
+          "label": "Chat escalado"
+        },
+        {
+          "region": "alBot",
+          "label": "Devolver al bot"
+        }
+      ],
+      "narration": {
+        "text": "Si el bot dejó de responderle a alguien, probablemente el chat está en Humano. Contesta tú, o pulsa Al Bot para que Sofía retome."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 8,
+      "title": "La IA no ofrece una vacante",
+      "screenshot": "captures/04-vacante.png",
+      "highlights": [
+        {
+          "region": "tarjeta",
+          "label": "Vacante"
+        },
+        {
+          "region": "activa",
+          "label": "¿Está activa?"
+        }
+      ],
+      "narration": {
+        "text": "Si Sofía no ofrece una vacante, verifica que esté activa, guardada y asignada a la nave correcta."
+      }
+    },
+    {
+      "template": "outro",
+      "durationSec": 7,
+      "title": "Si sigue fallando",
+      "chapter": "Errores frecuentes",
+      "mistakes": [
+        "Seguir intentando con WhatsApp desconectado.",
+        "Buscar con el selector en otra nave."
+      ],
+      "conclusion": "Si nada de esto lo resuelve, avisa a tu encargado o a soporte.",
+      "narration": {
+        "text": "Si nada de esto lo resuelve, avisa a tu encargado o a soporte."
+      }
+    }
+  ]
+}

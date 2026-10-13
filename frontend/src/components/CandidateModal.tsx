@@ -255,55 +255,55 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
 
   return (
     <div
-      className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4 lg:p-6"
+      className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-2 sm:p-4 lg:p-6"
       {...backdropHandlers}
     >
       <div
-        className="bg-white rounded-2xl w-full max-w-6xl max-h-[90vh] shadow-2xl flex flex-col overflow-hidden animate-fade-in"
+        className="bg-white rounded-2xl w-full max-w-6xl max-h-[94vh] sm:max-h-[90vh] shadow-2xl flex flex-col overflow-hidden animate-fade-in"
       >
         {/* AVISO DE ACTUALIZACIÓN AUTOMÁTICA */}
         {justUpdated && (
-          <div className="px-6 py-2 bg-indigo-600 text-white text-xs font-bold flex items-center gap-2 flex-shrink-0 animate-fade-in">
+          <div className="px-4 sm:px-6 py-2 bg-indigo-600 text-white text-xs font-bold flex items-center gap-2 flex-shrink-0 animate-fade-in">
             <Sparkles size={13} /> Se actualizó por nueva información
           </div>
         )}
 
         {/* HEADER */}
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 flex-shrink-0">
-          <div>
-            <h2 className="text-2xl font-extrabold text-slate-800">{nombre}</h2>
-            <div className="flex items-center gap-3 mt-1 text-sm text-slate-500">
+        <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 bg-slate-50 flex-shrink-0">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg sm:text-2xl font-extrabold text-slate-800 truncate">{nombre}</h2>
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3 mt-1 text-xs sm:text-sm text-slate-500">
               <span className="font-mono bg-slate-200 px-2 py-0.5 rounded text-slate-700">{cand.telefono}</span>
               {cand.vacante_interes && (
-                <span className="flex items-center gap-1 font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">
-                  <Briefcase size={14} /> {cand.vacante_interes}
+                <span className="flex items-center gap-1 font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded text-xs">
+                  <Briefcase size={13} /> {cand.vacante_interes}
                 </span>
               )}
               {cand.nave_interes && (
-                <span className="flex items-center gap-1 font-semibold text-slate-600 bg-slate-200 px-2 py-0.5 rounded">
+                <span className="flex items-center gap-1 font-semibold text-slate-600 bg-slate-200 px-2 py-0.5 rounded text-xs">
                   {formatNaveName(cand.nave_interes)}
                 </span>
               )}
             </div>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4 shrink-0">
             <button
               onClick={() => onGoToChat(cand.telefono)}
-              className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white hover:bg-indigo-700 font-bold rounded-lg transition-colors shadow-sm"
+              className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 sm:py-2 bg-indigo-600 text-white hover:bg-indigo-700 font-bold rounded-lg transition-colors shadow-sm text-xs sm:text-sm"
             >
-              <MessageSquare size={16} /> Ir a Mensajes
+              <MessageSquare size={15} /> <span className="hidden xs:inline">Ir a</span> Mensajes
             </button>
-            <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-full transition-colors">
-              <X size={24} />
+            <button onClick={onClose} className="p-1.5 sm:p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-full transition-colors">
+              <X size={22} />
             </button>
           </div>
         </div>
 
         {/* BODY (Split Layout) */}
-        <div className="flex flex-1 overflow-hidden flex-col md:flex-row min-h-0">
+        <div className="flex flex-1 overflow-y-auto md:overflow-hidden flex-col md:flex-row min-h-0">
 
           {/* LEFT COL: Profile Info */}
-          <div className="w-full md:w-1/2 lg:w-5/12 border-r border-slate-100 overflow-y-auto p-6 space-y-6 bg-white">
+          <div className="w-full md:w-1/2 lg:w-5/12 border-b md:border-b-0 md:border-r border-slate-100 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6 bg-white">
 
             {/* ESTADO CHANGER */}
             <div>

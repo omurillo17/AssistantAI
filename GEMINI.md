@@ -31,13 +31,7 @@
 ---
 
 ## 2. ARQUITECTURA GENERAL
-- **PostgreSQL**: Base `virgo_db` (Puerto 5433 local).def decode(self, s: str) -> List[str]:
-        recorer = 0
-        newList = []
-        for i in s:
-            if i == "#":
-                palabra = s[i-1]
-                newList.append(palabra)
+- **PostgreSQL**: Base `virgo_db` (Puerto 5433 local).
 - **Backend**: FastAPI + Python (`http://backend:8000`).
 - **Frontend**: Next.js App Router (`http://frontend:3001`).
 - **WAHA**: WhatsApp Web Engine (`WEBJS`).

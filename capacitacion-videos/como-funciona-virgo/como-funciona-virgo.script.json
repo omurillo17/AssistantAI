@@ -1,0 +1,167 @@
+{
+  "$schema": "../../../Vid/packages/content-schema/schema/video-script.schema.json",
+  "id": "como-funciona-virgo",
+  "title": "Cómo funciona el asistente (Sofía)",
+  "lang": "es",
+  "status": "verified",
+  "format": {
+    "orientation": "landscape",
+    "size": 1920,
+    "fps": 30
+  },
+  "theme": {
+    "primary": "#0C66AC",
+    "background": "#0B1E33"
+  },
+  "burnCaptions": false,
+  "capture": [
+    {
+      "use": "login"
+    },
+    {
+      "goto": "/mensajes",
+      "wait": 3500
+    },
+    {
+      "click": "text=Ana Ramirez Soto"
+    },
+    {
+      "waitFor": "js=[...document.querySelector('#mensajes-chat-input').closest('main').querySelectorAll('*')].find(e => e.childElementCount === 0 && e.textContent.trim().startsWith('Listo, tu entrevista'))"
+    },
+    {
+      "sleep": 800
+    },
+    {
+      "shot": "01-chat-bot",
+      "regions": {
+        "chat": "js=document.querySelector('#mensajes-chat-input').closest('main')",
+        "cita": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === 'Listo, tu entrevista quedó agendada hoy a las 17:00 en CEDIS Zapopan. Te mando un recordatorio antes de la cita.').parentElement"
+      }
+    },
+    {
+      "click": "text=General"
+    },
+    {
+      "sleep": 1200
+    },
+    {
+      "click": "text=Jorge Castillo"
+    },
+    {
+      "waitFor": "js=[...document.querySelector('#mensajes-chat-input').closest('main').querySelectorAll('*')].find(e => e.childElementCount === 0 && e.textContent.trim().startsWith('Antes quiero saber'))"
+    },
+    {
+      "sleep": 800
+    },
+    {
+      "use": "cerrar-avisos"
+    },
+    {
+      "shot": "02-chat-escalado",
+      "regions": {
+        "humano": "js=[...document.querySelectorAll('span')].find(s => s.textContent.trim() === 'Humano')",
+        "pide": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === 'Antes quiero saber a qué hora se sale los sábados, ¿puedo hablar con alguien?').parentElement",
+        "alBot": "text=Al Bot"
+      }
+    },
+    {
+      "goto": "/expedientes",
+      "wait": 4000
+    },
+    {
+      "shot": "03-tablero",
+      "regions": {
+        "tablero": "js=document.querySelector('#expedientes-search').closest('.mx-auto').children[2]"
+      }
+    }
+  ],
+  "scenes": [
+    {
+      "template": "intro",
+      "durationSec": 5,
+      "title": "Cómo funciona el asistente",
+      "chapter": "Introducción",
+      "objective": "Entender qué hace Sofía sola por WhatsApp y en qué momento intervienes tú.",
+      "narration": {
+        "text": "Sofía es la asistente de reclutamiento. En este video verás qué hace sola por WhatsApp y en qué momento te toca intervenir a ti."
+      }
+    },
+    {
+      "template": "steps",
+      "durationSec": 12,
+      "title": "El recorrido de un candidato",
+      "screenshot": "captures/01-chat-bot.png",
+      "steps": [
+        "Da la bienvenida y muestra las vacantes.",
+        "Hace las preguntas de filtro.",
+        "Pide y lee CV, INE y constancia.",
+        "Agenda la entrevista y envía el recordatorio."
+      ],
+      "highlights": [
+        {
+          "region": "chat"
+        },
+        {
+          "region": "cita",
+          "label": "Cita agendada por Sofía"
+        }
+      ],
+      "narration": {
+        "text": "Cuando alguien escribe al WhatsApp de reclutamiento, Sofía le da la bienvenida, le muestra las vacantes, hace las preguntas de filtro, le pide sus documentos y, si el perfil es viable, agenda su entrevista."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 9,
+      "title": "Cuándo entra el humano",
+      "screenshot": "captures/02-chat-escalado.png",
+      "highlights": [
+        {
+          "region": "pide",
+          "label": "Pide hablar con una persona"
+        },
+        {
+          "region": "humano",
+          "label": "Chat escalado"
+        }
+      ],
+      "narration": {
+        "text": "Si el candidato pide hablar con una persona, o Sofía no sabe resolver algo, el chat se escala. Mientras un chat está en Humano, Sofía no contesta nada: te toca a ti."
+      }
+    },
+    {
+      "template": "steps",
+      "durationSec": 9,
+      "title": "Lo que Sofía no hace",
+      "screenshot": "captures/03-tablero.png",
+      "steps": [
+        "No contrata: Contratado lo marcas tú.",
+        "No inventa vacantes.",
+        "No responde chats escalados.",
+        "No valida identidades dudosas."
+      ],
+      "highlights": [
+        {
+          "region": "tablero"
+        }
+      ],
+      "narration": {
+        "text": "Sofía no contrata, no inventa vacantes, no responde los chats escalados y no valida identidades dudosas: todo eso queda en tus manos desde la plataforma."
+      }
+    },
+    {
+      "template": "outro",
+      "durationSec": 7,
+      "title": "Antes de terminar",
+      "chapter": "Errores frecuentes",
+      "mistakes": [
+        "Dejar un chat escalado sin respuesta.",
+        "Esperar que Sofía marque a alguien como contratado."
+      ],
+      "conclusion": "Sofía hace el trabajo repetitivo; tú decides en los momentos clave.",
+      "narration": {
+        "text": "Revisa a diario los chats escalados. Sofía hace el trabajo repetitivo y tú decides en los momentos clave."
+      }
+    }
+  ]
+}

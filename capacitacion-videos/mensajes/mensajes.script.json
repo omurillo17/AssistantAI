@@ -1,0 +1,204 @@
+{
+  "$schema": "../../../Vid/packages/content-schema/schema/video-script.schema.json",
+  "id": "mensajes",
+  "title": "Bandeja de Mensajes",
+  "lang": "es",
+  "status": "verified",
+  "format": {
+    "orientation": "landscape",
+    "size": 1920,
+    "fps": 30
+  },
+  "theme": {
+    "primary": "#0C66AC",
+    "background": "#0B1E33"
+  },
+  "burnCaptions": false,
+  "capture": [
+    {
+      "use": "login"
+    },
+    {
+      "goto": "/mensajes",
+      "wait": 3500
+    },
+    {
+      "click": "text=Ana Ramirez Soto"
+    },
+    {
+      "waitFor": "text=Listo, tu entrevista quedó agendada hoy a las 17:00 en CEDIS Zapopan. Te mando un recordatorio antes de la cita."
+    },
+    {
+      "shot": "01-bandeja",
+      "regions": {
+        "lista": "js=document.querySelector('#mensajes-search').closest('aside')",
+        "chat": "js=document.querySelector('#mensajes-chat-input').closest('main')",
+        "pestanas": "js=[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Mis Chats').parentElement",
+        "perfil": "text=Perfil"
+      }
+    },
+    {
+      "click": "text=General"
+    },
+    {
+      "sleep": 1200
+    },
+    {
+      "click": "text=Mafer López"
+    },
+    {
+      "waitFor": "js=[...document.querySelector('#mensajes-chat-input').closest('main').querySelectorAll('*')].find(e => e.childElementCount === 0 && e.textContent.trim() === 'Tengo 22 años')"
+    },
+    {
+      "sleep": 800
+    },
+    {
+      "shot": "02-chat-bot",
+      "regions": {
+        "bot": "js=[...document.querySelectorAll('span')].find(s => s.textContent.trim() === 'Bot')",
+        "control": "js=[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Control')",
+        "tomarChat": "text=Tomar Chat",
+        "aviso": "text=El bot está activo. Haz clic en \"Tomar Control\" para responder manualmente."
+      }
+    },
+    {
+      "click": "js=[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Control')"
+    },
+    {
+      "waitFor": "js=[...document.querySelectorAll('span')].find(s => s.textContent.trim() === 'Humano')"
+    },
+    {
+      "use": "cerrar-avisos"
+    },
+    {
+      "fill": "#mensajes-chat-input",
+      "value": "Hola Mafer, soy Laura del equipo de reclutamiento. ¿Qué turno te acomoda mejor?"
+    },
+    {
+      "shot": "03-control-tomado",
+      "regions": {
+        "humano": "js=[...document.querySelectorAll('span')].find(s => s.textContent.trim() === 'Humano')",
+        "escribir": "js=document.querySelector('#mensajes-chat-input').parentElement",
+        "alBot": "text=Al Bot"
+      }
+    }
+  ],
+  "scenes": [
+    {
+      "template": "intro",
+      "durationSec": 5,
+      "title": "Bandeja de Mensajes",
+      "objective": "Atender un chat de WhatsApp: tomar el control, responder y devolverlo al bot.",
+      "narration": {
+        "text": "En este video aprenderás a atender un chat de WhatsApp: tomar el control, responder y devolvérselo al bot."
+      },
+      "chapter": "Introducción"
+    },
+    {
+      "template": "demo",
+      "durationSec": 8,
+      "title": "Cómo está organizada",
+      "screenshot": "captures/01-bandeja.png",
+      "highlights": [
+        {
+          "region": "pestanas",
+          "label": "Pestañas"
+        },
+        {
+          "region": "lista",
+          "label": "Conversaciones"
+        },
+        {
+          "region": "chat",
+          "label": "Chat"
+        },
+        {
+          "region": "perfil",
+          "label": "Expediente"
+        }
+      ],
+      "narration": {
+        "text": "Las pestañas separan tus chats, la bandeja general y los descartados. A la izquierda están las conversaciones y a la derecha el chat. Es la conversación real de WhatsApp: lo que escribes le llega al candidato. El botón Perfil abre su expediente."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 7,
+      "title": "Chat atendido por el bot",
+      "screenshot": "captures/02-chat-bot.png",
+      "highlights": [
+        {
+          "region": "bot",
+          "label": "Bot activo"
+        },
+        {
+          "region": "tomarChat",
+          "label": "Tomar Chat"
+        },
+        {
+          "region": "control",
+          "label": "Control"
+        }
+      ],
+      "narration": {
+        "text": "Este chat lo atiende el bot. Tomar Chat te asigna la conversación. El botón Control silencia al bot y te deja escribir."
+      }
+    },
+    {
+      "template": "steps",
+      "durationSec": 9,
+      "title": "Responder tú mismo",
+      "screenshot": "captures/03-control-tomado.png",
+      "steps": [
+        "Abre la conversación.",
+        "Pulsa Control: la etiqueta cambia a Humano.",
+        "Escribe y envía tu mensaje.",
+        "Al terminar, pulsa Al Bot."
+      ],
+      "highlights": [
+        {
+          "region": "humano"
+        },
+        {
+          "region": "escribir"
+        },
+        {
+          "region": "alBot"
+        }
+      ],
+      "narration": {
+        "text": "Abre la conversación y pulsa Control. La etiqueta cambia a Humano y se habilita la caja de texto. Escribe y envía tu mensaje. Al terminar, pulsa Al Bot."
+      }
+    },
+    {
+      "template": "result",
+      "durationSec": 6,
+      "title": "Chat en modo Humano",
+      "screenshot": "captures/03-control-tomado.png",
+      "description": "El bot deja de responder y tú escribes. Al Bot le devuelve la conversación al asistente.",
+      "highlights": [
+        {
+          "region": "alBot",
+          "label": "Al Bot"
+        }
+      ],
+      "narration": {
+        "text": "Mientras el chat está en Humano, el bot no responde aunque el candidato siga escribiendo. Pulsa Al Bot para que retome el proceso."
+      }
+    },
+    {
+      "template": "outro",
+      "durationSec": 7,
+      "title": "Buenas prácticas",
+      "mistakes": [
+        "Dejar un chat en Humano y olvidarlo: nadie le contestará.",
+        "Escribir sin leer el historial.",
+        "Tomar un chat que ya atiende otro reclutador."
+      ],
+      "conclusion": "Revisa a diario los chats en Humano y devuélvelos al bot cuando termines.",
+      "narration": {
+        "text": "Evita estos errores frecuentes. Revisa a diario los chats en Humano y devuélvelos al bot cuando termines."
+      }
+    }
+  ]
+}

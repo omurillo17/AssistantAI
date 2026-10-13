@@ -1,0 +1,253 @@
+{
+  "$schema": "../../../Vid/packages/content-schema/schema/video-script.schema.json",
+  "id": "expedientes",
+  "title": "Expedientes",
+  "lang": "es",
+  "status": "verified",
+  "format": {
+    "orientation": "landscape",
+    "size": 1920,
+    "fps": 30
+  },
+  "theme": {
+    "primary": "#0C66AC",
+    "background": "#0B1E33"
+  },
+  "burnCaptions": false,
+  "capture": [
+    {
+      "use": "login"
+    },
+    {
+      "goto": "/expedientes",
+      "wait": 4000
+    },
+    {
+      "shot": "01-tablero",
+      "regions": {
+        "contadores": "js=document.querySelector('#expedientes-search').closest('.mx-auto').children[0]",
+        "filtros": "js=document.querySelector('#expedientes-search').closest('.rounded-2xl')",
+        "tablero": "js=document.querySelector('#expedientes-search').closest('.mx-auto').children[2]",
+        "revisar": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && /REVISAR/.test(e.textContent) && e.textContent.trim().length < 14)"
+      }
+    },
+    {
+      "click": "text=Directorio"
+    },
+    {
+      "sleep": 1500
+    },
+    {
+      "shot": "02-directorio",
+      "regions": {
+        "tabla": "table",
+        "vista": "text=Directorio"
+      }
+    },
+    {
+      "click": "text=Tablero"
+    },
+    {
+      "sleep": 1000
+    },
+    {
+      "click": "text=ANA RAMIREZ SOTO"
+    },
+    {
+      "waitFor": "text=Resumen de IA Sofía"
+    },
+    {
+      "sleep": 1200
+    },
+    {
+      "shot": "03-expediente",
+      "regions": {
+        "estado": "js=[...document.querySelectorAll('label')].find(l => l.textContent.includes('Estado del Proceso')).nextElementSibling",
+        "resumen": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === 'Resumen de IA Sofía').closest('[class*=\"border\"]')",
+        "documentos": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === 'Documentos')?.parentElement",
+        "historial": "text=Historial de Conversación (WhatsApp)"
+      }
+    },
+    {
+      "run": "docker exec assistantai-demo-postgres-demo-1 psql -U demo -d virgo_demo -c \"UPDATE candidatos SET asignado_a_id = 'rec-laura', alerta_identidad_estado = 'PENDIENTE', alerta_identidad_motivo = 'Diferencia menor: la CURP del INE (HECS980411MJCRMF07) y la de la constancia (HECS980411MJCRMF01) difieren en los últimos dígitos, probablemente por la calidad de la foto.' WHERE telefono = '5213310000007'\""
+    },
+    {
+      "goto": "/expedientes",
+      "wait": 4500
+    },
+    {
+      "waitFor": "text=Verificación de identidad"
+    },
+    {
+      "shot": "04-alerta-identidad",
+      "regions": {
+        "motivo": "text=Diferencia menor",
+        "curpIne": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount === 0 && /^curp en ine$/i.test(e.textContent.trim())).parentElement",
+        "curpConstancia": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount === 0 && /^curp en constancia$/i.test(e.textContent.trim())).parentElement",
+        "validar": "js=[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Validar')",
+        "noValidar": "js=[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'No validar')",
+        "despues": "text=Revisar después"
+      }
+    },
+    {
+      "click": "js=[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Validar')"
+    },
+    {
+      "sleep": 3000
+    },
+    {
+      "goto": "/expedientes",
+      "wait": 4000
+    },
+    {
+      "shot": "05-validado",
+      "regions": {
+        "sofia": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === 'SOFIA HERRERA CAMPOS').closest('[class*=\"rounded\"]')"
+      }
+    }
+  ],
+  "scenes": [
+    {
+      "template": "intro",
+      "durationSec": 5,
+      "title": "Expedientes",
+      "objective": "Buscar candidatos, revisar su expediente y resolver alertas de identidad.",
+      "narration": {
+        "text": "En este video aprenderás a buscar candidatos, revisar su expediente y resolver alertas de identidad."
+      },
+      "chapter": "Introducción"
+    },
+    {
+      "template": "demo",
+      "durationSec": 8,
+      "title": "El tablero de candidatos",
+      "screenshot": "captures/01-tablero.png",
+      "highlights": [
+        {
+          "region": "contadores",
+          "label": "Pendientes de hoy"
+        },
+        {
+          "region": "filtros",
+          "label": "Búsqueda y filtros"
+        },
+        {
+          "region": "tablero",
+          "label": "Candidatos por etapa"
+        }
+      ],
+      "narration": {
+        "text": "Arriba ves los chats pendientes y las entrevistas de hoy. Con los filtros buscas por nombre, teléfono, nave, vacante o estado. El tablero agrupa a los candidatos por etapa."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 5,
+      "title": "Vista de directorio",
+      "screenshot": "captures/02-directorio.png",
+      "highlights": [
+        {
+          "region": "vista",
+          "label": "Directorio"
+        },
+        {
+          "region": "tabla"
+        }
+      ],
+      "narration": {
+        "text": "Directorio muestra los mismos candidatos en forma de tabla."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 8,
+      "title": "El expediente",
+      "screenshot": "captures/03-expediente.png",
+      "highlights": [
+        {
+          "region": "estado",
+          "label": "Estado del proceso"
+        },
+        {
+          "region": "resumen",
+          "label": "Resumen de la IA"
+        },
+        {
+          "region": "documentos",
+          "label": "Documentos"
+        },
+        {
+          "region": "historial",
+          "label": "Conversación"
+        }
+      ],
+      "narration": {
+        "text": "Al abrir un candidato ves su expediente: el estado del proceso, el resumen de la IA, sus documentos y el historial de WhatsApp. Los estados del final, como Entrevistado, Contratado o Rechazado, los pones tú."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 9,
+      "title": "Alerta de identidad",
+      "screenshot": "captures/04-alerta-identidad.png",
+      "highlights": [
+        {
+          "region": "motivo",
+          "label": "Motivo"
+        },
+        {
+          "region": "curpIne",
+          "label": "CURP del INE"
+        },
+        {
+          "region": "curpConstancia",
+          "label": "CURP de la constancia"
+        },
+        {
+          "region": "validar",
+          "label": "Validar"
+        },
+        {
+          "region": "noValidar",
+          "label": "No validar"
+        },
+        {
+          "region": "despues",
+          "label": "Revisar después"
+        }
+      ],
+      "narration": {
+        "text": "Si la CURP del INE no coincide con la de la constancia, aparece esta alerta. Lee el motivo y compara las dos CURP. Luego decide: Validar, No validar, o Revisar después. Ante la duda, consulta a tu encargado."
+      }
+    },
+    {
+      "template": "result",
+      "durationSec": 6,
+      "title": "Identidad validada",
+      "screenshot": "captures/05-validado.png",
+      "description": "Al validar, el candidato pasa a INE Validada y continúa su proceso.",
+      "highlights": [
+        {
+          "region": "sofia"
+        }
+      ],
+      "narration": {
+        "text": "Al validar, el candidato pasa a INE Validada y continúa su proceso."
+      }
+    },
+    {
+      "template": "outro",
+      "durationSec": 7,
+      "title": "Antes de terminar",
+      "mistakes": [
+        "Validar una identidad dudosa sin consultar.",
+        "Olvidar marcar Contratado o Rechazado al final.",
+        "Buscar con filtros activos y creer que el candidato no existe."
+      ],
+      "conclusion": "Mantén los estados al día: alimentan los números de Dashboards.",
+      "narration": {
+        "text": "Evita estos errores. Mantén los estados al día, porque alimentan los números de Dashboards."
+      }
+    }
+  ]
+}

@@ -3,6 +3,27 @@ import { getSession } from '@/lib/auth';
 import { pool } from '@/lib/db';
 import { syncPromptContextDisk } from '@/lib/syncPromptContext';
 import { resolveGrupoNaveIds } from '@/lib/grupos';
+import type { PoolClient } from 'pg';
+import type { Recruiter } from '@/types';
+
+/** Fila del SELECT de reclutadores + vacantes (LEFT JOIN: las columnas de vacante pueden ser nulas). */
+type VacanteJoinRow = {
+  reclutador_id: string;
+  reclutador_nombre: string;
+  reclutador_activo: boolean;
+  reclutador_telefono: string | null;
+  reclutador_calendar: string | null;
+  reclutador_color: string | null;
+  reclutador_usuario: string | null;
+  vacante_id: string | null;
+  vacante_nombre: string | null;
+  naves: string | string[] | null;
+  detalles: string | null;
+  funciones: string | null;
+  palabras_clave: string | null;
+  filtros: unknown[] | null;
+  vacante_activa: boolean | null;
+};
 
 // ─── HELPERS ─────────────────────────────────────────────
 async function buildVacantesQuery({
@@ -72,7 +93,7 @@ async function buildVacantesQuery({
   return { whereClause, vacancyJoinCondition, params };
 }
 
-function groupVacantesRows(rows: Record<string, any>[]) {
+function groupVacantesRows(rows: VacanteJoinRow[]) {
   const map = new Map<string, { [k: string]: unknown; vacantes: Record<string, unknown>[] }>();
 
   for (const row of rows) {
@@ -171,7 +192,7 @@ export async function GET(request: Request) {
   }
 }
 
-async function applyTransferMap(client: any, transfer_map: { from: string; to: string }[]) {
+async function applyTransferMap(client: PoolClient, transfer_map: { from: string; to: string }[]) {
   for (const t of transfer_map) {
     if (t.from && t.to) {
       await client.query(`UPDATE mensajes_bandeja SET asignado_a_id = $1 WHERE asignado_a_id = $2`, [t.to, t.from]);
@@ -181,7 +202,7 @@ async function applyTransferMap(client: any, transfer_map: { from: string; to: s
 }
 
 async function cleanupDeletedReclutadores(
-  client: any,
+  client: PoolClient,
   rol: string,
   target_empresa_id: string | null,
   incomingRecruiters: string[],
@@ -209,8 +230,8 @@ async function cleanupDeletedReclutadores(
 }
 
 async function upsertRecruitersAndVacancies(
-  client: any,
-  data: any[],
+  client: PoolClient,
+  data: Recruiter[],
   target_empresa_id: string | null
 ) {
   for (const rec of data) {
@@ -263,7 +284,7 @@ async function upsertRecruitersAndVacancies(
 }
 
 async function cleanupAdminVacancies(
-  client: any,
+  client: PoolClient,
   target_empresa_id: string | null,
   incomingVacancies: string[]
 ) {
@@ -284,7 +305,7 @@ async function cleanupAdminVacancies(
 }
 
 async function cleanupScopedVacancies(
-  client: any,
+  client: PoolClient,
   rol: string,
   incomingVacancies: string[],
   jwt_reclutador_id: string | null,
@@ -307,7 +328,7 @@ async function cleanupScopedVacancies(
 }
 
 async function cleanupDeletedVacancies(
-  client: any,
+  client: PoolClient,
   rol: string,
   target_empresa_id: string | null,
   incomingVacancies: string[],

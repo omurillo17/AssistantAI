@@ -6,6 +6,11 @@ RUN npm ci
 
 COPY . .
 # El .env.local NO se copia: las variables vienen del entorno (docker-compose).
+# Variables dummy requeridas durante next build para validación estática de rutas
+ENV DATABASE_URL="postgresql://postgres:postgres@localhost:5432/virgo_db"
+ENV JWT_SECRET="dummy_build_secret"
+ENV APP_PASSWORD="admin"
+ENV WAHA_API_KEY="dummy_key"
 RUN npm run build
 
 # --- Stage 2: imagen ligera de producción ---

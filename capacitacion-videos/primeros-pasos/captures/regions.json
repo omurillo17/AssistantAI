@@ -1,0 +1,116 @@
+{
+  "01-login": {
+    "usuario": {
+      "x": 0.389,
+      "y": 0.458,
+      "width": 0.223,
+      "height": 0.06
+    },
+    "contrasena": {
+      "x": 0.389,
+      "y": 0.539,
+      "width": 0.223,
+      "height": 0.06
+    },
+    "entrar": {
+      "x": 0.389,
+      "y": 0.62,
+      "width": 0.223,
+      "height": 0.057
+    }
+  },
+  "02-inicio": {
+    "sidebar": {
+      "x": 0,
+      "y": 0,
+      "width": 0.053,
+      "height": 1
+    },
+    "barra": {
+      "x": 0.053,
+      "y": 0,
+      "width": 0.947,
+      "height": 0.083
+    },
+    "contenido": {
+      "x": 0.053,
+      "y": 0.083,
+      "width": 0.947,
+      "height": 0.824
+    },
+    "expandir": {
+      "x": 0.043,
+      "y": 0.031,
+      "width": 0.018,
+      "height": 0.031
+    }
+  },
+  "03-menu-expandido": {
+    "sidebar": {
+      "x": 0,
+      "y": 0,
+      "width": 0.187,
+      "height": 1
+    },
+    "colapsar": {
+      "x": 0.178,
+      "y": 0.031,
+      "width": 0.018,
+      "height": 0.031
+    }
+  },
+  "04-selector": {
+    "boton": {
+      "x": 0.645,
+      "y": 0.02,
+      "width": 0.163,
+      "height": 0.044
+    },
+    "empresa": {
+      "x": 0.598,
+      "y": 0.129,
+      "width": 0.209,
+      "height": 0.057
+    },
+    "nave": {
+      "x": 0.598,
+      "y": 0.233,
+      "width": 0.209,
+      "height": 0.047
+    }
+  },
+  "05-notificaciones": {
+    "campana": {
+      "x": 0.832,
+      "y": 0.022,
+      "width": 0.02,
+      "height": 0.036
+    },
+    "primera": {
+      "x": 0.572,
+      "y": 0.137,
+      "width": 0.28,
+      "height": 0.096
+    },
+    "limpiar": {
+      "x": 0.785,
+      "y": 0.102,
+      "width": 0.055,
+      "height": 0.021
+    }
+  },
+  "06-menu-usuario": {
+    "usuario": {
+      "x": 0.864,
+      "y": 0.014,
+      "width": 0.118,
+      "height": 0.055
+    },
+    "cambiar": {
+      "x": 0.843,
+      "y": 0.086,
+      "width": 0.139,
+      "height": 0.047
+    }
+  }
+}

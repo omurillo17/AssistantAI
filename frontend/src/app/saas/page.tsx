@@ -382,46 +382,46 @@ export default function SaasAdminPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-slate-800 p-6 md:p-10 font-sans">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 text-slate-800 p-3 sm:p-6 md:p-10 font-sans">
       
       {/* Header Premium */}
-      <div className="max-w-6xl mx-auto mb-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
+      <div className="max-w-6xl mx-auto mb-6 sm:mb-10 flex flex-col md:flex-row md:items-end justify-between gap-4 sm:gap-6">
         <div>
           <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded-full mb-3 uppercase tracking-wider">
             <Briefcase size={14} /> Global Administration
           </div>
-          <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900 mb-2">SaaS Multi-Tenant</h1>
-          <p className="text-slate-500 text-lg max-w-xl">Gestiona las empresas, asigna naves y controla la infraestructura de todos los clientes de Virgo.</p>
+          <h1 className="text-2xl sm:text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900 mb-2">SaaS Multi-Tenant</h1>
+          <p className="text-slate-500 text-sm sm:text-base md:text-lg max-w-xl">Gestiona las empresas, asigna naves y controla la infraestructura de todos los clientes de Virgo.</p>
         </div>
         <button 
           onClick={() => { setEditingEmpresa(null); setShowEmpresaModal(true); }}
-          className="bg-slate-900 hover:bg-slate-800 text-white px-6 py-3.5 rounded-xl font-bold shadow-lg shadow-slate-900/20 transition-all flex items-center gap-3 transform hover:-translate-y-0.5 active:translate-y-0"
+          className="w-full sm:w-auto bg-slate-900 hover:bg-slate-800 text-white px-4 sm:px-6 py-2.5 sm:py-3.5 rounded-xl font-bold shadow-lg shadow-slate-900/20 transition-all flex items-center justify-center gap-2 sm:gap-3 text-sm sm:text-base"
         >
-          <Plus size={20} /> Registrar Nueva Empresa
+          <Plus size={18} /> Registrar Nueva Empresa
         </button>
       </div>
 
       {/* Main Content Grid */}
-      <div className="max-w-6xl mx-auto flex flex-col gap-6">
+      <div className="max-w-6xl mx-auto flex flex-col gap-4 sm:gap-6">
         {empresas.map((emp) => {
           const isExpanded = expandedEmpresa === emp.id;
           return (
             <div key={emp.id} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition-all duration-300 hover:shadow-md">
               {/* Company Header Row */}
               <div 
-                className={`p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-colors ${isExpanded ? 'bg-slate-50/50' : 'hover:bg-slate-50'}`}
+                className={`p-4 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-colors ${isExpanded ? 'bg-slate-50/50' : 'hover:bg-slate-50'}`}
               >
                 <button
                   type="button"
                   onClick={() => setExpandedEmpresa(isExpanded ? null : emp.id)}
-                  className="flex items-center gap-4 text-left flex-1 cursor-pointer focus:outline-none"
+                  className="flex items-center gap-3 sm:gap-4 text-left flex-1 min-w-0 cursor-pointer focus:outline-none"
                 >
-                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center transition-colors ${isExpanded ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600'}`}>
-                    <Building2 size={24} />
+                  <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shrink-0 transition-colors ${isExpanded ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600'}`}>
+                    <Building2 size={20} />
                   </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-slate-900">{emp.nombre}</h2>
-                    <div className="flex items-center gap-4 text-sm text-slate-500 mt-1">
+                  <div className="min-w-0">
+                    <h2 className="text-lg sm:text-xl font-bold text-slate-900 truncate">{emp.nombre}</h2>
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm text-slate-500 mt-1">
                       <span className="flex items-center gap-1.5"><Phone size={14} /> {grupos.filter(g => g.empresa_id === emp.id).length} Grupos (WhatsApp)</span>
                       <span className="flex items-center gap-1.5"><MapPin size={14} /> {(emp.naves || []).length} Naves activas</span>
                     </div>

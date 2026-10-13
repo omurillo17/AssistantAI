@@ -1,0 +1,25 @@
+WEBVTT
+
+00:00:00.100 --> 00:00:02.920
+El Panel de Control es la pantalla de inicio.
+
+00:00:02.920 --> 00:00:05.990
+Desde aquí entras a cada módulo de la plataforma.
+
+00:00:07.100 --> 00:00:09.239
+Cada tarjeta de color abre un módulo.
+
+00:00:09.239 --> 00:00:13.979
+La etiqueta roja de Mensajes indica cuántas conversaciones activas tienen mensajes
+
+00:00:13.979 --> 00:00:17.910
+sin leer: es el primer número que debes revisar al empezar tu turno.
+
+00:00:19.100 --> 00:00:23.450
+Los perfiles ADMIN y ROOT ven además un bloque de administración.
+
+00:00:23.450 --> 00:00:27.130
+Si no lo ves, es normal: tu rol no tiene esos permisos.
+
+00:00:28.100 --> 00:00:31.560
+Empieza cada turno revisando el contador de Mensajes.

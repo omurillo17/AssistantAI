@@ -83,3 +83,7 @@ scratch/
 CLAUDE.md
 GEMINI.md
 .docx
+
+# Voz de los videos de Capacitación: se regenera con `training narrate` (ver capacitacion-videos/README.md)
+capacitacion-videos/*/audio/
+capacitacion-videos/demo/.waha-caida

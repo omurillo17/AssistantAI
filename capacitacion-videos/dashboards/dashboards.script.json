@@ -1,0 +1,153 @@
+{
+  "$schema": "../../../Vid/packages/content-schema/schema/video-script.schema.json",
+  "id": "dashboards",
+  "title": "Dashboards",
+  "lang": "es",
+  "status": "verified",
+  "format": {
+    "orientation": "landscape",
+    "size": 1920,
+    "fps": 30
+  },
+  "theme": {
+    "primary": "#0C66AC",
+    "background": "#0B1E33"
+  },
+  "burnCaptions": false,
+  "capture": [
+    {
+      "use": "login"
+    },
+    {
+      "goto": "/dashboards",
+      "wait": 6000
+    },
+    {
+      "shot": "01-ejecutivo",
+      "regions": {
+        "tarjetas": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount === 0 && e.textContent.trim() === 'Candidatos Totales').closest('.grid')",
+        "embudo": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === 'Embudo de Reclutamiento').closest('.rounded-xl, .rounded-2xl')",
+        "distribucion": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === 'Distribución de Estados').closest('.rounded-xl, .rounded-2xl')",
+        "pestanas": "js=[...document.querySelectorAll('button')].find(b => b.innerText.includes('Ejecutivo')).parentElement"
+      }
+    },
+    {
+      "click": "js=[...document.querySelectorAll('.recharts-bar-rectangle')][2]",
+      "real": true
+    },
+    {
+      "sleep": 2000
+    },
+    {
+      "shot": "02-listar",
+      "regions": {
+        "lista": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount === 0 && e.textContent.trim() === 'ROBERTO NAVARRO GIL').closest('.rounded-xl, .rounded-2xl').parentElement",
+        "expediente": "js=[...document.querySelectorAll('button')].find(b => b.innerText.includes('Expediente'))"
+      }
+    },
+    {
+      "goto": "/dashboards",
+      "wait": 6000
+    },
+    {
+      "click": "js=[...document.querySelectorAll('button')].find(b => b.innerText.includes('IA Sof'))"
+    },
+    {
+      "sleep": 2500
+    },
+    {
+      "shot": "03-ia",
+      "regions": {
+        "medidor": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === 'Automatización de Sofía').closest('.rounded-xl, .rounded-2xl')",
+        "escalados": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === 'Escalados a humano').parentElement"
+      }
+    }
+  ],
+  "scenes": [
+    {
+      "template": "intro",
+      "durationSec": 4,
+      "title": "Dashboards",
+      "chapter": "Introducción",
+      "objective": "Leer los números del reclutamiento sin perderte.",
+      "narration": {
+        "text": "En este video aprenderás a leer los números del reclutamiento en Dashboards."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 10,
+      "title": "Vista ejecutiva",
+      "screenshot": "captures/01-ejecutivo.png",
+      "highlights": [
+        {
+          "region": "tarjetas",
+          "label": "Indicadores"
+        },
+        {
+          "region": "embudo",
+          "label": "Embudo"
+        },
+        {
+          "region": "distribucion",
+          "label": "Distribución"
+        }
+      ],
+      "narration": {
+        "text": "Arriba ves los candidatos totales, los contratados, los nuevos de hoy y los chats activos. Abajo, el embudo de reclutamiento y la distribución por estado."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 7,
+      "title": "Clic para listar",
+      "screenshot": "captures/02-listar.png",
+      "highlights": [
+        {
+          "region": "lista",
+          "label": "Candidatos de la etapa"
+        },
+        {
+          "region": "expediente",
+          "label": "Abrir expediente"
+        }
+      ],
+      "narration": {
+        "text": "Haz clic en una etapa del embudo para ver quiénes están ahí, y abre su expediente o su chat desde la lista."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 8,
+      "title": "IA Sofía",
+      "screenshot": "captures/03-ia.png",
+      "highlights": [
+        {
+          "region": "medidor",
+          "label": "Automatización"
+        },
+        {
+          "region": "escalados",
+          "label": "Escalados a humano"
+        }
+      ],
+      "narration": {
+        "text": "En la pestaña IA Sofía ves qué porcentaje de candidatos se atendió sin intervención humana y cuántos se escalaron: un buen termómetro de qué tan bien responde la IA."
+      }
+    },
+    {
+      "template": "outro",
+      "durationSec": 7,
+      "title": "Antes de terminar",
+      "chapter": "Errores frecuentes",
+      "mistakes": [
+        "Revisar los números en otra nave o empresa.",
+        "No actualizar los estados finales."
+      ],
+      "conclusion": "Todos los números respetan el selector de empresa y nave.",
+      "narration": {
+        "text": "Recuerda que todos los números respetan el selector de empresa y nave de la barra superior."
+      }
+    }
+  ]
+}

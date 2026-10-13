@@ -1,0 +1,86 @@
+{
+  "$schema": "../../Vid/packages/content-schema/schema/project-config.schema.json",
+  "baseUrl": "http://127.0.0.1:3101",
+  "viewport": {
+    "width": 1366,
+    "height": 768,
+    "scale": 1.5
+  },
+  "hide": [
+    "nextjs-portal"
+  ],
+  "setup": "docker compose -f demo/docker-compose.yml up -d",
+  "server": {
+    "command": "node demo/dev.mjs",
+    "readyUrl": "http://127.0.0.1:3101/login",
+    "timeoutSec": 180
+  },
+  "beforeLesson": "node demo/reset.mjs",
+  "macros": {
+    "login": [
+      {
+        "goto": "/login"
+      },
+      {
+        "fill": "input[type=text]",
+        "value": "reclutadora.demo"
+      },
+      {
+        "fill": "input[type=password]",
+        "value": "demo-capacitacion"
+      },
+      {
+        "click": "button[type=submit]"
+      },
+      {
+        "waitFor": "[aria-label=\"Ver notificaciones\"]",
+        "timeout": 30000
+      },
+      {
+        "sleep": 1500
+      }
+    ],
+    "cerrar-avisos": [
+      {
+        "sleep": 4500
+      },
+      {
+        "eval": "document.querySelectorAll('[title=\"Cerrar\"]').forEach((x) => x.click())"
+      },
+      {
+        "sleep": 800
+      }
+    ],
+    "login-admin": [
+      {
+        "goto": "/login"
+      },
+      {
+        "fill": "input[type=text]",
+        "value": "admin.demo"
+      },
+      {
+        "fill": "input[type=password]",
+        "value": "demo-capacitacion"
+      },
+      {
+        "click": "button[type=submit]"
+      },
+      {
+        "waitFor": "[aria-label=\"Ver notificaciones\"]",
+        "timeout": 30000
+      },
+      {
+        "sleep": 1500
+      }
+    ]
+  },
+  "narration": {
+    "rate": 1
+  },
+  "outDir": "../frontend/public/capacitacion/videos",
+  "publicPath": "/capacitacion/videos/",
+  "dataFile": "../frontend/src/lib/capacitacion-videos.json",
+  "changeThreshold": 0.004,
+  "locale": "es-MX"
+}

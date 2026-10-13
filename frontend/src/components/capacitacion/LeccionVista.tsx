@@ -17,6 +17,7 @@ import {
 import { useIsHydrated, useLocalStorageValue } from "@/hooks/useLocalStorageValue";
 import { leccionesPorRol, type Bloque, type Leccion, type Rol } from "@/lib/capacitacion";
 import { ESTADOS, ESTADOS_CRM, ESTADOS_ORDENADOS, type EstadoKey } from "@/lib/estados";
+import { VideoLeccion } from "./VideoLeccion";
 
 /** Quién mueve cada estado, derivado del catálogo, no escrito a mano. */
 function quienAsigna(key: EstadoKey): { texto: string; clase: string } {
@@ -287,15 +288,7 @@ export function LeccionVista({ leccion }: Readonly<{ leccion: Leccion }>) {
                 );
               }
               if (leccion.video.url) {
-                return (
-                  <video
-                    src={leccion.video.url}
-                    controls
-                    className="w-full rounded-lg border border-slate-200 bg-black"
-                  >
-                    <track kind="captions" />
-                  </video>
-                );
+                return <VideoLeccion video={leccion.video} />;
               }
               return (
                 <div className="w-full aspect-video rounded-lg border-2 border-dashed border-slate-200 bg-slate-50 flex flex-col items-center justify-center text-slate-400 gap-2 px-6 text-center">

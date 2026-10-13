@@ -232,9 +232,8 @@ export default function DashboardsPage() {
   const [timeRange, setTimeRange] = useState<TimeRange>("1m");
   const [isTimelineExpanded, setIsTimelineExpanded] = useState(false);
   const timelineBackdrop = useBackdropClose(() => setIsTimelineExpanded(false));
-  const estadoModalBackdrop = useBackdropClose(() => setSelectedEstadoModal(null));
-
   const [selectedEstadoModal, setSelectedEstadoModal] = useState<string | null>(null);
+  const estadoModalBackdrop = useBackdropClose(() => setSelectedEstadoModal(null));
   const [selectedCandidate, setSelectedCandidate] = useState<Candidato | null>(null);
   const [modalSearch, setModalSearch] = useState<string>("");
   const [modalData, setModalData] = useState<{ estado: string; rows: Candidato[] } | null>(null);
@@ -504,18 +503,18 @@ export default function DashboardsPage() {
   return (
     <div className="flex flex-col h-full bg-[#f8fafc] text-slate-800">
       {/* ─── TABS NAV ─── */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 z-10 shadow-sm relative">
-        <h1 className="text-2xl font-extrabold text-slate-800">Dashboards</h1>
-        <div className="flex bg-slate-100 p-1 rounded-lg gap-1 border border-slate-200">
+      <div className="bg-white border-b border-slate-200 px-4 sm:px-6 py-3 sm:py-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 z-10 shadow-sm relative">
+        <h1 className="text-xl sm:text-2xl font-extrabold text-slate-800">Dashboards</h1>
+        <div className="flex bg-slate-100 p-1 rounded-lg gap-1 border border-slate-200 w-full sm:w-auto">
           <button
             onClick={() => setActiveTab("ejecutivo")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md font-bold text-sm transition-all ${activeTab === "ejecutivo" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+            className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-md font-bold text-xs sm:text-sm transition-all ${activeTab === "ejecutivo" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
           >
             <Activity size={16} /> Ejecutivo
           </button>
           <button
             onClick={() => setActiveTab("ia")}
-            className={`flex items-center gap-2 px-4 py-2 rounded-md font-bold text-sm transition-all ${activeTab === "ia" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+            className={`flex-1 sm:flex-initial flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-md font-bold text-xs sm:text-sm transition-all ${activeTab === "ia" ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
           >
             🤖 IA Sofía
           </button>
@@ -523,51 +522,51 @@ export default function DashboardsPage() {
       </div>
 
       {loading ? (
-        <div className="flex-1 flex flex-col items-center justify-center text-slate-400">
+        <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-6">
           <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4" />
           <p className="font-medium animate-pulse">Sincronizando datos...</p>
         </div>
       ) : (
-        <main className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-screen-2xl mx-auto space-y-6">
+        <main className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6">
+          <div className="max-w-screen-2xl mx-auto space-y-4 sm:space-y-6">
 
             {activeTab === "ejecutivo" && (
-              <div className="animate-fade-in space-y-6">
+              <div className="animate-fade-in space-y-4 sm:space-y-6">
                 {/* KPI CARDS */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="bg-white p-5 rounded-2xl border border-black/5 shadow-sm flex items-center gap-4">
-                    <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl"><Users size={24} /></div>
-                    <div>
-                      <div className="text-xs text-slate-500 font-bold uppercase tracking-wider">Candidatos Totales</div>
-                      <div className="text-3xl font-extrabold text-slate-800">{kpis.total}</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                  <div className="bg-white p-4 sm:p-5 rounded-2xl border border-black/5 shadow-sm flex items-center gap-3 sm:gap-4">
+                    <div className="p-2.5 sm:p-3 bg-indigo-50 text-indigo-600 rounded-xl shrink-0"><Users size={22} /></div>
+                    <div className="min-w-0">
+                      <div className="text-[11px] sm:text-xs text-slate-500 font-bold uppercase tracking-wider truncate">Candidatos Totales</div>
+                      <div className="text-2xl sm:text-3xl font-extrabold text-slate-800">{kpis.total}</div>
                     </div>
                   </div>
-                  <div className="bg-white p-5 rounded-2xl border border-black/5 shadow-sm flex items-center gap-4">
-                    <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl"><Trophy size={24} /></div>
-                    <div>
-                      <div className="text-xs text-slate-500 font-bold uppercase tracking-wider">Contratados</div>
-                      <div className="text-3xl font-extrabold text-slate-800">{kpis.contratados}</div>
+                  <div className="bg-white p-4 sm:p-5 rounded-2xl border border-black/5 shadow-sm flex items-center gap-3 sm:gap-4">
+                    <div className="p-2.5 sm:p-3 bg-emerald-50 text-emerald-600 rounded-xl shrink-0"><Trophy size={22} /></div>
+                    <div className="min-w-0">
+                      <div className="text-[11px] sm:text-xs text-slate-500 font-bold uppercase tracking-wider truncate">Contratados</div>
+                      <div className="text-2xl sm:text-3xl font-extrabold text-slate-800">{kpis.contratados}</div>
                     </div>
                   </div>
-                  <div className="bg-white p-5 rounded-2xl border border-black/5 shadow-sm flex items-center gap-4">
-                    <div className="p-3 bg-amber-50 text-amber-600 rounded-xl"><UserCheck size={24} /></div>
-                    <div>
-                      <div className="text-xs text-slate-500 font-bold uppercase tracking-wider">Nuevos (Hoy)</div>
-                      <div className="text-3xl font-extrabold text-slate-800">{kpis.nuevos}</div>
+                  <div className="bg-white p-4 sm:p-5 rounded-2xl border border-black/5 shadow-sm flex items-center gap-3 sm:gap-4">
+                    <div className="p-2.5 sm:p-3 bg-amber-50 text-amber-600 rounded-xl shrink-0"><UserCheck size={22} /></div>
+                    <div className="min-w-0">
+                      <div className="text-[11px] sm:text-xs text-slate-500 font-bold uppercase tracking-wider truncate">Nuevos (Hoy)</div>
+                      <div className="text-2xl sm:text-3xl font-extrabold text-slate-800">{kpis.nuevos}</div>
                     </div>
                   </div>
-                  <div className="bg-white p-5 rounded-2xl border border-black/5 shadow-sm flex items-center gap-4">
-                    <div className="p-3 bg-rose-50 text-rose-600 rounded-xl"><MessageSquare size={24} /></div>
-                    <div>
-                      <div className="text-xs text-slate-500 font-bold uppercase tracking-wider">Chats Activos</div>
-                      <div className="text-3xl font-extrabold text-slate-800">{kpis.chatsActivos}</div>
+                  <div className="bg-white p-4 sm:p-5 rounded-2xl border border-black/5 shadow-sm flex items-center gap-3 sm:gap-4">
+                    <div className="p-2.5 sm:p-3 bg-rose-50 text-rose-600 rounded-xl shrink-0"><MessageSquare size={22} /></div>
+                    <div className="min-w-0">
+                      <div className="text-[11px] sm:text-xs text-slate-500 font-bold uppercase tracking-wider truncate">Chats Activos</div>
+                      <div className="text-2xl sm:text-3xl font-extrabold text-slate-800">{kpis.chatsActivos}</div>
                     </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
                   {/* FUNNEL */}
-                  <div className="bg-white p-6 rounded-2xl border border-black/5 shadow-sm lg:col-span-2">
+                  <div className="bg-white p-4 sm:p-6 rounded-2xl border border-black/5 shadow-sm lg:col-span-2">
                     <div className="flex items-center justify-between mb-4">
                       <div>
                         <h3 className="text-base font-bold text-slate-700 flex items-center gap-2">

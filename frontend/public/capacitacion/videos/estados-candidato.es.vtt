@@ -1,0 +1,25 @@
+WEBVTT
+
+00:00:00.100 --> 00:00:04.366
+Cada candidato tiene un estado que indica en qué parte del proceso va.
+
+00:00:04.366 --> 00:00:07.170
+Veamos qué significa cada uno y quién lo pone.
+
+00:00:08.100 --> 00:00:12.814
+En la lección escrita está el catálogo completo, en el orden del proceso.
+
+00:00:12.814 --> 00:00:15.979
+La etiqueta de cada estado indica quién lo mueve:
+
+00:00:15.979 --> 00:00:18.820
+la IA sola, tú desde el expediente, o ambos.
+
+00:00:20.100 --> 00:00:24.725
+La IA avanza el estado durante la conversación, pero Entrevistado, Contratado
+
+00:00:24.725 --> 00:00:28.810
+o Rechazado los pones tú desde el expediente, en Estado del proceso.
+
+00:00:30.100 --> 00:00:35.050
+Mantén los estados al día: de ellos salen el embudo y la conversión de Dashboards.

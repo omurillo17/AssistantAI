@@ -102,18 +102,18 @@ export default function UsuariosPage() {
   if (loading) return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-500">Cargando...</div>;
 
   return (
-    <div className="p-8 max-w-5xl mx-auto animate-fade-in text-slate-800">
+    <div className="p-3 sm:p-6 lg:p-8 max-w-5xl mx-auto animate-fade-in text-slate-800">
       {/* Header Premium */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 mb-6 sm:mb-8">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">Gestión de Usuarios</h1>
-          <p className="text-slate-500 text-sm mt-1">Administra las credenciales, roles y grupos de reclutamiento de la plataforma.</p>
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900">Gestión de Usuarios</h1>
+          <p className="text-slate-500 text-xs sm:text-sm mt-1">Administra las credenciales, roles y grupos de reclutamiento de la plataforma.</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-2 sm:gap-3 w-full sm:w-auto">
           {(role === "ADMIN" || role === "ROOT" || role === "ENCARGADO") && (
             <button
               onClick={() => setShowNewUserModal(true)}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2.5 rounded-xl shadow-md transition-all flex items-center gap-2 text-sm"
+              className="flex-1 sm:flex-initial bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl shadow-md transition-all flex items-center justify-center gap-2 text-xs sm:text-sm"
             >
               + Nuevo Usuario
             </button>
@@ -121,25 +121,25 @@ export default function UsuariosPage() {
           {(role === "ADMIN" || role === "ROOT" || role === "ENCARGADO") && (
             <button
               onClick={() => setShowGruposModal(true)}
-              className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 text-sm"
+              className="flex-1 sm:flex-initial bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl transition-all flex items-center justify-center gap-2 text-xs sm:text-sm"
             >
-              ⚙️ Gestionar Grupos
+              ⚙️ Grupos
             </button>
           )}
         </div>
       </div>
 
       {/* Tabla de Usuarios */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden mb-6">
-        <table className="w-full text-left border-collapse">
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden mb-6 overflow-x-auto">
+        <table className="w-full text-left border-collapse min-w-[650px]">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200/80">
-              <th className="px-6 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Nombre</th>
-              <th className="px-6 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Usuario</th>
-              <th className="px-6 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Contraseña</th>
-              <th className="px-6 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Rol</th>
-              <th className="px-6 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Grupo Asignado</th>
-              <th className="px-6 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Acciones</th>
+              <th className="px-4 sm:px-6 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Nombre</th>
+              <th className="px-4 sm:px-6 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Usuario</th>
+              <th className="px-4 sm:px-6 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Contraseña</th>
+              <th className="px-4 sm:px-6 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Rol</th>
+              <th className="px-4 sm:px-6 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Grupo Asignado</th>
+              <th className="px-4 sm:px-6 py-3.5 text-xs font-bold text-slate-500 uppercase tracking-wider">Acciones</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200">

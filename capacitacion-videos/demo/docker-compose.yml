@@ -1,0 +1,27 @@
+# Base de datos DEMO, solo para grabar los videos de Capacitación.
+# Aislada de la base real: otro contenedor, otro volumen, otro puerto (5440),
+# publicada solo en loopback. Todos los datos de seed.sql son ficticios.
+#
+#   docker compose -f capacitacion-videos/demo/docker-compose.yml up -d
+#   docker compose -f capacitacion-videos/demo/docker-compose.yml down -v   # borra la demo
+#
+# La contraseña no es secreta a propósito: la base solo contiene datos inventados
+# y no es accesible fuera de esta máquina.
+name: assistantai-demo
+
+services:
+  postgres-demo:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_DB=virgo_demo
+      - POSTGRES_USER=demo
+      - POSTGRES_PASSWORD=demo-solo-local
+    volumes:
+      - pgdata_demo:/var/lib/postgresql/data
+      - ../../virgo_data/scripts/database_setup.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+    ports:
+      - "127.0.0.1:5440:5432"
+
+volumes:
+  pgdata_demo:

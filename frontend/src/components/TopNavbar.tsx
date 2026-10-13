@@ -2,14 +2,18 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useRealtime } from "@/lib/realtimeClient";
-import { Bell, UserCircle, Building2, ChevronDown, Trash2, X, Calendar, AlertTriangle, ExternalLink } from "lucide-react";
+import { Bell, UserCircle, Building2, ChevronDown, Trash2, X, Calendar, AlertTriangle, ExternalLink, Menu } from "lucide-react";
 import { useCallback, useEffect, useState, useRef } from "react";
 import { useTenant } from "@/hooks/useTenant";
 import { useLocalStorageValue } from "@/hooks/useLocalStorageValue";
 import ChangePasswordModal from "@/components/usuarios/ChangePasswordModal";
 import type { Empresa, Nave, Grupo, Notificacion } from "@/types";
 
-export function TopNavbar() {
+interface TopNavbarProps {
+  onToggleMobileMenu?: () => void;
+}
+
+export function TopNavbar({ onToggleMobileMenu }: TopNavbarProps = {}) {
   const pathname = usePathname();
   const router = useRouter();
 
@@ -273,7 +277,7 @@ export function TopNavbar() {
 
   if (pathname === "/login") return null;
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     localStorage.removeItem("tci_username");
     localStorage.removeItem("tci_login");
     localStorage.removeItem("tci_role");
@@ -282,11 +286,12 @@ export function TopNavbar() {
     localStorage.removeItem("tci_grupo_id");
     localStorage.removeItem("tci_empresa_id");
 
-    // In a real app we might also need to hit a logout API to clear the HttpOnly cookie, 
-    // but for now deleting the cookie in JS or redirecting to a logout route is best.
-    // For now we just clear the flags and Nextjs proxy will redirect if cookie is missing/invalid.
-    // We can just set the cookie to expire.
-    document.cookie = "tci_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+    // La cookie de sesión es HttpOnly: solo el servidor puede borrarla.
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      // Sin red igual se sale; la cookie expira sola a las 4 h.
+    }
 
     router.push("/login");
   };
@@ -309,36 +314,47 @@ export function TopNavbar() {
 
   const getCurrentContextName = (): string => {
     if (grupoId) {
-      return empresas.flatMap(e => e.grupos || []).find((g: Grupo) => g.id === grupoId)?.nombre || "Grupo Desconocido";
+      return empresas.flatMap(e => e.grupos || []).find((g: Grupo) => g.id === grupoId)?.nombre || "Grupo";
     }
     if (naveId) {
-      return empresas.flatMap(e => e.naves || []).find(n => n.id === naveId)?.nombre || "Nave Desconocida";
+      return empresas.flatMap(e => e.naves || []).find(n => n.id === naveId)?.nombre || "Nave";
     }
     if (empresaId) {
-      return empresas.find(e => e.id === empresaId)?.nombre || "Empresa Desconocida";
+      return empresas.find(e => e.id === empresaId)?.nombre || "Empresa";
     }
-    return role === "ROOT" ? "Vista Global" : "Selecciona Empresa";
+    return role === "ROOT" ? "Global" : "Empresa";
   };
 
   return (
-    <nav className="h-16 bg-primary flex items-center justify-between px-6 shadow-sm z-40 sticky top-0 flex-shrink-0">
-      {/* Title / Back Button */}
-      <div className="flex items-center gap-4 text-white">
+    <nav className="h-16 bg-primary flex items-center justify-between px-3 sm:px-6 shadow-sm z-40 sticky top-0 flex-shrink-0">
+      {/* Title / Hamburger / Back Button */}
+      <div className="flex items-center gap-2 sm:gap-4 text-white min-w-0">
+        {/* Botón Hamburger en móvil */}
+        {onToggleMobileMenu && (
+          <button
+            onClick={onToggleMobileMenu}
+            className="md:hidden p-1.5 hover:bg-white/10 rounded-lg transition-colors focus:outline-none"
+            aria-label="Abrir menú"
+          >
+            <Menu size={22} />
+          </button>
+        )}
+
         {showBackButton && (
           <button
             onClick={() => router.back()}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 font-semibold rounded-lg transition-colors text-sm"
+            className="flex items-center gap-1 px-2 sm:px-3 py-1.5 bg-white/10 hover:bg-white/20 font-semibold rounded-lg transition-colors text-xs sm:text-sm shrink-0"
           >
-            ⬅ Atrás
+            <span>⬅</span> <span className="hidden sm:inline">Atrás</span>
           </button>
         )}
-        <h1 className="text-xl font-bold tracking-wide">
+        <h1 className="text-base sm:text-xl font-bold tracking-wide truncate max-w-[140px] sm:max-w-[240px] md:max-w-none">
           {getTitle()}
         </h1>
       </div>
 
       {/* Right side items */}
-      <div className="flex items-center gap-4 text-white">
+      <div className="flex items-center gap-2 sm:gap-4 text-white shrink-0">
         
         {/* Empresa Selector — oculto en Calendario: ahí no hay filtro manual de
             nave/grupo, cada quien ve automáticamente el calendario de su propio
@@ -347,17 +363,18 @@ export function TopNavbar() {
           <div className="relative" ref={empresaMenuRef}>
             <button
               onClick={() => setIsEmpresaMenuOpen(!isEmpresaMenuOpen)}
-              className={`flex items-center gap-2 py-1.5 px-3 rounded-lg transition-colors focus:outline-none border border-white/20 hover:bg-white/10 ${!empresaId ? 'bg-amber-500/20 text-amber-100 border-amber-500/50' : 'bg-white/5'}`}
+              className={`flex items-center gap-1.5 sm:gap-2 py-1.5 px-2 sm:px-3 rounded-lg transition-colors focus:outline-none border border-white/20 hover:bg-white/10 ${!empresaId ? 'bg-amber-500/20 text-amber-100 border-amber-500/50' : 'bg-white/5'}`}
+              title="Cambiar empresa o nave"
             >
-              <Building2 size={18} className={!empresaId ? 'text-amber-400' : ''} />
-              <div className="text-sm font-semibold hidden md:block max-w-[150px] truncate">
+              <Building2 size={16} className={!empresaId ? 'text-amber-400' : ''} />
+              <div className="text-xs sm:text-sm font-semibold max-w-[90px] sm:max-w-[150px] truncate">
                 {getCurrentContextName()}
               </div>
-              <ChevronDown size={16} className="opacity-70" />
+              <ChevronDown size={14} className="opacity-70" />
             </button>
 
             {isEmpresaMenuOpen && (
-              <div className="absolute right-0 mt-2 w-72 bg-white rounded-xl shadow-xl py-2 z-50 text-slate-800 border border-slate-100 max-h-96 overflow-y-auto">
+              <div className="absolute right-0 mt-2 w-72 max-w-[calc(100vw-1.5rem)] bg-white rounded-xl shadow-xl py-2 z-50 text-slate-800 border border-slate-100 max-h-96 overflow-y-auto">
                 <div className="px-4 py-2 border-b border-slate-100 text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between gap-2">
                   <span>Seleccionar Vista</span>
                   {role === "ADMIN" && (
@@ -440,18 +457,19 @@ export function TopNavbar() {
         <div className="relative" ref={notifRef}>
           <button 
             onClick={toggleNotifs}
-            className="relative hover:text-white/80 transition-colors focus:outline-none"
+            className="relative hover:text-white/80 transition-colors focus:outline-none p-1"
+            aria-label="Ver notificaciones"
           >
             <Bell size={20} />
             {unreadCount > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 bg-secondary text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+              <span className="absolute -top-1 -right-1 bg-secondary text-white text-[9px] font-bold px-1.5 py-0.2 rounded-full">
                 {unreadCount}
               </span>
             )}
           </button>
           
           {isNotifOpen && (
-            <div className="absolute right-0 mt-3 w-80 sm:w-96 bg-white rounded-xl shadow-xl py-2 z-50 text-slate-800 border border-slate-100 max-h-96 overflow-y-auto">
+            <div className="absolute right-0 mt-3 w-80 sm:w-96 max-w-[calc(100vw-1.5rem)] bg-white rounded-xl shadow-xl py-2 z-50 text-slate-800 border border-slate-100 max-h-96 overflow-y-auto">
               <div className="px-4 py-2 border-b flex items-center justify-between font-bold text-sm">
                 <span>Notificaciones</span>
                 {notifications.length > 0 && (
@@ -508,7 +526,8 @@ export function TopNavbar() {
         <div className="relative" ref={menuRef}>
           <button
             onClick={() => setIsMenuOpen(!isMenuOpen)}
-            className="flex items-center gap-2 hover:bg-white/10 py-1.5 px-3 rounded-full transition-colors focus:outline-none"
+            className="flex items-center gap-1.5 sm:gap-2 hover:bg-white/10 py-1.5 px-2 sm:px-3 rounded-full transition-colors focus:outline-none"
+            aria-label="Menú de usuario"
           >
             <UserCircle size={24} />
             <div className="text-sm font-semibold hidden md:flex flex-col items-start leading-tight">
@@ -519,6 +538,10 @@ export function TopNavbar() {
 
           {isMenuOpen && (
             <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-50 text-slate-800 border border-slate-100">
+              <div className="md:hidden px-4 py-2 border-b border-slate-100">
+                <p className="text-xs font-bold text-slate-700">{username.toUpperCase()}</p>
+                <p className="text-[10px] font-bold text-indigo-600">{role}</p>
+              </div>
               <button 
                 onClick={() => { setIsMenuOpen(false); setIsPasswordModalOpen(true); }} 
                 className="block w-full text-left px-4 py-2 text-sm hover:bg-slate-50 transition-colors"
@@ -526,8 +549,8 @@ export function TopNavbar() {
                 Cambiar Contraseña
               </button>
               <button 
-                onClick={() => { setIsMenuOpen(false); handleLogout(); }} 
-                className="block w-full text-left px-4 py-2 text-sm hover:bg-slate-50 transition-colors text-red-600"
+                onClick={() => { setIsMenuOpen(false); void handleLogout(); }} 
+                className="block w-full text-left px-4 py-2 text-sm hover:bg-slate-50 transition-colors text-red-600 font-semibold"
               >
                 Cerrar Sesión
               </button>
@@ -543,7 +566,7 @@ export function TopNavbar() {
       />
 
       {/* ─── TOASTS FLOTANTES DE NOTIFICACIÓN EN TIEMPO REAL ─── */}
-      <div className="fixed top-20 right-6 z-[9999] flex flex-col gap-3 max-w-sm w-full pointer-events-none">
+      <div className="fixed top-16 sm:top-20 right-3 sm:right-6 z-[9999] flex flex-col gap-3 max-w-[calc(100vw-1.5rem)] sm:max-w-sm w-full pointer-events-none">
         {toasts.map((t) => {
           const meta = getNotifMeta(t.mensaje);
           return (

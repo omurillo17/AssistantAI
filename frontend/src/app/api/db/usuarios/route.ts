@@ -7,6 +7,17 @@ import { getSession, normalizeUsername } from '@/lib/auth';
 
 import crypto from 'node:crypto';
 
+/** Fila de `usuarios` que se está modificando (las columnas que usan las validaciones). */
+type UsuarioRow = {
+  id: number;
+  usuario: string;
+  rol: string;
+  protegido: boolean | null;
+  grupo_id: string | null;
+  reclutador_id: string | null;
+  empresa_id: string | null;
+};
+
 // Nombre de usuario: solo letras, números y . _ - (sin espacios, acentos ni
 // símbolos). Es una credencial, no un nombre para mostrar -- para eso está
 // `nombre`. Restringirlo evita cuentas visualmente idénticas (un usuario con
@@ -258,7 +269,7 @@ export async function POST(request: Request) {
 }
 
 function verifyProtegidoOrRootPermissions(
-  currentUser: any,
+  currentUser: UsuarioRow,
   soySuperusuario: boolean,
   newRol?: string
 ): { error?: string; status?: number } | null {
@@ -275,7 +286,7 @@ function verifyProtegidoOrRootPermissions(
 }
 
 function verifyEncargadoPermissions(
-  currentUser: any,
+  currentUser: UsuarioRow,
   adminGrupoId: string | null,
   grupo_id?: string,
   newRol?: string
@@ -305,7 +316,7 @@ async function verifyAdminPermissions({
   adminRole: string;
   adminPassword: string;
   adminGrupoId: string | null;
-  currentUser: any;
+  currentUser: UsuarioRow;
   newRol?: string;
   grupo_id?: string;
 }): Promise<{ error?: string; status?: number }> {
@@ -337,7 +348,7 @@ async function applyRoleChange({
   transferTo,
 }: {
   targetUserId: string;
-  currentUser: any;
+  currentUser: UsuarioRow;
   newRol: string;
   telefono?: string;
   correo?: string;
@@ -376,7 +387,7 @@ async function applyRoleChange({
   }
 }
 
-async function applyGrupoUpdate(targetUserId: string, currentUser: any, grupo_id?: string, newRol?: string) {
+async function applyGrupoUpdate(targetUserId: string, currentUser: UsuarioRow, grupo_id?: string, newRol?: string) {
   if (grupo_id === undefined) return;
   let empresa_id = null;
   if (grupo_id) {
@@ -400,7 +411,7 @@ async function applyGrupoUpdate(targetUserId: string, currentUser: any, grupo_id
   }
 }
 
-async function applyProfileUpdate(targetUserId: string, currentUser: any, nombre?: string, correo?: string, telefono?: string) {
+async function applyProfileUpdate(targetUserId: string, currentUser: UsuarioRow, nombre?: string, correo?: string, telefono?: string) {
   if (typeof nombre === 'string' && nombre.trim()) {
     await pool.query(`UPDATE usuarios SET nombre = $1 WHERE id = $2`, [nombre.trim(), targetUserId]);
   }
@@ -431,7 +442,7 @@ async function applyGroupAndProfileUpdates({
   newRol,
 }: {
   targetUserId: string;
-  currentUser: any;
+  currentUser: UsuarioRow;
   grupo_id?: string;
   nombre?: string;
   correo?: string;
@@ -468,7 +479,7 @@ export async function PATCH(request: Request) {
 
     const userRes = await pool.query(`SELECT * FROM usuarios WHERE id = $1`, [targetUserId]);
     if (userRes.rowCount === 0) return NextResponse.json({ error: "Usuario a modificar no encontrado" }, { status: 404 });
-    const currentUser = userRes.rows[0];
+    const currentUser: UsuarioRow = userRes.rows[0];
 
     const permCheck = await verifyAdminPermissions({
       adminUsername,

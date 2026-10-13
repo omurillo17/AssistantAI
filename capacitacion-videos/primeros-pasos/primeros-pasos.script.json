@@ -1,0 +1,262 @@
+{
+  "$schema": "../../../Vid/packages/content-schema/schema/video-script.schema.json",
+  "id": "primeros-pasos",
+  "title": "Primeros pasos en la plataforma",
+  "lang": "es",
+  "status": "verified",
+  "format": {
+    "orientation": "landscape",
+    "size": 1920,
+    "fps": 30
+  },
+  "theme": {
+    "primary": "#0C66AC",
+    "background": "#0B1E33"
+  },
+  "burnCaptions": false,
+  "capture": [
+    {
+      "goto": "/login"
+    },
+    {
+      "fill": "input[type=text]",
+      "value": "reclutadora.demo"
+    },
+    {
+      "fill": "input[type=password]",
+      "value": "demo-capacitacion"
+    },
+    {
+      "shot": "01-login",
+      "regions": {
+        "usuario": "input[type=text]",
+        "contrasena": "input[type=password]",
+        "entrar": "button[type=submit]"
+      }
+    },
+    {
+      "click": "button[type=submit]"
+    },
+    {
+      "waitFor": "[aria-label=\"Ver notificaciones\"]"
+    },
+    {
+      "sleep": 2500
+    },
+    {
+      "shot": "02-inicio",
+      "regions": {
+        "sidebar": "aside",
+        "barra": "nav.h-16",
+        "contenido": "main",
+        "expandir": "[aria-label=\"Expandir menú\"]"
+      }
+    },
+    {
+      "click": "[aria-label=\"Expandir menú\"]"
+    },
+    {
+      "shot": "03-menu-expandido",
+      "regions": {
+        "sidebar": "aside",
+        "colapsar": "[aria-label=\"Colapsar menú\"]"
+      }
+    },
+    {
+      "click": "[aria-label=\"Colapsar menú\"]"
+    },
+    {
+      "click": "[title=\"Cambiar empresa o nave\"]"
+    },
+    {
+      "shot": "04-selector",
+      "regions": {
+        "boton": "[title=\"Cambiar empresa o nave\"]",
+        "empresa": "text=Grupo Industrial Demo (Todo)",
+        "nave": "text=CEDIS ZAPOPAN"
+      }
+    },
+    {
+      "click": "[title=\"Cambiar empresa o nave\"]"
+    },
+    {
+      "click": "[aria-label=\"Ver notificaciones\"]"
+    },
+    {
+      "sleep": 800
+    },
+    {
+      "shot": "05-notificaciones",
+      "regions": {
+        "campana": "[aria-label=\"Ver notificaciones\"]",
+        "primera": "text=Atención Humana",
+        "limpiar": "text=Limpiar todas"
+      }
+    },
+    {
+      "click": "[aria-label=\"Ver notificaciones\"]"
+    },
+    {
+      "click": "[aria-label=\"Menú de usuario\"]"
+    },
+    {
+      "shot": "06-menu-usuario",
+      "regions": {
+        "usuario": "[aria-label=\"Menú de usuario\"]",
+        "cambiar": "text=Cambiar Contraseña"
+      }
+    }
+  ],
+  "scenes": [
+    {
+      "template": "intro",
+      "durationSec": 5,
+      "title": "Primeros pasos en la plataforma",
+      "objective": "Iniciar sesión, ubicarte en la pantalla y elegir qué información ves.",
+      "narration": {
+        "text": "Bienvenido a la plataforma de reclutamiento. En este video aprenderás a iniciar sesión, a ubicarte en la pantalla y a elegir qué información ves."
+      },
+      "chapter": "Introducción"
+    },
+    {
+      "template": "demo",
+      "durationSec": 6,
+      "title": "Iniciar sesión",
+      "screenshot": "captures/01-login.png",
+      "highlights": [
+        {
+          "region": "usuario"
+        },
+        {
+          "region": "contrasena"
+        },
+        {
+          "region": "entrar",
+          "label": "Entrar"
+        }
+      ],
+      "narration": {
+        "text": "Escribe el usuario y la contraseña que te entregó tu encargado, y presiona Entrar. Nunca compartas tu usuario: lo que haces queda registrado con tu nombre."
+      }
+    },
+    {
+      "template": "steps",
+      "durationSec": 8,
+      "title": "Las tres zonas de la pantalla",
+      "screenshot": "captures/02-inicio.png",
+      "steps": [
+        "Barra lateral: los módulos.",
+        "Barra superior: selector, notificaciones y tu usuario.",
+        "Área central: donde trabajas."
+      ],
+      "highlights": [
+        {
+          "region": "sidebar"
+        },
+        {
+          "region": "barra"
+        },
+        {
+          "region": "contenido"
+        }
+      ],
+      "narration": {
+        "text": "La pantalla tiene tres zonas. A la izquierda, la barra lateral con los módulos. Arriba, la barra azul con el selector, las notificaciones y tu usuario. Al centro, el área donde trabajas."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 5,
+      "title": "Expandir el menú",
+      "screenshot": "captures/03-menu-expandido.png",
+      "highlights": [
+        {
+          "region": "sidebar"
+        },
+        {
+          "region": "colapsar",
+          "label": "Colapsar"
+        }
+      ],
+      "narration": {
+        "text": "La barra lateral está colapsada por defecto. Con la flecha del borde la expandes para ver el nombre de cada módulo."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 7,
+      "title": "El selector de empresa y nave",
+      "screenshot": "captures/04-selector.png",
+      "highlights": [
+        {
+          "region": "boton",
+          "label": "Selector"
+        },
+        {
+          "region": "empresa",
+          "label": "Toda la empresa"
+        },
+        {
+          "region": "nave",
+          "label": "Una sola nave"
+        }
+      ],
+      "narration": {
+        "text": "El selector define qué información ves en todos los módulos. Puedes elegir la empresa completa o una sola nave. Si tu bandeja aparece vacía, revisa primero este selector."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 6,
+      "title": "Notificaciones",
+      "screenshot": "captures/05-notificaciones.png",
+      "highlights": [
+        {
+          "region": "campana"
+        },
+        {
+          "region": "primera"
+        },
+        {
+          "region": "limpiar",
+          "label": "Limpiar todas"
+        }
+      ],
+      "narration": {
+        "text": "La campana muestra tus notificaciones: chats escalados, citas agendadas y alertas de identidad. Al hacer clic en una, te lleva al candidato."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 5,
+      "title": "Cambiar tu contraseña",
+      "screenshot": "captures/06-menu-usuario.png",
+      "highlights": [
+        {
+          "region": "usuario"
+        },
+        {
+          "region": "cambiar",
+          "label": "Cambiar Contraseña"
+        }
+      ],
+      "narration": {
+        "text": "En tu nombre, arriba a la derecha, está la opción Cambiar Contraseña. Úsala en tu primer ingreso."
+      }
+    },
+    {
+      "template": "outro",
+      "durationSec": 7,
+      "title": "Antes de terminar",
+      "mistakes": [
+        "Compartir tu usuario con otra persona.",
+        "Buscar candidatos con el selector en otra nave.",
+        "Conservar la contraseña temporal."
+      ],
+      "conclusion": "Ya conoces la pantalla. Sigue con la lección de la Bandeja de Mensajes.",
+      "narration": {
+        "text": "Evita estos errores frecuentes. Ya conoces la pantalla: sigue con la lección de la Bandeja de Mensajes."
+      }
+    }
+  ]
+}

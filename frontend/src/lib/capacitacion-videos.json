@@ -1,0 +1,461 @@
+{
+  "$comment": "Generado por `training build`. No editar a mano.",
+  "videos": {
+    "calendario": {
+      "title": "Calendario de Entrevistas",
+      "status": "verified",
+      "src": "/capacitacion/videos/calendario.mp4",
+      "poster": "/capacitacion/videos/calendario.jpg",
+      "captions": [
+        {
+          "src": "/capacitacion/videos/calendario.es.vtt",
+          "srclang": "es",
+          "label": "Español"
+        }
+      ],
+      "durationSec": 48,
+      "chapters": [
+        {
+          "startSec": 0,
+          "title": "Introducción"
+        },
+        {
+          "startSec": 8,
+          "title": "Tus citas"
+        },
+        {
+          "startSec": 21,
+          "title": "Detalle de la cita"
+        },
+        {
+          "startSec": 30.5,
+          "title": "Bloquear horarios"
+        },
+        {
+          "startSec": 41,
+          "title": "Errores frecuentes"
+        }
+      ],
+      "hash": "fd8870071280f9a0"
+    },
+    "como-funciona-virgo": {
+      "title": "Cómo funciona el asistente (Sofía)",
+      "status": "verified",
+      "src": "/capacitacion/videos/como-funciona-virgo.mp4",
+      "poster": "/capacitacion/videos/como-funciona-virgo.jpg",
+      "captions": [
+        {
+          "src": "/capacitacion/videos/como-funciona-virgo.es.vtt",
+          "srclang": "es",
+          "label": "Español"
+        }
+      ],
+      "durationSec": 53,
+      "chapters": [
+        {
+          "startSec": 0,
+          "title": "Introducción"
+        },
+        {
+          "startSec": 8.5,
+          "title": "El recorrido de un candidato"
+        },
+        {
+          "startSec": 22,
+          "title": "Cuándo entra el humano"
+        },
+        {
+          "startSec": 34,
+          "title": "Lo que Sofía no hace"
+        },
+        {
+          "startSec": 44.5,
+          "title": "Errores frecuentes"
+        }
+      ],
+      "hash": "c00b547db5bb4163"
+    },
+    "dashboards": {
+      "title": "Dashboards",
+      "status": "verified",
+      "src": "/capacitacion/videos/dashboards.mp4",
+      "poster": "/capacitacion/videos/dashboards.jpg",
+      "captions": [
+        {
+          "src": "/capacitacion/videos/dashboards.es.vtt",
+          "srclang": "es",
+          "label": "Español"
+        }
+      ],
+      "durationSec": 41,
+      "chapters": [
+        {
+          "startSec": 0,
+          "title": "Introducción"
+        },
+        {
+          "startSec": 5.5,
+          "title": "Vista ejecutiva"
+        },
+        {
+          "startSec": 16.5,
+          "title": "Clic para listar"
+        },
+        {
+          "startSec": 23.5,
+          "title": "IA Sofía"
+        },
+        {
+          "startSec": 33.5,
+          "title": "Errores frecuentes"
+        }
+      ],
+      "hash": "3e13f39dc72b3227"
+    },
+    "estados-candidato": {
+      "title": "Estados del candidato",
+      "status": "verified",
+      "src": "/capacitacion/videos/estados-candidato.mp4",
+      "poster": "/capacitacion/videos/estados-candidato.jpg",
+      "captions": [
+        {
+          "src": "/capacitacion/videos/estados-candidato.es.vtt",
+          "srclang": "es",
+          "label": "Español"
+        }
+      ],
+      "durationSec": 37,
+      "chapters": [
+        {
+          "startSec": 0,
+          "title": "Introducción"
+        },
+        {
+          "startSec": 8,
+          "title": "El catálogo"
+        },
+        {
+          "startSec": 20,
+          "title": "Los estados finales los pones tú"
+        },
+        {
+          "startSec": 30,
+          "title": "Errores frecuentes"
+        }
+      ],
+      "hash": "e777af1741cc3be7"
+    },
+    "expedientes": {
+      "title": "Expedientes",
+      "status": "verified",
+      "src": "/capacitacion/videos/expedientes.mp4",
+      "poster": "/capacitacion/videos/expedientes.jpg",
+      "captions": [
+        {
+          "src": "/capacitacion/videos/expedientes.es.vtt",
+          "srclang": "es",
+          "label": "Español"
+        }
+      ],
+      "durationSec": 69,
+      "chapters": [
+        {
+          "startSec": 0,
+          "title": "Introducción"
+        },
+        {
+          "startSec": 7,
+          "title": "El tablero de candidatos"
+        },
+        {
+          "startSec": 19.5,
+          "title": "Vista de directorio"
+        },
+        {
+          "startSec": 24.5,
+          "title": "El expediente"
+        },
+        {
+          "startSec": 39,
+          "title": "Alerta de identidad"
+        },
+        {
+          "startSec": 55,
+          "title": "Identidad validada"
+        },
+        {
+          "startSec": 61,
+          "title": "Antes de terminar"
+        }
+      ],
+      "hash": "ee40095ae1350f81"
+    },
+    "mensajes": {
+      "title": "Bandeja de Mensajes",
+      "status": "verified",
+      "src": "/capacitacion/videos/mensajes.mp4",
+      "poster": "/capacitacion/videos/mensajes.jpg",
+      "captions": [
+        {
+          "src": "/capacitacion/videos/mensajes.es.vtt",
+          "srclang": "es",
+          "label": "Español"
+        }
+      ],
+      "durationSec": 61,
+      "chapters": [
+        {
+          "startSec": 0,
+          "title": "Introducción"
+        },
+        {
+          "startSec": 7.5,
+          "title": "Cómo está organizada"
+        },
+        {
+          "startSec": 23.5,
+          "title": "Chat atendido por el bot"
+        },
+        {
+          "startSec": 32.5,
+          "title": "Responder tú mismo"
+        },
+        {
+          "startSec": 44.5,
+          "title": "Chat en modo Humano"
+        },
+        {
+          "startSec": 53.5,
+          "title": "Buenas prácticas"
+        }
+      ],
+      "hash": "9631a1d74903f462"
+    },
+    "panel-de-control": {
+      "title": "Panel de Control (Inicio)",
+      "status": "verified",
+      "src": "/capacitacion/videos/panel-de-control.mp4",
+      "poster": "/capacitacion/videos/panel-de-control.jpg",
+      "captions": [
+        {
+          "src": "/capacitacion/videos/panel-de-control.es.vtt",
+          "srclang": "es",
+          "label": "Español"
+        }
+      ],
+      "durationSec": 35,
+      "chapters": [
+        {
+          "startSec": 0,
+          "title": "Introducción"
+        },
+        {
+          "startSec": 7,
+          "title": "Una tarjeta por módulo"
+        },
+        {
+          "startSec": 19,
+          "title": "Bloque de administración"
+        },
+        {
+          "startSec": 28,
+          "title": "Errores frecuentes"
+        }
+      ],
+      "hash": "a9dc79a0079f1978"
+    },
+    "portal-candidato": {
+      "title": "Portal del Candidato",
+      "status": "verified",
+      "src": "/capacitacion/videos/portal-candidato.mp4",
+      "poster": "/capacitacion/videos/portal-candidato.jpg",
+      "captions": [
+        {
+          "src": "/capacitacion/videos/portal-candidato.es.vtt",
+          "srclang": "es",
+          "label": "Español"
+        }
+      ],
+      "durationSec": 33,
+      "chapters": [
+        {
+          "startSec": 0,
+          "title": "Introducción"
+        },
+        {
+          "startSec": 7.5,
+          "title": "El candidato se identifica"
+        },
+        {
+          "startSec": 15.5,
+          "title": "Sube sus documentos"
+        },
+        {
+          "startSec": 26,
+          "title": "Errores frecuentes"
+        }
+      ],
+      "hash": "4ffb622af132c586"
+    },
+    "primeros-pasos": {
+      "title": "Primeros pasos en la plataforma",
+      "status": "verified",
+      "src": "/capacitacion/videos/primeros-pasos.mp4",
+      "poster": "/capacitacion/videos/primeros-pasos.jpg",
+      "captions": [
+        {
+          "src": "/capacitacion/videos/primeros-pasos.es.vtt",
+          "srclang": "es",
+          "label": "Español"
+        }
+      ],
+      "durationSec": 82,
+      "chapters": [
+        {
+          "startSec": 0,
+          "title": "Introducción"
+        },
+        {
+          "startSec": 10,
+          "title": "Iniciar sesión"
+        },
+        {
+          "startSec": 20.5,
+          "title": "Las tres zonas de la pantalla"
+        },
+        {
+          "startSec": 35,
+          "title": "Expandir el menú"
+        },
+        {
+          "startSec": 43,
+          "title": "El selector de empresa y nave"
+        },
+        {
+          "startSec": 55,
+          "title": "Notificaciones"
+        },
+        {
+          "startSec": 65.5,
+          "title": "Cambiar tu contraseña"
+        },
+        {
+          "startSec": 73.5,
+          "title": "Antes de terminar"
+        }
+      ],
+      "hash": "c6aa69ca58d3b9d1"
+    },
+    "problemas-comunes": {
+      "title": "Problemas comunes",
+      "status": "verified",
+      "src": "/capacitacion/videos/problemas-comunes.mp4",
+      "poster": "/capacitacion/videos/problemas-comunes.jpg",
+      "captions": [
+        {
+          "src": "/capacitacion/videos/problemas-comunes.es.vtt",
+          "srclang": "es",
+          "label": "Español"
+        }
+      ],
+      "durationSec": 49,
+      "chapters": [
+        {
+          "startSec": 0,
+          "title": "Introducción"
+        },
+        {
+          "startSec": 5.5,
+          "title": "Aviso de WhatsApp desconectado"
+        },
+        {
+          "startSec": 15.5,
+          "title": "No veo candidatos"
+        },
+        {
+          "startSec": 24,
+          "title": "El bot no responde"
+        },
+        {
+          "startSec": 33.5,
+          "title": "La IA no ofrece una vacante"
+        },
+        {
+          "startSec": 41.5,
+          "title": "Errores frecuentes"
+        }
+      ],
+      "hash": "7a6fadb6c0f10456"
+    },
+    "usuarios": {
+      "title": "Gestión de Usuarios",
+      "status": "verified",
+      "src": "/capacitacion/videos/usuarios.mp4",
+      "poster": "/capacitacion/videos/usuarios.jpg",
+      "captions": [
+        {
+          "src": "/capacitacion/videos/usuarios.es.vtt",
+          "srclang": "es",
+          "label": "Español"
+        }
+      ],
+      "durationSec": 36,
+      "chapters": [
+        {
+          "startSec": 0,
+          "title": "Introducción"
+        },
+        {
+          "startSec": 6.5,
+          "title": "Los usuarios"
+        },
+        {
+          "startSec": 15,
+          "title": "Crear un usuario"
+        },
+        {
+          "startSec": 29,
+          "title": "Errores frecuentes"
+        }
+      ],
+      "hash": "97923a360b48ba94"
+    },
+    "vacantes": {
+      "title": "Vacantes",
+      "status": "verified",
+      "src": "/capacitacion/videos/vacantes.mp4",
+      "poster": "/capacitacion/videos/vacantes.jpg",
+      "captions": [
+        {
+          "src": "/capacitacion/videos/vacantes.es.vtt",
+          "srclang": "es",
+          "label": "Español"
+        }
+      ],
+      "durationSec": 46,
+      "chapters": [
+        {
+          "startSec": 0,
+          "title": "Introducción"
+        },
+        {
+          "startSec": 7,
+          "title": "Tus vacantes"
+        },
+        {
+          "startSec": 17.5,
+          "title": "Datos de la vacante"
+        },
+        {
+          "startSec": 29,
+          "title": "Los filtros"
+        },
+        {
+          "startSec": 38,
+          "title": "Errores frecuentes"
+        }
+      ],
+      "hash": "e0234d538456b7ab"
+    }
+  }
+}

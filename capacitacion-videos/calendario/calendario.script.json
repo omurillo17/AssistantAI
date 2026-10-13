@@ -1,0 +1,164 @@
+{
+  "$schema": "../../../Vid/packages/content-schema/schema/video-script.schema.json",
+  "id": "calendario",
+  "title": "Calendario de Entrevistas",
+  "lang": "es",
+  "status": "verified",
+  "format": {
+    "orientation": "landscape",
+    "size": 1920,
+    "fps": 30
+  },
+  "theme": {
+    "primary": "#0C66AC",
+    "background": "#0B1E33"
+  },
+  "burnCaptions": false,
+  "capture": [
+    {
+      "use": "login"
+    },
+    {
+      "goto": "/calendario",
+      "wait": 6000
+    },
+    {
+      "shot": "01-mes",
+      "regions": {
+        "proximas": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === 'Próximas Citas').closest('.rounded-2xl, .rounded-xl')",
+        "vistas": "js=[...document.querySelectorAll('button')].find(b => b.innerText.trim() === 'Semana').parentElement",
+        "cita": "js=document.querySelector('.rbc-event')",
+        "hoy": "js=[...document.querySelectorAll('button')].find(b => b.innerText.trim() === 'Hoy')"
+      }
+    },
+    {
+      "click": "js=document.querySelector('.rbc-event')",
+      "real": true
+    },
+    {
+      "sleep": 1500
+    },
+    {
+      "shot": "02-cita",
+      "regions": {
+        "reagendar": "js=[...document.querySelectorAll('button')].find(b => b.innerText.includes('Reagendar'))",
+        "cancelar": "js=[...document.querySelectorAll('button')].find(b => b.innerText.includes('Cancelar'))",
+        "resumen": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && e.textContent.trim() === 'Resumen IA').parentElement"
+      }
+    },
+    {
+      "goto": "/calendario",
+      "wait": 6000
+    },
+    {
+      "click": "js=[...document.querySelectorAll('.rbc-day-bg')][24]",
+      "real": true
+    },
+    {
+      "sleep": 1500
+    },
+    {
+      "shot": "03-bloqueo",
+      "regions": {
+        "motivo": "js=[...document.querySelectorAll('label, div, p, span')].find(e => e.childElementCount === 0 && /motivo/i.test(e.textContent)).parentElement",
+        "rapidos": "js=[...document.querySelectorAll('*')].find(e => e.childElementCount <= 1 && /^accesos r.pidos de rango$/i.test(e.textContent.trim())).parentElement",
+        "confirmar": "js=[...document.querySelectorAll('button')].find(b => b.innerText.trim() === 'Confirmar Bloqueo')"
+      }
+    }
+  ],
+  "scenes": [
+    {
+      "template": "intro",
+      "durationSec": 5,
+      "title": "Calendario de Entrevistas",
+      "chapter": "Introducción",
+      "objective": "Ver tus citas, reagendar, cancelar y bloquear horarios.",
+      "narration": {
+        "text": "En este video verás tus entrevistas, cómo reagendarlas o cancelarlas y cómo bloquear los horarios en los que no puedes atender."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 9,
+      "title": "Tus citas",
+      "screenshot": "captures/01-mes.png",
+      "highlights": [
+        {
+          "region": "proximas",
+          "label": "Próximas citas"
+        },
+        {
+          "region": "cita",
+          "label": "Entrevista"
+        },
+        {
+          "region": "vistas",
+          "label": "Mes, semana, día"
+        }
+      ],
+      "narration": {
+        "text": "Aquí ves las entrevistas que agendó Sofía. A la izquierda, tus próximas citas; arriba cambias entre mes, semana, día y agenda. Ves automáticamente el calendario de tu grupo."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 9,
+      "title": "Detalle de la cita",
+      "screenshot": "captures/02-cita.png",
+      "highlights": [
+        {
+          "region": "resumen",
+          "label": "Resumen de la IA"
+        },
+        {
+          "region": "reagendar",
+          "label": "Reagendar"
+        },
+        {
+          "region": "cancelar",
+          "label": "Cancelar"
+        }
+      ],
+      "narration": {
+        "text": "Al abrir una cita ves el resumen que preparó Sofía. Desde aquí puedes reagendarla o cancelarla, y al candidato se le avisa por WhatsApp."
+      }
+    },
+    {
+      "template": "demo",
+      "durationSec": 9,
+      "title": "Bloquear horarios",
+      "screenshot": "captures/03-bloqueo.png",
+      "highlights": [
+        {
+          "region": "motivo",
+          "label": "Motivo"
+        },
+        {
+          "region": "rapidos",
+          "label": "Rangos rápidos"
+        },
+        {
+          "region": "confirmar",
+          "label": "Confirmar"
+        }
+      ],
+      "narration": {
+        "text": "Al seleccionar un día puedes bloquear un rango de horario con un motivo. Sofía deja de ofrecer esos huecos: úsalo para juntas, comidas o días libres."
+      }
+    },
+    {
+      "template": "outro",
+      "durationSec": 7,
+      "title": "Antes de terminar",
+      "chapter": "Errores frecuentes",
+      "mistakes": [
+        "No bloquear tus juntas: Sofía te agendará encima.",
+        "Cancelar sin revisar el resumen."
+      ],
+      "conclusion": "Bloquea tus horarios ocupados antes de que Sofía los ofrezca.",
+      "narration": {
+        "text": "Bloquea tus horarios ocupados; si no, Sofía los seguirá ofreciendo."
+      }
+    }
+  ]
+}

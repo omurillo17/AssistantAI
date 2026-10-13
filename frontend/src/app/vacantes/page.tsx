@@ -18,19 +18,19 @@ export default function VacantesPage() {
   return (
     <div className="flex flex-col h-full bg-slate-50 text-slate-800">
       {/* Top Toolbar */}
-      <div className="flex flex-col md:flex-row justify-end items-start md:items-center mb-6 gap-4 px-10 pt-6">
-        <div className="flex gap-4">
-          <button onClick={v.loadData} className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded shadow-sm transition-all border border-slate-200">
+      <div className="flex flex-col sm:flex-row justify-end items-stretch sm:items-center mb-4 sm:mb-6 gap-3 sm:gap-4 px-3 sm:px-6 lg:px-10 pt-3 sm:pt-6">
+        <div className="flex gap-3 w-full sm:w-auto">
+          <button onClick={v.loadData} className="flex-1 sm:flex-initial px-3 sm:px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-lg shadow-sm transition-all border border-slate-200 text-xs sm:text-sm">
             Descartar Cambios
           </button>
-          <button onClick={v.saveData} className="px-4 py-2 bg-primary hover:bg-primary/90 text-white font-semibold rounded shadow-sm transition-all">
+          <button onClick={v.saveData} className="flex-1 sm:flex-initial px-3 sm:px-4 py-2 bg-primary hover:bg-primary/90 text-white font-semibold rounded-lg shadow-sm transition-all text-xs sm:text-sm">
             Guardar
           </button>
         </div>
       </div>
 
       {/* Main Content */}
-      <main className="flex-1 p-10 max-w-7xl mx-auto w-full">
+      <main className="flex-1 p-3 sm:p-6 lg:p-10 max-w-7xl mx-auto w-full">
         {(() => {
           if (v.isAdmin) {
             return (

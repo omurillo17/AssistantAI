@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Calendar, dateFnsLocalizer, View, Views } from "react-big-calendar";
+import { Calendar, dateFnsLocalizer, View, Views, type ToolbarProps } from "react-big-calendar";
 import { format, parse, startOfWeek, getDay, addMonths, subMonths, addWeeks, subWeeks, addDays, subDays } from "date-fns";
 import { es } from "date-fns/locale";
 import { MessageSquare, ChevronDown, ChevronRight, XCircle, ChevronLeft, RefreshCw, Calendar as CalendarIcon, LayoutList } from "lucide-react";
@@ -20,7 +20,24 @@ const localizer = dateFnsLocalizer({
 
 const BACKEND_BASE_URL = "/api/backend";
 
-import type { Candidato } from "@/types";
+import type { Candidato, Recruiter } from "@/types";
+
+/** Evento crudo de Google Calendar tal como lo devuelve el backend (los campos varían por origen). */
+type GoogleEventDate = string | { dateTime?: string; date?: string };
+type GoogleEvent = {
+  id: string;
+  title?: string;
+  summary?: string;
+  description?: string;
+  calendarId?: string;
+  creator?: string | { email?: string };
+  organizer?: { email?: string };
+  start?: GoogleEventDate;
+  end?: GoogleEventDate;
+};
+
+/** Fecha de un evento: dateTime (con hora), date (todo el día) o el valor plano. */
+const fechaEvento = (d?: GoogleEventDate) => (typeof d === "string" ? d : d?.dateTime || d?.date);
 
 export type CalendarEventResource = Partial<Omit<Candidato, "telefono">> & {
   telefono?: string | null;
@@ -39,7 +56,7 @@ export interface CalendarEvent {
 }
 
 // ─── Custom Toolbar ──────────────────────────────────────────────────────────
-function CustomToolbar({ date, view, onNavigate, onView }: any) {
+function CustomToolbar({ date, view, onNavigate, onView }: ToolbarProps<CalendarEvent>) {
   const views: { key: View; label: string }[] = [
     { key: Views.MONTH, label: "Mes" },
     { key: Views.WEEK, label: "Semana" },
@@ -47,15 +64,16 @@ function CustomToolbar({ date, view, onNavigate, onView }: any) {
     { key: Views.AGENDA, label: "Agenda" },
   ];
 
+  // Se navega a la fecha ya calculada ("DATE"); "TODAY" usa el getNow del calendario.
   const navigatePrev = () => {
-    if (view === Views.MONTH) onNavigate("prev", subMonths(date, 1));
-    else if (view === Views.WEEK) onNavigate("prev", subWeeks(date, 1));
-    else onNavigate("prev", subDays(date, 1));
+    if (view === Views.MONTH) onNavigate("DATE", subMonths(date, 1));
+    else if (view === Views.WEEK) onNavigate("DATE", subWeeks(date, 1));
+    else onNavigate("DATE", subDays(date, 1));
   };
   const navigateNext = () => {
-    if (view === Views.MONTH) onNavigate("next", addMonths(date, 1));
-    else if (view === Views.WEEK) onNavigate("next", addWeeks(date, 1));
-    else onNavigate("next", addDays(date, 1));
+    if (view === Views.MONTH) onNavigate("DATE", addMonths(date, 1));
+    else if (view === Views.WEEK) onNavigate("DATE", addWeeks(date, 1));
+    else onNavigate("DATE", addDays(date, 1));
   };
 
   const getLabel = () => {
@@ -81,7 +99,7 @@ function CustomToolbar({ date, view, onNavigate, onView }: any) {
           <ChevronLeft size={18} className="text-slate-600" />
         </button>
         <button
-          onClick={() => onNavigate("today", new Date())}
+          onClick={() => onNavigate("TODAY")}
           className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-colors"
         >
           Hoy
@@ -121,7 +139,7 @@ function CustomToolbar({ date, view, onNavigate, onView }: any) {
 export default function CalendarioPage() {
   const router = useRouter();
   const [candidatos, setCandidatos] = useState<Candidato[]>([]);
-  const [googleEvents, setGoogleEvents] = useState<any[]>([]);
+  const [googleEvents, setGoogleEvents] = useState<GoogleEvent[]>([]);
   const [gcalRange, setGcalRange] = useState<{ start: Date; end: Date } | null>(null);
   const reconciledRef = useRef<Set<string>>(new Set());
   const [recruiterColors, setRecruiterColors] = useState<Record<string, string>>({});
@@ -194,7 +212,7 @@ export default function CalendarioPage() {
         if (resGcal.ok) {
           const gcalData = await resGcal.json();
           const rawEvents: Record<string, unknown>[] = Array.isArray(gcalData) ? gcalData : gcalData?.events || gcalData?.data || [];
-          const realEvents = rawEvents.filter((ge) => ge && typeof ge.id === "string" && ge.id.length > 0 && !ge.error);
+          const realEvents = rawEvents.filter((ge) => ge && typeof ge.id === "string" && ge.id.length > 0 && !ge.error) as GoogleEvent[];
           setGoogleEvents(realEvents);
           setGcalRange({ start: rangeStart, end: rangeEnd });
         }
@@ -204,7 +222,7 @@ export default function CalendarioPage() {
         const resRec = await fetch(`/api/db/vacantes${tenantQuery}`);
         if (resRec.ok) {
           const recData = await resRec.json();
-          const recs: any[] = Array.isArray(recData) ? recData : recData.data || [];
+          const recs: (Partial<Recruiter> & { name?: string; id?: string })[] = Array.isArray(recData) ? recData : recData.data || [];
           const colorMap: Record<string, string> = {};
           const nameMap: Record<string, string> = {};
           const phoneMap: Record<string, string> = {};
@@ -213,7 +231,7 @@ export default function CalendarioPage() {
           let myCalIdLocal = "";
           const myRecruiterId = localStorage.getItem("tci_reclutador_id");
 
-          recs.forEach((r: any, i: number) => {
+          recs.forEach((r, i) => {
             const calId = (r.calendar_id || "").toLowerCase();
             const phone = r.telefono || "";
             if (calId) {
@@ -334,7 +352,7 @@ export default function CalendarioPage() {
     const representedPhones = new Set<string>();
 
     // Deduplicate raw GCal events by id first
-    const uniqueGcalMap = new Map<string, any>();
+    const uniqueGcalMap = new Map<string, GoogleEvent>();
     for (const ge of googleEvents) {
       if (ge && ge.id && !uniqueGcalMap.has(ge.id)) {
         uniqueGcalMap.set(ge.id, ge);
@@ -373,14 +391,14 @@ export default function CalendarioPage() {
       if (vacanteMatch) vacante = vacanteMatch[1].trim();
 
       const creatorEmail = String(
-        ge.calendarId || ge.creator?.email || ge.organizer?.email || (typeof ge.creator === 'string' ? ge.creator : '') || "desconocido"
+        ge.calendarId || (typeof ge.creator === 'object' ? ge.creator.email : undefined) || ge.organizer?.email || (typeof ge.creator === 'string' ? ge.creator : '') || "desconocido"
       ).toLowerCase();
 
       const gePhoneClean = cleanPhone(telefono);
       const matchedCandidate = candByEventId.get(gcalId) || (gePhoneClean ? candByPhone.get(gePhoneClean) : null);
 
-      const startDate = new Date(ge.start?.dateTime || ge.start?.date || ge.start || new Date());
-      const endDate = new Date(ge.end?.dateTime || ge.end?.date || ge.end || new Date());
+      const startDate = new Date(fechaEvento(ge.start) || new Date());
+      const endDate = new Date(fechaEvento(ge.end) || new Date());
 
       if (matchedCandidate) {
         if (matchedCandidate.id) representedCandidateIds.add(matchedCandidate.id);
@@ -724,27 +742,26 @@ export default function CalendarioPage() {
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-slate-50 text-slate-800">
       {/* HEADER */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 px-8 pt-6 pb-4 bg-white border-b border-slate-100 shadow-sm">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 px-4 sm:px-8 pt-4 sm:pt-6 pb-3 sm:pb-4 bg-white border-b border-slate-100 shadow-sm">
         <div className="flex items-center gap-3">
           <span className="bg-indigo-100 text-indigo-700 text-xs font-bold px-2.5 py-1 rounded-full">
             {totalProximas} próximas
           </span>
-
         </div>
 
         <button
           onClick={loadData}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg shadow-sm transition-all text-sm"
+          className="flex items-center gap-2 px-3 sm:px-4 py-1.5 sm:py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg shadow-sm transition-all text-xs sm:text-sm"
         >
           <RefreshCw size={14} /> Actualizar
         </button>
       </div>
 
-      <main className="flex-1 p-6 overflow-hidden flex flex-col md:flex-row max-w-[1500px] mx-auto w-full gap-5">
+      <main className="flex-1 p-3 sm:p-6 overflow-y-auto md:overflow-hidden flex flex-col md:flex-row max-w-[1500px] mx-auto w-full gap-4 sm:gap-5">
 
         {/* PANEL LATERAL */}
-        <div className="w-full md:w-72 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden shrink-0">
-          <div className="p-4 bg-gradient-to-r from-indigo-600 to-indigo-500 text-white">
+        <div className="w-full md:w-72 bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col overflow-hidden shrink-0 max-h-60 md:max-h-none">
+          <div className="p-3 sm:p-4 bg-gradient-to-r from-indigo-600 to-indigo-500 text-white">
             <div className="flex items-center gap-2">
               <LayoutList size={16} />
               <h2 className="font-bold text-sm">Próximas Citas</h2>
@@ -829,7 +846,7 @@ export default function CalendarioPage() {
         </div>
 
         {/* CALENDARIO PRINCIPAL */}
-        <div className="bg-white flex-1 rounded-2xl shadow-sm border border-slate-200 p-5 flex flex-col min-w-0 overflow-hidden">
+        <div className="bg-white flex-1 rounded-2xl shadow-sm border border-slate-200 p-3 sm:p-5 flex flex-col min-w-0 overflow-x-auto min-h-[500px]">
           <Calendar
             localizer={localizer}
             events={events}
