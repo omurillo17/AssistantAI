@@ -18,6 +18,7 @@ import { ESTADOS, getEstado, getEstadoColor, type EstadoKey } from "@/lib/estado
 import type { Candidato } from "@/types";
 import { CandidateModal } from "@/components/CandidateModal";
 import { useTenantChange } from "@/hooks/useTenant";
+import { useEstadosPersonalizados } from "@/hooks/useEstadosPersonalizados";
 import { useBackdropClose } from "@/hooks/useBackdropClose";
 import { formatNaveName, getCandidateDisplayName } from "@/lib/formatters";
 
@@ -223,6 +224,8 @@ function resolveNavesMap(empresasData: Record<string, unknown>, storedEmpresaId:
 export default function DashboardsPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"ejecutivo" | "ia">("ejecutivo");
+  // Registra los estados manuales para que el donut muestre su nombre y color.
+  useEstadosPersonalizados();
   const [resumen, setResumen] = useState<ResumenDashboard>(RESUMEN_VACIO);
   const [chatsActivos, setChatsActivos] = useState(0);
   const [naveNombrePorNumero, setNaveNombrePorNumero] = useState<Record<string, string>>({});
@@ -307,7 +310,7 @@ export default function DashboardsPage() {
     const donutEstados = Object.entries(estadosCounts)
       .map(([key, value]) => ({
         key,
-        name: ESTADOS[key as EstadoKey]?.label || key,
+        name: getEstado(key).label,
         value,
         color: getEstadoColor(key),
       }))

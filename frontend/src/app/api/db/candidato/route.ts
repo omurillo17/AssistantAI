@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from "zod";
 
-import { pool } from '@/lib/db';
+import { pool, queryComoCrm } from '@/lib/db';
 
 const getQuerySchema = z.object({
   telefono: z.string().min(1, "Falta el parámetro telefono").max(20),
@@ -218,7 +218,8 @@ export async function PATCH(request: Request) {
       filtroExtra += ` AND nave_id = $${idx++}`;
       valores.push(target_nave);
     }
-    const res = await pool.query(
+    const res = await queryComoCrm(
+      String(payload.usuario ?? ''),
       `UPDATE candidatos SET ${campos.join(', ')} WHERE telefono = $${telefonoIdx}${filtroExtra} RETURNING id, telefono, estado, escalado, escalated_at, updated_at`,
       valores
     );
@@ -233,6 +234,10 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json(res.rows[0]);
   } catch (err) {
+    // check_violation: el trigger candidatos_estado_guard rechazó el estado.
+    if ((err as { code?: string }).code === '23514') {
+      return NextResponse.json({ error: 'Estado inválido' }, { status: 400 });
+    }
     console.error('Error updating candidate:', err);
     return NextResponse.json({ error: 'Error al actualizar el candidato' }, { status: 500 });
   }
