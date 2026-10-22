@@ -273,11 +273,6 @@ function EditUserModalContent({
           <div className="md:col-span-2">
             <div className="flex justify-between items-center mb-1">
               <label htmlFor="edit-user-new-password" className="block text-sm font-semibold text-slate-600">Nueva Contraseña (Opcional)</label>
-              {(creatorRole === "ADMIN" || creatorRole === "ROOT") && user.actual_password && (
-                <span className="text-xs text-slate-500">
-                  Actual: <span className="font-mono font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">{user.actual_password}</span>
-                </span>
-              )}
             </div>
             <input
               id="edit-user-new-password"

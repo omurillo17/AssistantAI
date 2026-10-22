@@ -166,7 +166,6 @@ export type Usuario = {
   /** Nombre para mostrar; la columna existe en `usuarios` y faltaba aquí. */
   nombre?: string | null;
   rol: string;
-  actual_password?: string | null;
   correo?: string | null;
   telefono?: string | null;
   reclutador_id?: string | null;

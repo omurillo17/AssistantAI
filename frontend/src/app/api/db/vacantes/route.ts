@@ -4,7 +4,22 @@ import { pool } from '@/lib/db';
 import { syncPromptContextDisk } from '@/lib/syncPromptContext';
 import { resolveGrupoNaveIds } from '@/lib/grupos';
 import type { PoolClient } from 'pg';
+import { z } from 'zod';
 import type { Recruiter } from '@/types';
+
+// Solo se valida lo que el handler necesita para no romperse (ids y la lista de
+// vacantes); el resto de campos pasa tal cual, como hasta ahora.
+const recruiterSchema = z.looseObject({
+  reclutador_id: z.string().min(1),
+  vacantes: z.array(z.looseObject({ id: z.string().min(1) })),
+});
+const postBodySchema = z.union([
+  z.array(recruiterSchema),
+  z.object({
+    recruiters: z.array(recruiterSchema),
+    transfer_map: z.array(z.object({ from: z.string(), to: z.string() })).optional(),
+  }),
+]);
 
 /** Fila del SELECT de reclutadores + vacantes (LEFT JOIN: las columnas de vacante pueden ser nulas). */
 type VacanteJoinRow = {
@@ -192,6 +207,17 @@ export async function GET(request: Request) {
   }
 }
 
+/** ¿Todos los reclutadores existen y pertenecen a `empresa_id`? */
+async function reclutadoresDeEmpresa(client: PoolClient, ids: string[], empresa_id: string): Promise<boolean> {
+  const unicos = [...new Set(ids)];
+  if (unicos.length === 0) return true;
+  const res = await client.query(
+    `SELECT count(*)::int AS n FROM reclutadores WHERE id = ANY($1) AND empresa_id = $2`,
+    [unicos, empresa_id]
+  );
+  return res.rows[0].n === unicos.length;
+}
+
 async function applyTransferMap(client: PoolClient, transfer_map: { from: string; to: string }[]) {
   for (const t of transfer_map) {
     if (t.from && t.to) {
@@ -204,21 +230,15 @@ async function applyTransferMap(client: PoolClient, transfer_map: { from: string
 async function cleanupDeletedReclutadores(
   client: PoolClient,
   rol: string,
-  target_empresa_id: string | null,
+  target_empresa_id: string,
   incomingRecruiters: string[],
   allowedReclutadorIds: string[]
 ) {
   if (rol === "ADMIN" || rol === "ROOT") {
     if (incomingRecruiters.length > 0) {
-      if (target_empresa_id) {
-        await client.query(`DELETE FROM reclutadores WHERE empresa_id = $1 AND id != ALL($2)`, [target_empresa_id, incomingRecruiters]);
-      } else {
-        await client.query(`DELETE FROM reclutadores WHERE id != ALL($1)`, [incomingRecruiters]);
-      }
-    } else if (target_empresa_id) {
-      await client.query(`DELETE FROM reclutadores WHERE empresa_id = $1`, [target_empresa_id]);
+      await client.query(`DELETE FROM reclutadores WHERE empresa_id = $1 AND id != ALL($2)`, [target_empresa_id, incomingRecruiters]);
     } else {
-      await client.query(`DELETE FROM reclutadores`);
+      await client.query(`DELETE FROM reclutadores WHERE empresa_id = $1`, [target_empresa_id]);
     }
   } else if (rol === "ENCARGADO" && allowedReclutadorIds.length > 0) {
     if (incomingRecruiters.length > 0) {
@@ -232,8 +252,10 @@ async function cleanupDeletedReclutadores(
 async function upsertRecruitersAndVacancies(
   client: PoolClient,
   data: Recruiter[],
-  target_empresa_id: string | null
+  target_empresa_id: string
 ) {
+  // El WHERE del ON CONFLICT impide que un id ajeno sirva para pisar filas de
+  // otra empresa: si el id ya existe en otra, esa fila no se toca.
   for (const rec of data) {
     await client.query(`
       INSERT INTO reclutadores (id, nombre, activo, telefono, calendar_id, color, empresa_id, updated_at) 
@@ -246,7 +268,8 @@ async function upsertRecruitersAndVacancies(
         color = EXCLUDED.color,
         empresa_id = EXCLUDED.empresa_id,
         updated_at = NOW()
-    `, [rec.reclutador_id, rec.nombre, rec.activo, rec.telefono || '', rec.calendar_id || '', rec.color || '#6366f1', target_empresa_id || null]);
+      WHERE reclutadores.empresa_id = EXCLUDED.empresa_id
+    `, [rec.reclutador_id, rec.nombre, rec.activo, rec.telefono || '', rec.calendar_id || '', rec.color || '#6366f1', target_empresa_id]);
 
     let orden = 0;
     for (const vac of rec.vacantes) {
@@ -265,6 +288,7 @@ async function upsertRecruitersAndVacancies(
           orden = EXCLUDED.orden,
           empresa_id = EXCLUDED.empresa_id,
           updated_at = NOW()
+        WHERE vacantes_def.empresa_id = EXCLUDED.empresa_id
       `, [
         vac.id,
         rec.reclutador_id,
@@ -276,7 +300,7 @@ async function upsertRecruitersAndVacancies(
         JSON.stringify(vac.filtros || []),
         vac.activa,
         orden,
-        target_empresa_id || null
+        target_empresa_id
       ]);
       orden++;
     }
@@ -285,23 +309,15 @@ async function upsertRecruitersAndVacancies(
 
 async function cleanupAdminVacancies(
   client: PoolClient,
-  target_empresa_id: string | null,
+  target_empresa_id: string,
   incomingVacancies: string[]
 ) {
   const hasIncoming = incomingVacancies.length > 0;
-  if (target_empresa_id) {
-    const query = hasIncoming
-      ? `DELETE FROM vacantes_def WHERE empresa_id = $1 AND id != ALL($2)`
-      : `DELETE FROM vacantes_def WHERE empresa_id = $1`;
-    const params = hasIncoming ? [target_empresa_id, incomingVacancies] : [target_empresa_id];
-    await client.query(query, params);
-  } else {
-    const query = hasIncoming
-      ? `DELETE FROM vacantes_def WHERE id != ALL($1)`
-      : `DELETE FROM vacantes_def`;
-    const params = hasIncoming ? [incomingVacancies] : [];
-    await client.query(query, params);
-  }
+  const query = hasIncoming
+    ? `DELETE FROM vacantes_def WHERE empresa_id = $1 AND id != ALL($2)`
+    : `DELETE FROM vacantes_def WHERE empresa_id = $1`;
+  const params = hasIncoming ? [target_empresa_id, incomingVacancies] : [target_empresa_id];
+  await client.query(query, params);
 }
 
 async function cleanupScopedVacancies(
@@ -330,7 +346,7 @@ async function cleanupScopedVacancies(
 async function cleanupDeletedVacancies(
   client: PoolClient,
   rol: string,
-  target_empresa_id: string | null,
+  target_empresa_id: string,
   incomingVacancies: string[],
   jwt_reclutador_id: string | null,
   allowedReclutadorIds: string[]
@@ -352,35 +368,33 @@ export async function POST(request: Request) {
   const jwt_empresa_id = (session.empresa_id as string | null) ?? null;
   const jwt_grupo_id = (session.grupo_id as string | null) ?? null;
 
-  const { searchParams } = new URL(request.url);
-  let target_empresa_id = searchParams.get("empresa_id");
-
-  // Si no es ROOT, forzamos su propia empresa_id
-  if (rol !== "ROOT") {
-    target_empresa_id = jwt_empresa_id;
+  if (!["ADMIN", "ROOT", "ENCARGADO", "RECLUTADOR"].includes(rol)) {
+    return NextResponse.json({ error: "No autorizado para modificar vacantes" }, { status: 403 });
   }
+
+  const { searchParams } = new URL(request.url);
+  // Si no es ROOT, forzamos su propia empresa_id
+  const target_empresa_id = rol === "ROOT" ? searchParams.get("empresa_id") : jwt_empresa_id;
+  // Sin empresa no hay alcance: los borrados de abajo se harían sobre toda la tabla.
+  if (!target_empresa_id) {
+    return NextResponse.json({ error: "Selecciona una empresa antes de guardar" }, { status: 400 });
+  }
+
+  const parsed = postBodySchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'Formato de datos inválido' }, { status: 400 });
+  }
+  let data = (Array.isArray(parsed.data) ? parsed.data : parsed.data.recruiters) as unknown as Recruiter[];
+  const transfer_map = Array.isArray(parsed.data) ? [] : (parsed.data.transfer_map ?? []);
+
   const client = await pool.connect();
   try {
-    const body = await request.json();
-    let data = [];
-    let transfer_map: {from: string, to: string}[] = [];
-
-    if (Array.isArray(body)) {
-      data = body;
-    } else if (body && Array.isArray(body.recruiters)) {
-      data = body.recruiters;
-      if (Array.isArray(body.transfer_map)) {
-        transfer_map = body.transfer_map;
-      }
-    } else {
-      return NextResponse.json({ error: 'Formato de datos inválido' }, { status: 400 });
-    }
 
     if (rol === "RECLUTADOR") {
       if (!jwt_reclutador_id) {
          return NextResponse.json({ error: 'Acceso denegado' }, { status: 403 });
       }
-      data = data.filter((r: { reclutador_id: string }) => r.reclutador_id === jwt_reclutador_id);
+      data = data.filter((r) => r.reclutador_id === jwt_reclutador_id);
     }
 
     // Un ENCARGADO solo puede tocar reclutadores de su propio grupo
@@ -393,18 +407,32 @@ export async function POST(request: Request) {
         [jwt_grupo_id, jwt_empresa_id]
       );
       allowedReclutadorIds = allowedRes.rows.map((row: { id: string }) => row.id);
-      data = data.filter((r: { reclutador_id: string }) => allowedReclutadorIds.includes(r.reclutador_id));
+      data = data.filter((r) => allowedReclutadorIds.includes(r.reclutador_id));
+    }
+
+    // Los reclutadores ya existentes que se envían deben ser de esta empresa
+    // (los nuevos aún no existen y se crean en ella), y las transferencias solo
+    // pueden mover chats entre reclutadores de esta misma empresa.
+    const ajenos = await client.query(
+      `SELECT id FROM reclutadores WHERE id = ANY($1) AND empresa_id IS DISTINCT FROM $2`,
+      [data.map((r) => r.reclutador_id), target_empresa_id]
+    );
+    if ((ajenos.rowCount ?? 0) > 0) {
+      return NextResponse.json({ error: 'Reclutador fuera de tu empresa' }, { status: 403 });
+    }
+    if (!(await reclutadoresDeEmpresa(client, transfer_map.flatMap((t) => [t.from, t.to]).filter(Boolean), target_empresa_id))) {
+      return NextResponse.json({ error: 'Transferencia fuera de tu empresa' }, { status: 403 });
     }
 
     await client.query('BEGIN');
 
     // Transfer chats and candidates if requested
-    if ((rol === "ADMIN" || rol === "ENCARGADO") && transfer_map.length > 0) {
+    if ((rol === "ADMIN" || rol === "ROOT" || rol === "ENCARGADO") && transfer_map.length > 0) {
       await applyTransferMap(client, transfer_map);
     }
 
-    const incomingRecruiters = data.map((r: { reclutador_id: string }) => r.reclutador_id);
-    const incomingVacancies = data.flatMap((r: { vacantes: { id: string }[] }) => r.vacantes.map((v) => v.id));
+    const incomingRecruiters = data.map((r) => r.reclutador_id);
+    const incomingVacancies = data.flatMap((r) => r.vacantes.map((v) => v.id));
 
     await cleanupDeletedReclutadores(client, rol, target_empresa_id, incomingRecruiters, allowedReclutadorIds);
     await upsertRecruitersAndVacancies(client, data, target_empresa_id);
@@ -413,7 +441,7 @@ export async function POST(request: Request) {
     await client.query('COMMIT');
     
     // Auto-sync prompt_context.json file for n8n/AI
-    await syncPromptContextDisk(target_empresa_id || undefined);
+    await syncPromptContextDisk(target_empresa_id);
 
     return NextResponse.json({ ok: true });
   } catch (err) {

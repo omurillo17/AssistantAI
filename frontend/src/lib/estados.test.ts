@@ -7,6 +7,9 @@ import {
   KANBAN_COLUMNAS,
   getEstado,
   getEstadoColor,
+  columnaKanban,
+  estadosPersonalizadosActivos,
+  registrarEstadosPersonalizados,
   type EstadoKey,
 } from "@/lib/estados";
 import { ESTADOS_VALIDOS } from "@/lib/stateMachine";
@@ -85,5 +88,23 @@ describe("getEstadoColor", () => {
   it("devuelve el gris neutro cuando no reconoce nada", () => {
     expect(getEstadoColor("")).toBe("#94a3b8");
     expect(getEstadoColor("zzz")).toBe("#94a3b8");
+  });
+});
+
+describe("estados personalizados", () => {
+  it("se integran al catálogo: nombre, color, columna del kanban y activos", () => {
+    registrarEstadosPersonalizados([
+      { clave: "M_abc", nombre: "En capacitación", color: "#123456", grupo: "exitoso", activo: true },
+      { clave: "M_old", nombre: "Viejo", color: "#654321", grupo: "descartado", activo: false },
+    ]);
+    expect(getEstado("M_abc").label).toBe("En capacitación");
+    expect(getEstadoColor("M_abc")).toBe("#123456");
+    expect(columnaKanban("M_abc")).toBe("final");
+    expect(columnaKanban("M_old")).toBe("pool");
+    expect(columnaKanban("INTERESADO")).toBe("pipeline");
+    expect(columnaKanban("NO_EXISTE")).toBeUndefined();
+    expect(estadosPersonalizadosActivos().map((e) => e.clave)).toEqual(["M_abc"]);
+    registrarEstadosPersonalizados([]);
+    expect(getEstado("M_abc").label).toBe("M_abc");
   });
 });

@@ -322,8 +322,58 @@ export const KANBAN_COLUMNAS = [
   { key: 'pool', estados: ['CARTERA_GENERAL', 'RECHAZADO', 'INACTIVO'] as EstadoKey[], label: 'Pool / Cerrados', color: 'border-gray-300' },
 ];
 
+// ─── ESTADOS PERSONALIZADOS ─────────────────────────────────
+// Los crea RH a mano (tabla estados_personalizados, migrations/004). El bot
+// no los asigna ni los quita. useEstadosPersonalizados() los carga y los
+// registra aquí, para que getEstado/getEstadoColor/columnaKanban los conozcan.
+
+export type EstadoPersonalizado = {
+  clave: string;
+  nombre: string;
+  color: string;
+  grupo: GrupoEstado;
+  activo: boolean;
+};
+
+const personalizados = new Map<string, EstadoPersonalizado>();
+
+export function registrarEstadosPersonalizados(lista: EstadoPersonalizado[]) {
+  personalizados.clear();
+  lista.forEach((e) => personalizados.set(e.clave, e));
+}
+
+/** Los que se pueden asignar (los archivados solo se muestran). */
+export function estadosPersonalizadosActivos(): EstadoPersonalizado[] {
+  return [...personalizados.values()].filter((e) => e.activo);
+}
+
+/** Columna del kanban de un estado; los personalizados van según su grupo. */
+export function columnaKanban(estado: string): string | undefined {
+  const fija = KANBAN_COLUMNAS.find((col) => col.estados.includes(estado as EstadoKey));
+  if (fija) return fija.key;
+  const grupo = personalizados.get(estado)?.grupo;
+  if (!grupo) return undefined;
+  return { alerta: 'alerta', pipeline: 'pipeline', exitoso: 'final', descartado: 'pool', pool: 'pool' }[grupo];
+}
+
 /** Obtener definición de un estado (con fallback seguro) */
 export function getEstado(key: string): EstadoDef {
+  const manual = personalizados.get(key);
+  if (manual) {
+    return {
+      label: manual.nombre,
+      labelCorto: manual.nombre,
+      color: 'text-slate-700',
+      bg: 'bg-slate-100',
+      border: 'border-slate-200',
+      hex: manual.color,
+      emoji: '✋',
+      grupo: manual.grupo,
+      asignadoPor: 'crm',
+      activo: manual.activo,
+      descripcion: 'Estado manual: lo asigna una persona; el bot no lo cambia',
+    };
+  }
   return ESTADOS[key as EstadoKey] ?? {
     label: key,
     labelCorto: key,
@@ -342,6 +392,8 @@ export function getEstado(key: string): EstadoDef {
 /** Obtener el color hexadecimal del estado para gráficos y semaforización */
 export function getEstadoColor(keyOrLabel: string): string {
   if (!keyOrLabel) return '#94a3b8';
+  const manual = personalizados.get(keyOrLabel);
+  if (manual) return manual.color;
   if (ESTADOS[keyOrLabel as EstadoKey]?.hex) {
     return ESTADOS[keyOrLabel as EstadoKey].hex;
   }

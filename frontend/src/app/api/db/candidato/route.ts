@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from "zod";
 
-import { pool } from '@/lib/db';
+import { pool, queryComoCrm } from '@/lib/db';
 
 const getQuerySchema = z.object({
   telefono: z.string().min(1, "Falta el parámetro telefono").max(20),
@@ -103,7 +103,9 @@ function buildCandidatoUpdateFields(data: z.infer<typeof patchBodySchema>) {
     campos.push(`estado = $${idx++}`);
     valores.push(estado);
   }
-  if (notas !== undefined) {
+  // `notas` es un alias viejo de escalation_reason; si llegan ambos gana
+  // escalation_reason (asignar dos veces la columna hace fallar el UPDATE).
+  if (notas !== undefined && escalation_reason === undefined) {
     campos.push(`escalation_reason = $${idx++}`);
     valores.push(notas);
   }
@@ -165,10 +167,15 @@ export async function PATCH(request: Request) {
     if (!payload) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
+    const rol = (payload.rol as string) || "USER";
     const jwt_empresa_id = (payload.empresa_id as string | null) ?? null;
 
     const { searchParams } = new URL(request.url);
-    const target_empresa = searchParams.get('empresa_id') || jwt_empresa_id;
+    // Igual que en GET: solo ROOT elige empresa; el resto queda en la suya.
+    const target_empresa = rol === "ROOT" ? (searchParams.get('empresa_id') || jwt_empresa_id) : jwt_empresa_id;
+    if (!target_empresa && rol !== "ROOT") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
     const target_nave = searchParams.get('nave_id');
     const body = await request.json();
     const parsed = patchBodySchema.safeParse(body);
@@ -176,6 +183,21 @@ export async function PATCH(request: Request) {
     if (!parsed.success) {
       console.error("Zod validation error:", parsed.error.issues);
       return NextResponse.json({ error: "Datos inválidos", details: parsed.error.issues }, { status: 400 });
+    }
+
+    // Mover un candidato de empresa es cosa de ROOT.
+    if (parsed.data.empresa_id !== undefined && rol !== "ROOT" && parsed.data.empresa_id !== jwt_empresa_id) {
+      return NextResponse.json({ error: "No autorizado para cambiar la empresa" }, { status: 403 });
+    }
+    // Solo se puede asignar a un reclutador de la empresa del candidato.
+    if (parsed.data.asignado_a_id && target_empresa) {
+      const rec = await pool.query(
+        `SELECT 1 FROM reclutadores WHERE id = $1 AND empresa_id = $2`,
+        [parsed.data.asignado_a_id, parsed.data.empresa_id ?? target_empresa]
+      );
+      if (rec.rowCount === 0) {
+        return NextResponse.json({ error: "Reclutador fuera de la empresa" }, { status: 403 });
+      }
     }
 
     const { campos, valores, nextIdx } = buildCandidatoUpdateFields(parsed.data);
@@ -196,7 +218,8 @@ export async function PATCH(request: Request) {
       filtroExtra += ` AND nave_id = $${idx++}`;
       valores.push(target_nave);
     }
-    const res = await pool.query(
+    const res = await queryComoCrm(
+      String(payload.usuario ?? ''),
       `UPDATE candidatos SET ${campos.join(', ')} WHERE telefono = $${telefonoIdx}${filtroExtra} RETURNING id, telefono, estado, escalado, escalated_at, updated_at`,
       valores
     );
@@ -211,6 +234,10 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json(res.rows[0]);
   } catch (err) {
+    // check_violation: el trigger candidatos_estado_guard rechazó el estado.
+    if ((err as { code?: string }).code === '23514') {
+      return NextResponse.json({ error: 'Estado inválido' }, { status: 400 });
+    }
     console.error('Error updating candidate:', err);
     return NextResponse.json({ error: 'Error al actualizar el candidato' }, { status: 500 });
   }

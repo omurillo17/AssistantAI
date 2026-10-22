@@ -599,7 +599,9 @@ export default function CalendarioPage() {
         motivo: cancelReason,
         telefono_reclutador: recruiterPhone,
         nombre_reclutador: myRecruiterName || getRecruiterDisplayName(cancelTarget.resource.creator_email || ""),
-        nombre_candidato: cancelTarget.resource.nombre_chat || cancelTarget.resource.nombre_solicitud || "Candidato"
+        nombre_candidato: cancelTarget.resource.nombre_chat || cancelTarget.resource.nombre_solicitud || "Candidato",
+        // El proxy vuelve a verificarla en el servidor antes de cancelar.
+        password: cancelPassword
       };
       const res = await fetch(`${BACKEND_BASE_URL}/internal/citas/cancelar`, {
         method: "POST",

@@ -7,11 +7,12 @@ import {
   CalendarDays, AlertTriangle,
   LayoutGrid, List, MessageSquare, Search
 } from "lucide-react";
-import { ESTADOS, ESTADOS_CRM, GRUPOS, getEstado, KANBAN_COLUMNAS, type EstadoKey } from "@/lib/estados";
+import { ESTADOS, ESTADOS_CRM, GRUPOS, getEstado, KANBAN_COLUMNAS, columnaKanban, estadosPersonalizadosActivos, type EstadoKey } from "@/lib/estados";
 import type { Candidato, Conversacion, Recruiter, Vacante, Empresa, Nave } from "@/types";
 import { CandidateModal } from "@/components/CandidateModal";
 import { getCandidateDisplayName as getNombre, formatNaveName } from "@/lib/formatters";
 import { useTenantChange } from "@/hooks/useTenant";
+import { useEstadosPersonalizados } from "@/hooks/useEstadosPersonalizados";
 
 // ─── COMPONENTE: TARJETA KANBAN ────────────────────────────────
 function KanbanCard({ cand, onClick, onStatusChange }: Readonly<{ cand: Candidato; onClick: () => void; onStatusChange: (t: string, s: string) => void }>) {
@@ -94,6 +95,9 @@ function KanbanCard({ cand, onClick, onStatusChange }: Readonly<{ cand: Candidat
           {ESTADOS_CRM.filter(k => k !== cand.estado).map(k => (
             <option key={k} value={k}>{ESTADOS[k as EstadoKey].emoji} {ESTADOS[k as EstadoKey].label}</option>
           ))}
+          {estadosPersonalizadosActivos().filter(e => e.clave !== cand.estado).map(e => (
+            <option key={e.clave} value={e.clave}>✋ {e.nombre}</option>
+          ))}
         </select>
       </div>
     </div>
@@ -170,6 +174,7 @@ function ExpedientesPageInner() {
   const lastOpenedTelRef = useRef<string | null>(null);
   const [vista, setVista] = useState<"kanban" | "tabla">("kanban");
   const [candidatos, setCandidatos] = useState<Candidato[]>([]);
+  const estadosPersonalizados = useEstadosPersonalizados();
   const [mensajes, setMensajes] = useState<Conversacion[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -447,12 +452,13 @@ function ExpedientesPageInner() {
     const map: Record<string, Candidato[]> = {};
     KANBAN_COLUMNAS.forEach(col => { map[col.key] = []; });
     filteredTable.forEach(c => {
-      const st = (c.estado || "NUEVO") as EstadoKey;
-      const col = KANBAN_COLUMNAS.find(col => col.estados.includes(st));
-      if (col) map[col.key].push(c);
+      const col = columnaKanban(c.estado || "NUEVO");
+      if (col) map[col].push(c);
     });
     return map;
-  }, [filteredTable]);
+    // estadosPersonalizados: al cargar, los candidatos en estados manuales encuentran su columna.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredTable, estadosPersonalizados]);
 
   // ─── ALERTS ───────────────────────────────────────────────
   const pendingChats = useMemo(() => {
@@ -548,6 +554,11 @@ function ExpedientesPageInner() {
                     {GRUPOS.pool.estados.map((k: EstadoKey) => <option key={k} value={k}>{ESTADOS[k].emoji} {ESTADOS[k].label}</option>)}
                     {GRUPOS.descartado.estados.map((k: EstadoKey) => <option key={k} value={k}>{ESTADOS[k].emoji} {ESTADOS[k].label}</option>)}
                   </optgroup>
+                  {estadosPersonalizados.length > 0 && (
+                    <optgroup label="── Manuales ──">
+                      {estadosPersonalizados.map(e => <option key={e.clave} value={e.clave}>✋ {e.nombre}</option>)}
+                    </optgroup>
+                  )}
                 </select>
               </div>
             </div>

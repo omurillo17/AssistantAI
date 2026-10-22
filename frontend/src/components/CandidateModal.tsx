@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Candidato, ChatMessage, Mensaje } from "@/types";
-import { getEstado, ESTADOS_CRM, ESTADOS, EstadoKey } from "@/lib/estados";
+import { getEstado, ESTADOS_CRM, ESTADOS, EstadoKey, estadosPersonalizadosActivos } from "@/lib/estados";
 import { getCandidateDisplayName, formatNaveName, proxyMediaUrl } from "@/lib/formatters";
 import { agruparDocumentos, parseDatosDocumento } from "@/lib/documentosCandidato";
 import { useBackdropClose } from "@/hooks/useBackdropClose";
@@ -324,6 +324,9 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                 <option disabled>── Mover a ──</option>
                 {ESTADOS_CRM.filter(k => k !== cand.estado).map(k => (
                   <option key={k} value={k}>{ESTADOS[k as EstadoKey].emoji} {ESTADOS[k as EstadoKey].label}</option>
+                ))}
+                {estadosPersonalizadosActivos().filter(e => e.clave !== cand.estado).map(e => (
+                  <option key={e.clave} value={e.clave}>✋ {e.nombre}</option>
                 ))}
               </select>
             </div>
