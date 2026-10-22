@@ -154,10 +154,10 @@ async def main():
 
     is_dry_run = not args.apply
 
-    db_url = os.environ.get(
-        "DATABASE_URL",
-        "postgresql://omurillo17:IEr97CrDQ1D4tiNv2laZb84zZepxI0zJ@localhost:5433/virgo_db",
-    )
+    db_url = os.environ.get("DATABASE_URL")
+    if not db_url:
+        print("⚠️ Falta la variable de entorno DATABASE_URL.")
+        sys.exit(1)
     waha_url = os.environ.get("WAHA_BASE_URL", "http://localhost:3000")
     api_key = os.environ.get("WAHA_API_KEY", "")
     session = os.environ.get("WAHA_SESSION", "default")

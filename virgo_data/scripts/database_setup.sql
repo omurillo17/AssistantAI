@@ -164,7 +164,6 @@ CREATE TABLE IF NOT EXISTS usuarios (
     usuario VARCHAR(100) UNIQUE NOT NULL,
     nombre VARCHAR(255) DEFAULT '',
     password_hash TEXT NOT NULL,
-    actual_password VARCHAR(255),
     rol VARCHAR(50) DEFAULT 'USER',
     reclutador_id VARCHAR(100) REFERENCES reclutadores(id) ON DELETE SET NULL,
     grupo_id UUID REFERENCES grupos_reclutamiento(id) ON DELETE SET NULL,
@@ -766,11 +765,10 @@ ON CONFLICT DO NOTHING;
 -- Usuario ROOT (administrador global de la plataforma SaaS).
 -- Hash bcrypt (costo 10) precalculado para la contraseña; NO se genera en SQL
 -- para no depender de la extension pgcrypto.
-INSERT INTO usuarios (usuario, password_hash, actual_password, rol)
+INSERT INTO usuarios (usuario, password_hash, rol)
 VALUES (
     'omurillo17',
     '$2b$10$WSjKYnyEbq0nyUWmtSQTQOSwCh4LDG4wCzE2e.V1wcl8vnbUSSojG',
-    'Gg172125',
     'ROOT'
 )
 ON CONFLICT (usuario) DO NOTHING;
@@ -781,9 +779,6 @@ ON CONFLICT (usuario) DO NOTHING;
 -- Los CREATE TABLE de arriba son IF NOT EXISTS, asi que NO agregan columnas
 -- nuevas a una base que ya fue creada. Toda columna que se agregue despues del
 -- primer despliegue necesita ademas su ALTER TABLE idempotente aqui.
-
--- Permitir a ROOT y ADMIN consultar contraseñas en el módulo de usuarios.
-ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS actual_password VARCHAR(255);
 
 -- Actividades del puesto que Sofia manda al candidato tras los detalles.
 ALTER TABLE vacantes_def ADD COLUMN IF NOT EXISTS funciones TEXT DEFAULT '';

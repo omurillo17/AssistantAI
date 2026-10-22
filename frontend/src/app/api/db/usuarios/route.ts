@@ -75,11 +75,8 @@ export async function GET(request: Request) {
     const userEmpresaId = payload.empresa_id as string | null;
     const soySuperusuario = await esSuperusuario(payload.usuario);
 
-    const puedeVerPassword = userRole === 'ROOT' || userRole === 'ADMIN';
-
     let query = `
-      SELECT u.id, u.usuario, u.nombre, u.rol, ${puedeVerPassword ? 'u.actual_password' : 'NULL as actual_password'},
-             u.created_at, u.grupo_id, u.empresa_id, u.reclutador_id,
+      SELECT u.id, u.usuario, u.nombre, u.rol, u.created_at, u.grupo_id, u.empresa_id, u.reclutador_id,
              r.calendar_id as correo, r.telefono
       FROM usuarios u
       LEFT JOIN reclutadores r ON u.reclutador_id = r.id
@@ -164,7 +161,8 @@ async function resolveNewUserEmpresaId({
 }): Promise<{ empresa_id: string | null; error?: string }> {
   let empresa_id = parsed_empresa_id || null;
 
-  if (creatorRole === 'ENCARGADO') {
+  // Solo ROOT elige empresa; ADMIN y ENCARGADO crean dentro de la suya.
+  if (creatorRole !== 'ROOT') {
     empresa_id = creatorEmpresaId;
   }
 
@@ -172,7 +170,7 @@ async function resolveNewUserEmpresaId({
     const grupoRes = await pool.query(`SELECT empresa_id FROM grupos_reclutamiento WHERE id = $1`, [grupo_id]);
     if (grupoRes.rows.length > 0) {
       const grupoEmpresaId = grupoRes.rows[0].empresa_id;
-      if (creatorRole === 'ENCARGADO' && grupoEmpresaId !== creatorEmpresaId) {
+      if (creatorRole !== 'ROOT' && grupoEmpresaId !== creatorEmpresaId) {
         return { empresa_id: null, error: "No tienes permiso para asignar este grupo" };
       }
       empresa_id = grupoEmpresaId;
@@ -254,11 +252,11 @@ export async function POST(request: Request) {
       );
     }
 
-    // Guardamos hash bcrypt para login y actual_password para visualización de administradores
+    // Solo se guarda el hash: la contraseña en claro no se persiste ni para administradores.
     const res = await pool.query(
-      `INSERT INTO usuarios (usuario, nombre, password_hash, actual_password, rol, reclutador_id, grupo_id, empresa_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, usuario, nombre, rol`,
-      [normalizedUser, (nombre || "").trim(), hash, password, rol, reclutador_id, grupo_id || null, empresa_id]
+      `INSERT INTO usuarios (usuario, nombre, password_hash, rol, reclutador_id, grupo_id, empresa_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, usuario, nombre, rol`,
+      [normalizedUser, (nombre || "").trim(), hash, rol, reclutador_id, grupo_id || null, empresa_id]
     );
 
     return NextResponse.json(res.rows[0]);
@@ -266,6 +264,26 @@ export async function POST(request: Request) {
     console.error('Error creating usuario:', err);
     return NextResponse.json({ error: 'Error al crear usuario' }, { status: 500 });
   }
+}
+
+/**
+ * ¿Puede el solicitante tocar algo de `empresaId`? ROOT sí, siempre; los demás
+ * solo dentro de su propia empresa (el empresa_id del JWT).
+ */
+function mismaEmpresa(rol: string, requesterEmpresaId: string | null, empresaId: string | null): boolean {
+  return rol === 'ROOT' || empresaId === requesterEmpresaId;
+}
+
+/** Empresa de un reclutador (destino de una transferencia), o undefined si no existe. */
+async function empresaDeReclutador(reclutadorId: string): Promise<string | null | undefined> {
+  const res = await pool.query(`SELECT empresa_id FROM reclutadores WHERE id = $1`, [reclutadorId]);
+  return res.rowCount ? res.rows[0].empresa_id : undefined;
+}
+
+/** Empresa de un grupo de reclutamiento, o undefined si no existe. */
+async function empresaDeGrupo(grupoId: string): Promise<string | null | undefined> {
+  const res = await pool.query(`SELECT empresa_id FROM grupos_reclutamiento WHERE id = $1`, [grupoId]);
+  return res.rowCount ? res.rows[0].empresa_id : undefined;
 }
 
 function verifyProtegidoOrRootPermissions(
@@ -481,6 +499,17 @@ export async function PATCH(request: Request) {
     if (userRes.rowCount === 0) return NextResponse.json({ error: "Usuario a modificar no encontrado" }, { status: 404 });
     const currentUser: UsuarioRow = userRes.rows[0];
 
+    const adminEmpresaId = (payload.empresa_id as string | null) ?? null;
+    if (!mismaEmpresa(adminRole, adminEmpresaId, currentUser.empresa_id)) {
+      return NextResponse.json({ error: "Usuario a modificar no encontrado" }, { status: 404 });
+    }
+    if (grupo_id && !mismaEmpresa(adminRole, adminEmpresaId, (await empresaDeGrupo(grupo_id)) ?? null)) {
+      return NextResponse.json({ error: "No tienes permiso para asignar este grupo" }, { status: 403 });
+    }
+    if (transferTo && (await empresaDeReclutador(transferTo)) !== currentUser.empresa_id) {
+      return NextResponse.json({ error: "El reclutador destino no pertenece a la misma empresa" }, { status: 400 });
+    }
+
     const permCheck = await verifyAdminPermissions({
       adminUsername,
       adminRole,
@@ -497,8 +526,8 @@ export async function PATCH(request: Request) {
     if (newPassword && newPassword.trim().length > 0) {
       const newHash = await bcrypt.hash(newPassword, 10);
       await pool.query(
-        `UPDATE usuarios SET password_hash = $1, actual_password = $2 WHERE id = $3`,
-        [newHash, newPassword.trim(), targetUserId]
+        `UPDATE usuarios SET password_hash = $1 WHERE id = $2`,
+        [newHash, targetUserId]
       );
     }
 
@@ -564,11 +593,18 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "Falta el ID del usuario" }, { status: 400 });
     }
 
-    const targetRes = await pool.query(`SELECT id, rol, grupo_id, reclutador_id, protegido FROM usuarios WHERE id = $1`, [id]);
+    const targetRes = await pool.query(`SELECT id, rol, grupo_id, reclutador_id, protegido, empresa_id FROM usuarios WHERE id = $1`, [id]);
     if (targetRes.rowCount === 0) {
       return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
     }
     const targetUser = targetRes.rows[0];
+
+    if (!mismaEmpresa(requesterRole, (payload.empresa_id as string | null) ?? null, targetUser.empresa_id)) {
+      return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
+    }
+    if (transferTo && (await empresaDeReclutador(transferTo)) !== targetUser.empresa_id) {
+      return NextResponse.json({ error: "El reclutador destino no pertenece a la misma empresa" }, { status: 400 });
+    }
 
     // El superusuario NO se borra: ni por otro ROOT, ni por sí mismo, ni por
     // error. Es la cuenta de último recurso para recuperar el control de la
