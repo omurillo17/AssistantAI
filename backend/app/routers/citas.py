@@ -20,7 +20,9 @@ from pydantic import BaseModel
 
 from app.db import get_pool
 from app.google_calendar import create_event, delete_event, list_events, update_event
+from app.config import ENV
 from app.security import verify_api_key
+from app.utils.phone import enmascarar, obtener_ultimos_10_digitos
 
 logger = logging.getLogger("citas")
 
@@ -89,6 +91,34 @@ async def google_calendar(start: datetime, end: datetime) -> list[dict]:
             eventos.append({**evento, "calendarId": calendar_id})
 
     return eventos
+
+async def _empresa_de_cita(pool, telefono: str, event_id: str | None, calendar_id: str | None):
+    """(resuelta, empresa_id) del candidato dueño de la cita: primero por
+    event_id, si no por la empresa del reclutador dueño del calendario. Los
+    requests del CRM no traen empresa_id; sin esto el UPDATE por teléfono
+    tocaba el expediente de ese número en TODAS las empresas."""
+    if event_id:
+        row = await pool.fetchrow(
+            "SELECT empresa_id FROM candidatos WHERE telefono = $1 AND event_id = $2 LIMIT 1",
+            telefono, event_id,
+        )
+        if row:
+            return True, row["empresa_id"]
+    if calendar_id:
+        row = await pool.fetchrow(
+            "SELECT empresa_id FROM reclutadores WHERE LOWER(calendar_id) = LOWER($1) LIMIT 1",
+            calendar_id,
+        )
+        if row:
+            return True, row["empresa_id"]
+    # ponytail: sin event_id ni calendario conocido queda el UPDATE por
+    # teléfono como antes; que el CRM mande empresa_id si hace falta cerrarlo.
+    return False, None
+
+
+# $2 = empresa resuelta (bool), $3 = empresa_id. Si no se resolvió, no filtra.
+_FILTRO_EMPRESA_SQL = "AND (NOT $2::boolean OR empresa_id IS NOT DISTINCT FROM $3::uuid)"
+
 
 async def _resolver_destino_notificacion(pool, telefono: str | None) -> str | None:
     if not telefono or telefono.strip() == "No registrado":
@@ -194,8 +224,9 @@ async def _resolver_telefono_reclutador(
         if tel:
             return tel
 
-    # 4. Fallback si se pasó un teléfono explícito y no es el número de dev/admin
-    if tel_fallback and "3323379399" not in tel_fallback:
+    # 4. Fallback si se pasó un teléfono explícito y no es el número de dev
+    dev = obtener_ultimos_10_digitos(ENV.TEST_DEV_PHONE)
+    if tel_fallback and not (len(dev) == 10 and obtener_ultimos_10_digitos(tel_fallback) == dev):
         return tel_fallback
 
     return None
@@ -209,15 +240,18 @@ async def cancelar(payload: CancelarCitaRequest) -> dict:
         except Exception:
             logger.exception(
                 "cancelar: delete_event falló para telefono=%s event_id=%s (se continúa igual)",
-                payload.telefono, payload.event_id,
+                enmascarar(payload.telefono), payload.event_id,
             )
 
     pool = get_pool()
     if payload.telefono and payload.telefono != "No registrado":
+        resuelta, empresa_id = await _empresa_de_cita(pool, payload.telefono, payload.event_id, payload.calendar_id)
+        # event_id = NULL: el evento ya se borró de Google; si se queda, el bot
+        # cree que sigue habiendo cita y no deja agendar otra.
         await pool.execute(
-            "UPDATE candidatos SET estado = 'CITA_CANCELADA', fecha_entrevista = NULL, "
-            "ultima_interaccion = NOW() WHERE telefono = $1",
-            payload.telefono,
+            "UPDATE candidatos SET estado = 'CITA_CANCELADA', fecha_entrevista = NULL, event_id = NULL, "
+            f"ultima_interaccion = NOW() WHERE telefono = $1 {_FILTRO_EMPRESA_SQL}",
+            payload.telefono, resuelta, empresa_id,
         )
 
     # El CRM le promete al reclutador que la cancelación "le enviará un
@@ -257,11 +291,14 @@ async def reagendar(payload: ReagendarCitaRequest) -> dict:
     )
 
     pool = get_pool()
+    resuelta, empresa_id = await _empresa_de_cita(pool, payload.telefono, payload.event_id, payload.calendar_id)
     await pool.execute(
-        "UPDATE candidatos SET fecha_entrevista = $1, estado = 'CITA_AGENDADA', "
-        "ultima_interaccion = NOW() WHERE telefono = $2",
-        payload.start,
+        "UPDATE candidatos SET fecha_entrevista = $4, estado = 'CITA_AGENDADA', "
+        f"ultima_interaccion = NOW() WHERE telefono = $1 {_FILTRO_EMPRESA_SQL}",
         payload.telefono,
+        resuelta,
+        empresa_id,
+        payload.start,
     )
 
     fecha = payload.start.split("T")[0]

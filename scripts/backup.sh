@@ -9,6 +9,9 @@
 # ==============================================================================
 
 set -euo pipefail
+# Los respaldos llevan datos personales (teléfonos, INE, CV): solo el dueño
+# los puede leer. umask cubre carpeta, log y dumps desde que se crean.
+umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROYECTO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -18,6 +21,8 @@ TIMESTAMP="$(date +'%Y-%m-%d_%H%M%S')"
 LOG_FILE="$BACKUP_DIR/backup.log"
 
 mkdir -p "$BACKUP_DIR"
+# umask no corrige lo que ya existía con permisos abiertos.
+chmod 700 "$BACKUP_DIR"
 
 log() {
   local msg="[$(date +'%Y-%m-%d %H:%M:%S')] $1"
@@ -30,14 +35,17 @@ log "=== INICIO DE RESPALDO ==="
 # 1. Cargar variables de entorno
 if [[ -f "$PROYECTO_DIR/.env" ]]; then
   # Leer usuario y base sin exportar todas las variables
-  DB_USER="$(grep '^DB_POSTGRESDB_USER=' "$PROYECTO_DIR/.env" | cut -d '=' -f2- | tr -d '"'\'' ')"
-  DB_NAME="$(grep '^DB_POSTGRESDB_DATABASE=' "$PROYECTO_DIR/.env" | cut -d '=' -f2- | tr -d '"'\'' ')"
+  DB_USER="$(grep '^DB_POSTGRESDB_USER=' "$PROYECTO_DIR/.env" | cut -d '=' -f2- | tr -d '"'\''\r ')"
+  DB_NAME="$(grep '^DB_POSTGRESDB_DATABASE=' "$PROYECTO_DIR/.env" | cut -d '=' -f2- | tr -d '"'\''\r ')"
 else
   log "ERROR: Archivo .env no encontrado en $PROYECTO_DIR"
   exit 1
 fi
 
-DB_USER="${DB_USER:-omurillo17}"
+if [[ -z "$DB_USER" ]]; then
+  log "ERROR: Falta DB_POSTGRESDB_USER en .env"
+  exit 1
+fi
 DB_NAME="${DB_NAME:-virgo_db}"
 
 # 2. Localizar contenedor de Postgres
@@ -55,7 +63,14 @@ fi
 DB_BACKUP_FILE="$BACKUP_DIR/db_${DB_NAME}_${TIMESTAMP}.sql.gz"
 log "Ejecutando pg_dump para $DB_NAME desde $PG_CONTAINER..."
 
-docker exec "$PG_CONTAINER" pg_dump -U "$DB_USER" -d "$DB_NAME" --no-owner --no-privileges | gzip -9 > "$DB_BACKUP_FILE"
+# --clean --if-exists: el dump empieza borrando lo que va a recrear, así
+# restore.sh puede cargarlo sobre la base existente en una sola transacción.
+if ! docker exec "$PG_CONTAINER" pg_dump -U "$DB_USER" -d "$DB_NAME" --no-owner --no-privileges --clean --if-exists | gzip -9 > "$DB_BACKUP_FILE"; then
+  log "ERROR: pg_dump falló; se descarta $DB_BACKUP_FILE"
+  rm -f "$DB_BACKUP_FILE"
+  exit 1
+fi
+chmod 600 "$DB_BACKUP_FILE"
 
 # 4. Verificación de integridad de DB
 if ! gzip -t "$DB_BACKUP_FILE"; then
@@ -74,6 +89,7 @@ UPLOADS_BACKUP_FILE="$BACKUP_DIR/uploads_${TIMESTAMP}.tar.gz"
 if [[ -d "$UPLOADS_DIR" ]]; then
   log "Comprimiendo carpeta de uploads ($UPLOADS_DIR)..."
   tar -czf "$UPLOADS_BACKUP_FILE" -C "$PROYECTO_DIR/virgo_data" uploads
+  chmod 600 "$UPLOADS_BACKUP_FILE"
   if gzip -t "$UPLOADS_BACKUP_FILE"; then
     UPLOADS_SIZE="$(du -h "$UPLOADS_BACKUP_FILE" | cut -f1)"
     log "Uploads respaldados con éxito: $UPLOADS_BACKUP_FILE ($UPLOADS_SIZE)"

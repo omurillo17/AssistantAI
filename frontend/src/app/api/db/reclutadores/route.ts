@@ -80,7 +80,13 @@ export async function GET(request: Request) {
   const isGrouped = searchParams.get("grouped") === "true";
 
   const sanitizeId = (id: string | null) => (id && id !== "null" && id !== "undefined" ? id : null);
-  const cleanEmpresaId = sanitizeId(rawEmpresaId) ?? sanitizeId(userEmpresaId);
+  // ?empresa_id= solo lo respeta ROOT; el resto queda en la empresa de su JWT.
+  const cleanEmpresaId = userRole === "ROOT"
+    ? sanitizeId(rawEmpresaId) ?? sanitizeId(userEmpresaId)
+    : sanitizeId(userEmpresaId);
+  if (userRole !== "ROOT" && !cleanEmpresaId) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+  }
 
   try {
     const { clause, params } = buildReclutadoresFilter(userRole, userGrupoId, cleanEmpresaId);

@@ -10,7 +10,7 @@ from app.utils.phone import (
 class TestPhoneUtils(unittest.TestCase):
     def test_limpiar_digitos(self):
         self.assertEqual(limpiar_digitos("+52 1 (33) 3248-3278"), "5213332483278")
-        self.assertEqual(limpiar_digitos("5213323379399@c.us"), "5213323379399")
+        self.assertEqual(limpiar_digitos("5215500000001@c.us"), "5215500000001")
         self.assertEqual(limpiar_digitos(None), "")
 
     def test_obtener_ultimos_10_digitos(self):

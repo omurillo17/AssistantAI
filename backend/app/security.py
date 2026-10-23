@@ -5,10 +5,13 @@ checkApiKey() en frontend/src/lib/auth.ts, que sí tiene rutas legadas con
 llamadas sin header y debe seguir fallando abierto por ahora)."""
 
 import hmac
+import logging
 
 from fastapi import Header, HTTPException
 
 from app.config import ENV
+
+logger = logging.getLogger("security")
 
 
 def _safe_compare(a: str, b: str) -> bool:
@@ -18,6 +21,7 @@ def _safe_compare(a: str, b: str) -> bool:
 def verify_api_key(x_api_key: str | None = Header(default=None)) -> None:
     expected = ENV.PYTHON_SERVICE_API_KEY
     if not expected:
-        raise HTTPException(status_code=401, detail="PYTHON_SERVICE_API_KEY no configurada en el servidor")
+        logger.error("verify_api_key: PYTHON_SERVICE_API_KEY no configurada -- se rechazan todas las llamadas")
+        raise HTTPException(status_code=401, detail="No autorizado")
     if x_api_key is None or not _safe_compare(x_api_key, expected):
         raise HTTPException(status_code=401, detail="No autorizado")

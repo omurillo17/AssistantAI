@@ -9,8 +9,9 @@ services:
     image: postgres:16-alpine
     restart: always
     mem_limit: 1g
+    security_opt: [no-new-privileges:true]
     networks:
-      - virgo_network
+      - internal
     environment:
       - POSTGRES_DB=${DB_POSTGRESDB_DATABASE}
       - POSTGRES_USER=${DB_POSTGRESDB_USER}
@@ -36,8 +37,9 @@ services:
       context: ./backend
     restart: always
     mem_limit: 512m
+    security_opt: [no-new-privileges:true]
     networks:
-      - virgo_network
+      - internal
     ports:
       # Loopback: WAHA y el frontend llegan al backend por la red interna de
       # Docker (`backend:8000`), no por el puerto publicado. Este binding es
@@ -45,7 +47,9 @@ services:
       # Nota: el host usa 8002 porque 8000 está ocupado por marbete-backend.
       - "127.0.0.1:8002:8000"
     environment:
-      - DATABASE_URL=postgresql://${DB_POSTGRESDB_USER}:${DB_POSTGRESDB_PASSWORD}@postgres:5432/${DB_POSTGRESDB_DATABASE}
+      # Rol de la app con solo DML (scripts/crear_rol_app.sh). Mientras no
+      # exista APP_DB_USER/APP_DB_PASSWORD en .env se usa el superusuario.
+      - DATABASE_URL=postgresql://${APP_DB_USER:-${DB_POSTGRESDB_USER}}:${APP_DB_PASSWORD:-${DB_POSTGRESDB_PASSWORD}}@postgres:5432/${DB_POSTGRESDB_DATABASE}
       - GOOGLE_TOKEN_ENCRYPTION_KEY=${GOOGLE_TOKEN_ENCRYPTION_KEY}
       - GOOGLE_OAUTH_CLIENT_ID=${GOOGLE_OAUTH_CLIENT_ID}
       - GOOGLE_OAUTH_CLIENT_SECRET=${GOOGLE_OAUTH_CLIENT_SECRET}
@@ -57,13 +61,19 @@ services:
       - WAHA_BASE_URL=${WAHA_BASE_URL:-http://waha:3000}
       # WhatsApp del ROOT: recibe copia de las alertas de fallo del agente.
       - ALERTAS_ADMIN_TELEFONO=${ALERTAS_ADMIN_TELEFONO:-}
-      - TEST_DEV_PHONE=${TEST_DEV_PHONE:-5213323379399}
+      - TEST_DEV_PHONE=${TEST_DEV_PHONE:-}
+      # Comandos de prueba por WhatsApp (solo desde TEST_DEV_PHONE). Apagados.
+      - ENABLE_TEST_COMMANDS=${ENABLE_TEST_COMMANDS:-false}
+      # HMAC con el que WAHA firma sus webhooks (X-Webhook-Hmac). Mismo valor
+      # en el servicio waha (ver PRODUCCION.md: la sesión viva se actualiza aparte).
+      - WAHA_WEBHOOK_HMAC_KEY=${WAHA_WEBHOOK_HMAC_KEY:-}
       # Meta Cloud API (WhatsApp Business Platform Oficial)
       - WHATSAPP_PROVIDER=${WHATSAPP_PROVIDER:-waha}
       - META_WA_ACCESS_TOKEN=${META_WA_ACCESS_TOKEN:-}
       - META_WA_PHONE_NUMBER_ID=${META_WA_PHONE_NUMBER_ID:-}
       - META_WA_WABA_ID=${META_WA_WABA_ID:-}
-      - META_WA_VERIFY_TOKEN=${META_WA_VERIFY_TOKEN:-virgo_meta_secret_webhook_2026}
+      # Sin valor por defecto: un token publicado en el repo no verifica nada.
+      - META_WA_VERIFY_TOKEN=${META_WA_VERIFY_TOKEN:-}
       # Ritmo de salida de WhatsApp: evita el baneo por responder en ráfaga.
       - WAHA_SEGUNDOS_ENTRE_MENSAJES=${WAHA_SEGUNDOS_ENTRE_MENSAJES:-8}
       - WAHA_JITTER_SEGUNDOS=${WAHA_JITTER_SEGUNDOS:-7}
@@ -91,8 +101,9 @@ services:
     image: devlikeapro/waha:latest
     restart: always
     mem_limit: 2g
+    security_opt: [no-new-privileges:true]
     networks:
-      - virgo_network
+      - internal
     ports:
       # Loopback: la sesión de WhatsApp vive aquí. Expuesto en 0.0.0.0
       # cualquiera con la IP del servidor puede llegar al panel de WAHA e
@@ -109,18 +120,24 @@ services:
       # solo aplica a sesiones nuevas. Si se cambia, hay que actualizar también
       # la sesión viva vía PUT /api/sessions/default.
       - WAHA_WEBHOOK_URL=http://backend:8000/webhook/messages
+      - WAHA_WEBHOOK_HMAC_KEY=${WAHA_WEBHOOK_HMAC_KEY:-}
       - WAHA_API_KEY=${WAHA_API_KEY}
       # Sin valores por defecto: deben definirse en .env (nunca admin/admin).
       - WAHA_DASHBOARD_USERNAME=${WAHA_DASHBOARD_USERNAME}
       - WAHA_DASHBOARD_PASSWORD=${WAHA_DASHBOARD_PASSWORD}
-      - WAHA_PRINT_QR=True
+      # El QR en los logs deja a quien los lea vincular su WhatsApp a la sesión.
+      - WAHA_PRINT_QR=False
       - WHATSAPP_DOWNLOAD_MEDIA=true
       - WHATSAPP_MEDIA_STORAGE=local
       - WAHA_BASE_URL=http://waha:3000
       - WHATSAPP_FILES_FOLDER=/app/.waha/files
       - WHATSAPP_DOWNLOAD_MEDIA_INSTANT=true
       - WHATSAPP_WEBHOOK_MEDIA=true
-      - WHATSAPP_FILES_LIFETIME=0
+      # Antes 0 (= para siempre): las fotos de INE/CV se acumulaban sin límite
+      # en el volumen. El backend las descarga en minutos y guarda las que
+      # importan en virgo_data/uploads; 7 días deja ver la multimedia reciente
+      # en la bandeja de Mensajes, que la enlaza directo de WAHA.
+      - WHATSAPP_FILES_LIFETIME=604800
     healthcheck:
       test: ["CMD-SHELL", "node -e 'fetch(\"http://localhost:3000/api/sessions/default\", {headers: {\"X-Api-Key\": process.env.WAHA_API_KEY}}).then(r => r.json()).then(d => process.exit(d.status === \"WORKING\" || d.status === \"SCAN_QR_CODE\" ? 0 : 1)).catch(() => process.exit(1))'"]
       interval: 30s
@@ -146,33 +163,32 @@ services:
       context: ./frontend
     restart: always
     mem_limit: 1g
+    security_opt: [no-new-privileges:true]
+    # Único servicio en las dos redes: cloudflared (edge) solo llega a él.
     networks:
-      - virgo_network
+      - edge
+      - internal
     ports:
       # Loopback: para depuración local. Cloudflared lo alcanza por la red
       # Docker interna (frontend:3001).
       - "127.0.0.1:3001:3001"
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=postgresql://${DB_POSTGRESDB_USER}:${DB_POSTGRESDB_PASSWORD}@postgres:5432/${DB_POSTGRESDB_DATABASE}
-      - DB_HOST=postgres
-      - DB_PORT=5432
-      - DB_NAME=${DB_POSTGRESDB_DATABASE}
-      - DB_USER=${DB_POSTGRESDB_USER}
-      - DB_PASSWORD=${DB_POSTGRESDB_PASSWORD}
+      # Rol de la app con solo DML (scripts/crear_rol_app.sh). Mientras no
+      # exista APP_DB_USER/APP_DB_PASSWORD en .env se usa el superusuario.
+      - DATABASE_URL=postgresql://${APP_DB_USER:-${DB_POSTGRESDB_USER}}:${APP_DB_PASSWORD:-${DB_POSTGRESDB_PASSWORD}}@postgres:5432/${DB_POSTGRESDB_DATABASE}
       - JWT_SECRET=${JWT_SECRET}
-      - APP_PASSWORD=${APP_PASSWORD:-admin}
       - WAHA_API_KEY=${WAHA_API_KEY}
       - WAHA_BASE_URL=http://waha:3000
       - WAHA_SESSION=${WAHA_SESSION:-default}
       - BACKEND_API_BASE=http://backend:8000
+      - APP_PUBLIC_URL=${APP_PUBLIC_URL:-}
       - PYTHON_SERVICE_API_KEY=${PYTHON_SERVICE_API_KEY:-}
       - INTERNAL_API_KEY=${INTERNAL_API_KEY:-}
       - WHATSAPP_PROVIDER=${WHATSAPP_PROVIDER:-waha}
       - META_WA_ACCESS_TOKEN=${META_WA_ACCESS_TOKEN:-}
       - META_WA_PHONE_NUMBER_ID=${META_WA_PHONE_NUMBER_ID:-}
       - META_WA_WABA_ID=${META_WA_WABA_ID:-}
-      - META_WA_VERIFY_TOKEN=${META_WA_VERIFY_TOKEN:-virgo_meta_secret_webhook_2026}
       - TZ=America/Mexico_City
     volumes:
       - ./virgo_data:/app/virgo_data
@@ -201,16 +217,24 @@ services:
     image: cloudflare/cloudflared:latest
     restart: always
     mem_limit: 256m
+    security_opt: [no-new-privileges:true]
+    # Solo `edge`: el túnel alcanza al frontend y a nada más. Si alguien se
+    # hace con el token del túnel no puede apuntarlo a postgres, waha o backend.
     networks:
-      - virgo_network
+      - edge
     command: tunnel run
     environment:
       - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
     depends_on:
       - frontend
 
+# Dos redes: `edge` (cloudflared <-> frontend) e `internal` (el resto). No se
+# marca `internal: true` porque backend (Gemini, Google) y waha (WhatsApp)
+# necesitan salir a internet; lo que importa es que cloudflared no esté en ella.
 networks:
-  virgo_network:
+  edge:
+    driver: bridge
+  internal:
     driver: bridge
 
 volumes:

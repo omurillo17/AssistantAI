@@ -36,7 +36,7 @@ export function normalizarNumeroMeta(telefono?: string | null): string {
 }
 
 /**
- * Convierte un teléfono a formato chatId estándar (ej: 523323379399@c.us o @lid).
+ * Convierte un teléfono a formato chatId estándar (ej: 525500000001@c.us o @lid).
  */
 export function aChatId(telefono?: string | null): string {
   if (!telefono) return '';

@@ -39,3 +39,25 @@ export function rateLimit(request: NextRequest | Request, limit: number = 100) {
   tokenCache.set(ip, tokenCount + 1);
   return { success: true, limit, current: tokenCount + 1, remaining: limit - (tokenCount + 1) };
 }
+
+// Bloqueo por usuario, además del límite por IP: con muchas IPs (botnet, o
+// rotando la salida) el límite por IP no frena probar contraseñas contra UNA
+// cuenta. 5 fallos seguidos bloquean ese usuario 15 min; cada fallo renueva el
+// plazo y un login correcto lo limpia. La clave es el usuario tal como se
+// intentó (exista o no), para no revelar qué cuentas existen.
+// ponytail: en memoria del proceso; se pierde al reiniciar y no se comparte
+// entre réplicas. Pasar a la base si algún día hay más de un frontend.
+const MAX_FALLOS_LOGIN = 5;
+const fallosLogin = new LRUCache<string, number>({ max: 5000, ttl: 15 * 60 * 1000 });
+
+export function usuarioBloqueado(usuario: string): boolean {
+  return (fallosLogin.get(usuario) ?? 0) >= MAX_FALLOS_LOGIN;
+}
+
+export function registrarFalloLogin(usuario: string): void {
+  fallosLogin.set(usuario, (fallosLogin.get(usuario) ?? 0) + 1);
+}
+
+export function limpiarFallosLogin(usuario: string): void {
+  fallosLogin.delete(usuario);
+}

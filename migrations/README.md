@@ -9,6 +9,14 @@ Cada archivo `.sql` de esta carpeta es un cambio incremental. `scripts/deploy.sh
 los aplica en orden alfabético y anota cuáles ya corrieron en la tabla
 `schema_migrations`, así que una migración se aplica **una sola vez**.
 
+Antes de aplicar cualquier pendiente, `deploy.sh` ejecuta `scripts/backup.sh`;
+si el respaldo falla, no se migra nada. Las migraciones corren con el
+superusuario (`DB_POSTGRESDB_USER`), no con el rol de la app (`APP_DB_USER`,
+solo DML): las tablas y secuencias nuevas le heredan los permisos por los
+`ALTER DEFAULT PRIVILEGES` de `scripts/crear_rol_app.sh`. Si una migración crea
+algo en otro esquema o una función `SECURITY DEFINER`, concede los permisos a
+mano en la propia migración.
+
 ## Añadir una
 
 1. Crea `NNN_descripcion_corta.sql` con el siguiente número libre.

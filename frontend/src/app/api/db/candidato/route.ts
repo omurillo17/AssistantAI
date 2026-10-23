@@ -40,6 +40,10 @@ export async function GET(request: Request) {
   if (!payload) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
+  // Sin empresa en el JWT (y sin ser ROOT) se niega: nunca se salta el filtro.
+  if (payload.rol !== 'ROOT' && !payload.empresa_id) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
+  }
   const rol = (payload.rol as string) || "USER";
   const reclutador_id = (payload.reclutador_id as string | null) ?? null;
   const jwt_empresa_id = (payload.empresa_id as string | null) ?? null;
@@ -182,7 +186,8 @@ export async function PATCH(request: Request) {
 
     if (!parsed.success) {
       console.error("Zod validation error:", parsed.error.issues);
-      return NextResponse.json({ error: "Datos inválidos", details: parsed.error.issues }, { status: 400 });
+      // Los issues de Zod solo van al log: no se exponen al cliente.
+      return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
     }
 
     // Mover un candidato de empresa es cosa de ROOT.

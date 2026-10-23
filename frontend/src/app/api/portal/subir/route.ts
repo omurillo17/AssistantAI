@@ -2,13 +2,22 @@ import { NextResponse } from 'next/server';
 import { writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import fs from 'node:fs';
+import { z } from 'zod';
 import { pool } from '@/lib/db';
 import { rateLimit } from '@/lib/rate-limit';
 import { sniffDocumentType } from '@/lib/file-validation';
-import { deleteUploadedFile } from '@/lib/fileStorage';
+import { deleteUploadedFile, UPLOAD_DIR } from '@/lib/fileStorage';
+import { normalizarTelefonoPortal } from '../telefono';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB limit
+// Tope del request completo (INE + RFC + CV de 10 MB + overhead multipart),
+// revisado ANTES de parsear el formData para no cargar en memoria cuerpos gigantes.
+const MAX_REQUEST_SIZE = 3 * MAX_FILE_SIZE + 1024 * 1024;
 const ALLOWED_EXTENSIONS = new Set(['.pdf', '.jpg', '.jpeg', '.png', '.webp']);
+// Valores de `tipo_documento` para el envío de un solo archivo (`file`).
+const tipoDocumentoSchema = z.enum(['ine', 'rfc', 'cv']);
+const empresaIdSchema = z.guid().nullable();
+const ERROR_ASOCIAR = 'No pudimos asociar los archivos a tu expediente. Contacta a tu reclutador.';
 
 function validateFile(fileObj: File | null, label: string) {
   if (!fileObj) return null;
@@ -22,7 +31,7 @@ function validateFile(fileObj: File | null, label: string) {
   return null;
 }
 
-async function saveFile(fileObj: File, suffix: string, uploadDir: string, safeTelefono: string) {
+async function saveFile(fileObj: File, suffix: string, safeTelefono: string) {
   const arrayBuffer = await fileObj.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
   // La extensión se determina por el contenido real (magic bytes), no por
@@ -32,14 +41,18 @@ async function saveFile(fileObj: File, suffix: string, uploadDir: string, safeTe
     throw new Error('FORMATO_NO_PERMITIDO');
   }
   const finalFilename = `portal_${safeTelefono}_${suffix}_${Date.now()}${ext}`;
-  const filePath = path.join(uploadDir, finalFilename);
+  // Defensa en profundidad: la ruta final tiene que quedar dentro de /uploads.
+  const filePath = path.resolve(UPLOAD_DIR, finalFilename);
+  if (!filePath.startsWith(path.resolve(UPLOAD_DIR) + path.sep)) {
+    throw new Error('FORMATO_NO_PERMITIDO');
+  }
   await writeFile(filePath, buffer);
   return `/uploads/${finalFilename}`;
 }
 
 async function processUploadedDocuments(
   formData: FormData,
-  uploadDir: string,
+  tipoDoc: z.infer<typeof tipoDocumentoSchema>,
   safeTelefono: string,
   cand: Record<string, unknown>,
   datosIneObj: Record<string, unknown>,
@@ -56,20 +69,19 @@ async function processUploadedDocuments(
 
   if (fileIne) {
     await deleteUploadedFile(datosIneObj?.url as string | null);
-    urlIne = await saveFile(fileIne, 'ine', uploadDir, safeTelefono);
+    urlIne = await saveFile(fileIne, 'ine', safeTelefono);
   }
   if (fileRfc) {
     await deleteUploadedFile(datosRfcObj?.url as string | null);
-    urlRfc = await saveFile(fileRfc, 'rfc', uploadDir, safeTelefono);
+    urlRfc = await saveFile(fileRfc, 'rfc', safeTelefono);
   }
   if (fileCv) {
     await deleteUploadedFile(cand.link_cv as string | null);
-    urlCv = await saveFile(fileCv, 'cv', uploadDir, safeTelefono);
+    urlCv = await saveFile(fileCv, 'cv', safeTelefono);
   }
 
   if (singleFile && !urlIne && !urlRfc && !urlCv) {
-    const tipoDoc = (formData.get('tipo_documento') as string) || 'ine';
-    const url = await saveFile(singleFile, tipoDoc, uploadDir, safeTelefono);
+    const url = await saveFile(singleFile, tipoDoc, safeTelefono);
     if (tipoDoc === 'ine') {
       await deleteUploadedFile(datosIneObj?.url as string | null);
       urlIne = url;
@@ -92,12 +104,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Demasiados intentos, espera un momento.' }, { status: 429 });
   }
 
+  const declaredSize = Number(request.headers.get('content-length') || 0);
+  if (declaredSize > MAX_REQUEST_SIZE) {
+    return NextResponse.json({ error: 'Los archivos exceden el tamaño máximo permitido.' }, { status: 413 });
+  }
+
   try {
     const formData = await request.formData();
-    const telefono = formData.get('telefono') as string;
+    const safeTelefono = normalizarTelefonoPortal(formData.get('telefono'));
 
-    if (!telefono) {
-      return NextResponse.json({ error: 'Falta el parámetro teléfono' }, { status: 400 });
+    if (!safeTelefono) {
+      return NextResponse.json({ error: 'Ingresa un número de teléfono válido de 10 dígitos.' }, { status: 400 });
+    }
+
+    const tipoDoc = tipoDocumentoSchema.safeParse(formData.get('tipo_documento') ?? 'ine');
+    const empresaId = empresaIdSchema.safeParse(formData.get('empresa_id') || null);
+    if (!tipoDoc.success || !empresaId.success) {
+      return NextResponse.json({ error: 'Datos inválidos' }, { status: 400 });
     }
 
     const fileIne = formData.get('file_ine') as File | null;
@@ -118,19 +141,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: firstError }, { status: 400 });
     }
 
-    const safeTelefono = telefono.replace(/[^a-zA-Z0-9]/g, '');
-    const uploadDir = path.join(process.cwd(), 'public', 'uploads');
-    if (!fs.existsSync(uploadDir)) {
-      await mkdir(uploadDir, { recursive: true });
+    if (!fs.existsSync(UPLOAD_DIR)) {
+      await mkdir(UPLOAD_DIR, { recursive: true });
     }
 
-    // Buscar candidato previamente para eliminar archivos anteriores si existen
+    // Match por SUFIJO exacto de 10 dígitos (igual que /api/portal/buscar),
+    // nunca por subcadena: con LIKE '%...%' un fragmento bastaba para
+    // sobrescribir los documentos de otra persona.
     const candRes = await pool.query(
-      `SELECT id, nombre, nombre_chat, nombre_solicitud, asignado_a_id, datos_ine, datos_rfc, link_cv
-       FROM candidatos 
-       WHERE telefono = $1 OR REPLACE(telefono, '+', '') LIKE $2 
-       ORDER BY updated_at DESC LIMIT 1`,
-      [telefono, `%${safeTelefono.slice(-10)}%`]
+      `SELECT id, empresa_id, nombre, nombre_chat, nombre_solicitud, asignado_a_id, datos_ine, datos_rfc, link_cv
+       FROM candidatos
+       WHERE RIGHT(regexp_replace(telefono, '\\D', '', 'g'), 10) = $1
+         AND ($2::uuid IS NULL OR empresa_id = $2::uuid)
+       ORDER BY updated_at DESC`,
+      [safeTelefono, empresaId.data]
     );
 
     if (candRes.rowCount === 0) {
@@ -138,6 +162,12 @@ export async function POST(request: Request) {
         { error: 'Candidato no encontrado para asociar los archivos.' },
         { status: 404 }
       );
+    }
+
+    // El mismo teléfono en dos empresas: sin empresa_id no hay forma segura
+    // de saber a qué expediente pertenecen los archivos.
+    if (new Set(candRes.rows.map((r) => r.empresa_id)).size > 1) {
+      return NextResponse.json({ error: ERROR_ASOCIAR }, { status: 409 });
     }
 
     const cand = candRes.rows[0];
@@ -148,7 +178,7 @@ export async function POST(request: Request) {
 
     const { urlIne, urlRfc, urlCv } = await processUploadedDocuments(
       formData,
-      uploadDir,
+      tipoDoc.data,
       safeTelefono,
       cand,
       datosIneObj,
@@ -162,12 +192,14 @@ export async function POST(request: Request) {
       datosRfcObj = { ...datosRfcObj, url: urlRfc, fecha_carga_portal: new Date().toISOString() };
     }
 
-    const motivoOcr = `⚠️ Error de OCR: El candidato subió sus archivos manualmente desde el portal, se le permitió el acceso, verificar datos con él.`;
+    const motivoOcr = `⚠️ Documentos subidos manualmente desde el portal: validar la identidad del candidato antes de avanzar.`;
 
+    // El estado NO se avanza aquí: el portal es público y solo pide un
+    // teléfono, así que la identidad queda PENDIENTE hasta que un reclutador
+    // la valide (validar-identidad es quien pasa a INE_VALIDADA).
     await pool.query(
       `UPDATE candidatos
-       SET estado = 'INE_VALIDADA',
-           alerta_identidad_estado = 'PENDIENTE',
+       SET alerta_identidad_estado = 'PENDIENTE',
            alerta_identidad_motivo = $1,
            datos_ine = $2,
            datos_rfc = $3,
@@ -185,7 +217,7 @@ export async function POST(request: Request) {
     );
 
     // Notificación al reclutador
-    const mensajeNotif = `⚠️ Error de OCR: El candidato ${nombreCandidato} (wa.me/${safeTelefono}) subió sus archivos manualmente desde el portal, se le permitió el acceso, verificar datos con él.`;
+    const mensajeNotif = `⚠️ El candidato ${nombreCandidato} (wa.me/52${safeTelefono}) subió sus documentos desde el portal. Valida su identidad antes de avanzar.`;
 
     await pool.query(
       `INSERT INTO notificaciones (reclutador_id, mensaje)
@@ -198,11 +230,10 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      mensaje: '¡Todos tus documentos han sido procesados y reemplazados correctamente! Tu expediente está actualizado.',
+      mensaje: '¡Tus documentos fueron recibidos! Un reclutador los revisará para continuar con tu proceso.',
       url_ine: urlIne,
       url_rfc: urlRfc,
       url_cv: urlCv,
-      estado: 'INE_VALIDADA',
     });
   } catch (err) {
     if (err instanceof Error && err.message === 'FORMATO_NO_PERMITIDO') {

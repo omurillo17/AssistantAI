@@ -135,12 +135,15 @@ def _es_remitente_ignorado(remitente: str) -> bool:
     return any(remitente.endswith(sufijo) for sufijo in _SUFIJOS_REMITENTE_IGNORADO)
 
 
-def _es_mensaje_valido(body: dict) -> bool:
+def _es_mensaje_valido(body: dict, ahora: float | None = None) -> bool:
+    """`ahora`: hora de recepción del webhook. Si el router lo encoló detrás
+    del semáforo, la antigüedad se mide contra cuando llegó, no contra cuando
+    se procesa."""
     payload = body.get("payload") or {}
     if "message" not in (body.get("event") or ""):
         return False
     timestamp = payload.get("timestamp")
-    if timestamp is None or (time.time() - timestamp) >= 120:
+    if timestamp is None or ((ahora or time.time()) - timestamp) >= 120:
         return False
     if payload.get("type") in ("protocol", "e2e_notification"):
         return False
@@ -163,8 +166,21 @@ async def _dedup(message_id: str | None) -> bool:
     return row is not None
 
 
+def _puede_usar_comandos_prueba(telefono: str | None) -> bool:
+    """Los comandos de prueba borran datos: solo con ENABLE_TEST_COMMANDS
+    encendido y solo para TEST_DEV_PHONE (comparando los últimos 10 dígitos).
+    Cualquier otro remitente los manda como texto normal."""
+    if not ENV.ENABLE_TEST_COMMANDS:
+        return False
+    dev = obtener_ultimos_10_digitos(ENV.TEST_DEV_PHONE)
+    return len(dev) == 10 and obtener_ultimos_10_digitos(telefono) == dev
+
+
 async def _reset_sofia_test(session: str, chat_id: str, telefono: str) -> None:
-    """Comando de prueba '/reset_sofia': borra el historial y candidato del remitente que ejecuta el comando."""
+    """Comando de prueba '/reset_sofia': borra el historial y candidato del remitente que ejecuta el comando.
+
+    Solo `candidatos` tiene empresa_id; el webhook no trae empresa, así que el
+    alcance real lo pone `_puede_usar_comandos_prueba` (solo el teléfono de dev)."""
     if not telefono:
         return
     pool = get_pool()
@@ -467,8 +483,8 @@ async def _obtener_candidato(telefono: str) -> dict:
     return dict(row) if row else {}
 
 
-async def procesar_webhook(body: dict) -> None:
-    if not _es_mensaje_valido(body):
+async def procesar_webhook(body: dict, recibido_en: float | None = None) -> None:
+    if not _es_mensaje_valido(body, recibido_en):
         return
 
     payload = body["payload"]
@@ -483,7 +499,7 @@ async def procesar_webhook(body: dict) -> None:
     numero_resuelto = contacto.get("number")
     chat_id = contacto.get("chat_id") or remitente_raw
 
-    if payload.get("body") == "/reset_sofia" and numero_resuelto:
+    if payload.get("body") == "/reset_sofia" and _puede_usar_comandos_prueba(numero_resuelto):
         await _reset_sofia_test(session, chat_id, numero_resuelto)
         return
     # Todos los identificadores posibles para listas de exclusión
@@ -611,73 +627,3 @@ async def analizador_y_chat(body: dict, contacto: dict, candidato: dict) -> None
         agenda=agenda,
         mensaje_override=mensaje_override,
     )
-
-
-async def procesar_webhook_meta(body: dict) -> None:
-    """Parsea el payload de Meta Cloud API (WhatsApp Business Platform) y
-    lo adapta a la estructura interna estándar para que pase por el mismo
-    pipeline de ingesta, analizador y agente Sofía."""
-    entries = body.get("entry") or []
-    for entry in entries:
-        changes = entry.get("changes") or []
-        for change in changes:
-            value = change.get("value") or {}
-            metadata = value.get("metadata") or {}
-            phone_number_id = metadata.get("phone_number_id") or ENV.META_WA_PHONE_NUMBER_ID
-            contacts = value.get("contacts") or []
-            contact_profile = contacts[0].get("profile", {}) if contacts else {}
-            contact_name = contact_profile.get("name") or "Candidato"
-
-            messages = value.get("messages") or []
-            for msg in messages:
-                msg_id = msg.get("id")
-                from_num = msg.get("from")
-                if not from_num:
-                    continue
-                msg_type = msg.get("type", "text")
-                msg_ts = int(msg.get("timestamp") or time.time())
-
-                body_text = ""
-                media_info = None
-
-                if msg_type == "text":
-                    body_text = (msg.get("text") or {}).get("body") or ""
-                elif msg_type == "audio":
-                    audio = msg.get("audio") or {}
-                    media_id = audio.get("id")
-                    body_text = "[Audio]"
-                    media_info = {"url": f"meta:{media_id}", "mimetype": audio.get("mime_type", "audio/ogg")}
-                elif msg_type == "document":
-                    doc = msg.get("document") or {}
-                    media_id = doc.get("id")
-                    body_text = doc.get("filename") or "[Documento]"
-                    media_info = {"url": f"meta:{media_id}", "mimetype": doc.get("mime_type", "application/pdf"), "filename": doc.get("filename")}
-                elif msg_type == "image":
-                    img = msg.get("image") or {}
-                    media_id = img.get("id")
-                    body_text = img.get("caption") or "[Imagen]"
-                    media_info = {"url": f"meta:{media_id}", "mimetype": img.get("mime_type", "image/jpeg")}
-                else:
-                    body_text = f"[{msg_type}]"
-
-                adapted_body = {
-                    "event": "message",
-                    "session": f"meta:{phone_number_id}",
-                    "payload": {
-                        "id": msg_id,
-                        "from": f"{from_num}@c.us",
-                        "to": phone_number_id,
-                        "body": body_text,
-                        "type": msg_type,
-                        "timestamp": msg_ts,
-                        "fromMe": False,
-                        "media": media_info,
-                        "_data": {
-                            "notifyName": contact_name,
-                            "author": f"{from_num}@c.us",
-                        },
-                        "provider": "meta",
-                        "phone_number_id": phone_number_id,
-                    },
-                }
-                await procesar_webhook(adapted_body)

@@ -278,7 +278,7 @@ function EditUserModalContent({
               id="edit-user-new-password"
               name="new_password"
               type="password"
-              minLength={5}
+              minLength={10}
               placeholder="Dejar en blanco para no cambiar"
               className="w-full p-2 border rounded focus:outline-none focus:border-indigo-500 bg-slate-50 focus:bg-white transition-colors"
               value={newPassword}

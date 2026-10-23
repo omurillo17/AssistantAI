@@ -1,5 +1,6 @@
 # Entorno y Secretos
 .env
+.env*
 .env.*
 *.env
 *.env.local
@@ -49,11 +50,21 @@ backend/.venv/
 # ==============================================================================
 waha_data*/
 waha_files*/
-uploads/
+# Anclado: `uploads/` a secas también ignoraba frontend/src/app/uploads (código).
+/uploads/
 virgo_data/uploads/
 virgo_data/data/prompt_context.json
 *.dump
 *.sql.bak
+# Dumps de base (pg_dump, backups): contienen datos personales de candidatos.
+# Solo se versionan el esquema, las migraciones y los SQL de scripts/ y demo.
+*.sql
+*.sql.gz
+backups/
+!virgo_data/scripts/database_setup.sql
+!migrations/*.sql
+!scripts/*.sql
+!capacitacion-videos/demo/seed.sql
 *.tar.gz
 *.zip
 

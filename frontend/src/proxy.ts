@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { jwtVerify } from "jose";
-
+import { verificarTokenSesion } from "@/lib/auth";
 import { verificarTokenUpload } from "@/lib/uploadToken";
 
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -95,11 +94,11 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  try {
-    // Verificar el token
-    const secretKey = new TextEncoder().encode(JWT_SECRET);
-    const { payload } = await jwtVerify(token, secretKey);
-
+  // Firma, caducidad y token_version: un JWT de una sesión cerrada o de antes
+  // de un cambio de contraseña se rechaza aquí aunque no haya caducado. El
+  // proxy de Next 16 corre siempre en Node, así que puede consultar la base.
+  const payload = await verificarTokenSesion(token);
+  if (payload) {
     // Check roles
     const userRole = payload.rol as string;
 
@@ -110,6 +109,8 @@ export async function proxy(request: NextRequest) {
 
     const requestHeaders = new Headers(request.headers);
     requestHeaders.set('x-user-rol', userRole);
+    // Nadie lo lee hoy, pero que no pueda llegar uno puesto por el cliente.
+    requestHeaders.delete('x-reclutador-id');
     if (payload.reclutador_id) {
       requestHeaders.set('x-reclutador-id', payload.reclutador_id as string);
     }
@@ -119,10 +120,8 @@ export async function proxy(request: NextRequest) {
         headers: requestHeaders,
       },
     });
-  } catch {
-    // Si el token es inválido o expiró
-    console.error("Token JWT inválido");
-    
+  } else {
+    // Si el token es inválido, expiró o fue revocado
     const response = NextResponse.redirect(new URL('/login', request.url));
     response.cookies.delete('tci_session');
 

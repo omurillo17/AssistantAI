@@ -147,6 +147,8 @@ export default function PortalCandidatoPage() {
     try {
       const formData = new FormData();
       formData.append("telefono", candidato.telefono);
+      // Desambigua cuando el mismo teléfono existe en varias empresas.
+      if (selectedEmpresaId) formData.append("empresa_id", selectedEmpresaId);
       if (fileIne) formData.append("file_ine", fileIne);
       if (fileRfc) formData.append("file_rfc", fileRfc);
       if (fileCv) formData.append("file_cv", fileCv);
@@ -159,7 +161,6 @@ export default function PortalCandidatoPage() {
       const data = await res.json();
       if (res.ok && data.success) {
         setSuccessMsg(data.mensaje || "¡Todos los documentos fueron enviados con éxito!");
-        setCandidato(prev => prev ? { ...prev, estado: "INE_VALIDADA" } : null);
       } else {
         setUploadError(data.error || "Ocurrió un error al subir los documentos.");
       }

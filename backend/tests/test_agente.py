@@ -48,7 +48,7 @@ def test_crear_evento_request_acepta_empresa_id_convertido():
         start="2026-08-09T12:00:00",
         end="2026-08-09T12:30:00",
         calendar_id="cal@gmail.com",
-        telefono="5213323379399",
+        telefono="5215500000001",
         empresa_id=str(empresa_uuid),
     )
 
@@ -130,7 +130,7 @@ async def test_la_alerta_llega_al_reclutador_y_al_administrador(monkeypatch):
 
     monkeypatch.setattr(agente.waha_client, "send_text", _fake_send_text)
     monkeypatch.setattr(
-        type(agente.ENV), "ALERTAS_ADMIN_TELEFONO", property(lambda self: "5213323379399")
+        type(agente.ENV), "ALERTAS_ADMIN_TELEFONO", property(lambda self: "5215500000001")
     )
     agente._alertas_fallo_enviadas.clear()
 
@@ -141,7 +141,7 @@ async def test_la_alerta_llega_al_reclutador_y_al_administrador(monkeypatch):
         {"telefono_reclutador": "5213314057808", "calendar_id": "c@gmail.com"},
     )
 
-    assert destinos == ["5213314057808@c.us", "5213323379399@c.us"]
+    assert destinos == ["5213314057808@c.us", "5215500000001@c.us"]
 
     agente._alertas_fallo_enviadas.clear()
 
@@ -156,7 +156,7 @@ async def test_no_duplica_si_el_administrador_es_el_reclutador(monkeypatch):
 
     monkeypatch.setattr(agente.waha_client, "send_text", _fake_send_text)
     monkeypatch.setattr(
-        type(agente.ENV), "ALERTAS_ADMIN_TELEFONO", property(lambda self: "5213323379399")
+        type(agente.ENV), "ALERTAS_ADMIN_TELEFONO", property(lambda self: "5215500000001")
     )
     agente._alertas_fallo_enviadas.clear()
 
@@ -164,10 +164,10 @@ async def test_no_duplica_si_el_administrador_es_el_reclutador(monkeypatch):
         "crear_evento",
         Exception("x"),
         {"nombre": "Oscar"},
-        {"telefono_reclutador": "5213323379399", "calendar_id": "c@gmail.com"},
+        {"telefono_reclutador": "5215500000001", "calendar_id": "c@gmail.com"},
     )
 
-    assert destinos == ["5213323379399@c.us"]
+    assert destinos == ["5215500000001@c.us"]
 
     agente._alertas_fallo_enviadas.clear()
 
@@ -205,7 +205,7 @@ async def test_si_falla_el_envio_a_uno_el_otro_igual_se_entera(monkeypatch):
 
     monkeypatch.setattr(agente.waha_client, "send_text", _fake_send_text)
     monkeypatch.setattr(
-        type(agente.ENV), "ALERTAS_ADMIN_TELEFONO", property(lambda self: "5213323379399")
+        type(agente.ENV), "ALERTAS_ADMIN_TELEFONO", property(lambda self: "5215500000001")
     )
     agente._alertas_fallo_enviadas.clear()
 
@@ -213,7 +213,7 @@ async def test_si_falla_el_envio_a_uno_el_otro_igual_se_entera(monkeypatch):
         "crear_evento", Exception("x"), {}, {"telefono_reclutador": "5213314057808"}
     )
 
-    assert entregados == ["5213323379399@c.us"]
+    assert entregados == ["5215500000001@c.us"]
 
     agente._alertas_fallo_enviadas.clear()
 

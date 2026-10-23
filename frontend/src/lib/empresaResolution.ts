@@ -30,6 +30,8 @@ export async function resolveEmpresaYGrupo(
       `SELECT empresa_id, id AS grupo_id, naves_asignadas
        FROM grupos_reclutamiento
        WHERE telefono_whatsapp = $1 OR whatsapp_phone_number_id = $1
+       -- Determinista si dos grupos comparten número: gana el más antiguo.
+       ORDER BY created_at ASC, id ASC
        LIMIT 1`,
       [normalizado]
     );

@@ -174,6 +174,9 @@ CREATE TABLE IF NOT EXISTS usuarios (
     -- cuenta de último recurso para recuperar el control de la plataforma, así
     -- que no debe poder quedarse fuera ni por error ni por un ROOT hostil.
     protegido BOOLEAN DEFAULT FALSE,
+    -- Se incrementa al cerrar sesión o cambiar contraseña/rol: invalida todos
+    -- los JWT emitidos antes (llevan la versión en el claim `tv`).
+    token_version INT NOT NULL DEFAULT 0,
     CONSTRAINT valid_rol CHECK (rol IN ('ROOT', 'ADMIN', 'USER', 'RECLUTADOR', 'ENCARGADO'))
 );
 
@@ -755,16 +758,10 @@ VALUES
     ('error_rate', 'total_errors', 0, 'count', 'hourly')
 ON CONFLICT DO NOTHING;
 
--- Usuario ROOT (administrador global de la plataforma SaaS).
--- Hash bcrypt (costo 10) precalculado para la contraseña; NO se genera en SQL
--- para no depender de la extension pgcrypto.
-INSERT INTO usuarios (usuario, password_hash, rol)
-VALUES (
-    'omurillo17',
-    '$2b$10$WSjKYnyEbq0nyUWmtSQTQOSwCh4LDG4wCzE2e.V1wcl8vnbUSSojG',
-    'ROOT'
-)
-ON CONFLICT (usuario) DO NOTHING;
+-- Usuario ROOT (administrador global de la plataforma SaaS): ya NO se siembra
+-- aquí. El hash de su contraseña vivía en este archivo, versionado en git.
+-- Se crea (o se le cambia la contraseña) con scripts/crear_root.sh, que pide
+-- usuario y contraseña y la hashea con bcryptjs dentro del contenedor frontend.
 
 -- ============================================
 -- MIGRACIONES SOBRE BASES YA EXISTENTES
@@ -781,6 +778,9 @@ ALTER TABLE vacantes_def ADD COLUMN IF NOT EXISTS palabras_clave TEXT DEFAULT ''
 
 -- Ciudad/municipio declarado por el candidato (filtro de cobertura de Sofia).
 ALTER TABLE candidatos ADD COLUMN IF NOT EXISTS lugar_residencia VARCHAR(255);
+
+-- Versión de sesión para revocar JWT (= migrations/005).
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS token_version INT NOT NULL DEFAULT 0;
 
 -- Estados válidos, estados personalizados e historial (= migrations/004).
 CREATE TABLE IF NOT EXISTS estados_personalizados (

@@ -15,7 +15,7 @@ from app.chat.ingesta import _es_mensaje_valido, _es_remitente_ignorado
 
 def _mensaje(**payload_extra) -> dict:
     payload = {
-        "from": "5213323379399@c.us",
+        "from": "5215500000001@c.us",
         "timestamp": time.time(),
         "type": "chat",
         "fromMe": False,
@@ -27,19 +27,19 @@ def _mensaje(**payload_extra) -> dict:
 def test_fix_lid_webjs_y_noweb():
     from app.chat.ingesta import _fix_lid
     # WEBJS
-    webjs_resp = {"id": "5213323379399@c.us", "number": "5213323379399"}
+    webjs_resp = {"id": "5215500000001@c.us", "number": "5215500000001"}
     res1 = _fix_lid(webjs_resp)
-    assert res1["number"] == "5213323379399"
+    assert res1["number"] == "5215500000001"
 
     # NOWEB con LID
     noweb_lid_resp = {
         "id": "28153510625455@lid",
         "lid": "28153510625455@lid",
-        "phoneNumber": "5213323379399@s.whatsapp.net",
+        "phoneNumber": "5215500000001@s.whatsapp.net",
         "pushname": "Sofia"
     }
     res2 = _fix_lid(noweb_lid_resp)
-    assert res2["number"] == "5213323379399"
+    assert res2["number"] == "5215500000001"
     assert res2["lid"] == "28153510625455"
 
 
@@ -238,7 +238,7 @@ async def test_fallback_error_envia_mensaje_amable_si_falla_analizador(monkeypat
         "session": "default",
         "payload": {
             "id": "msg_test_123",
-            "from": "5213323379399@c.us",
+            "from": "5215500000001@c.us",
             "type": "chat",
             "body": "Hola vacante",
             "timestamp": time.time(),
@@ -250,7 +250,7 @@ async def test_fallback_error_envia_mensaje_amable_si_falla_analizador(monkeypat
     assert len(mensajes_enviados) == 1
     assert "Disculpa, tuve un inconveniente momentáneo" in mensajes_enviados[0][1]
     assert len(asistente_guardado) == 1
-    assert asistente_guardado[0][0] == "5213323379399"
+    assert asistente_guardado[0][0] == "5215500000001"
 
 
 async def test_fallback_error_no_responde_si_candidato_escalado(monkeypatch):
@@ -300,7 +300,7 @@ async def test_fallback_error_no_responde_si_candidato_escalado(monkeypatch):
         "session": "default",
         "payload": {
             "id": "msg_test_456",
-            "from": "5213323379399@c.us",
+            "from": "5215500000001@c.us",
             "type": "chat",
             "body": "Hola vacante",
             "timestamp": time.time(),

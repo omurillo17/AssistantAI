@@ -25,7 +25,7 @@ import json
 import logging
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -34,6 +34,7 @@ import google.generativeai as genai
 
 from app import gemini_client, waha_client
 from app.chat import memoria, parser, vacantes
+from app.chat.analizador import puede_agendar
 from app.chat.vacantes import es_placeholder_vacante, limpiar_vacante
 from app.config import ENV
 from app.db import get_pool
@@ -46,13 +47,13 @@ from app.routers.eventos_calendario import (
     eliminar_evento as _eliminar_evento_endpoint,
 )
 from app.utils.fechas_es import MESES_ES
+from app.utils.phone import enmascarar
 
 logger = logging.getLogger("agente")
 
 _MX_TZ = ZoneInfo("America/Mexico_City")
 _MAX_TOOL_ROUNDS = 5
 _ENTRE_MENSAJES_SEGUNDOS = 3
-_DEFAULT_CALENDAR = "talreclutamiento01@gmail.com"
 _MENSAJE_MULTIMEDIA_FALLBACK = "[Mensaje multimedia]"
 _WA_C_US_SUFFIX = "@c.us"
 
@@ -172,7 +173,7 @@ async def _guardar_mensaje_asistente(telefono: str, texto: str) -> None:
     )
 
 
-async def _guardar_mensaje_usuario_escalado(telefono: str, juntado: dict) -> None:
+async def _guardar_mensaje_usuario_escalado(telefono: str, juntado: dict, empresa_id=None) -> None:
     pool = get_pool()
     msg_content = juntado.get("mensaje_completo") or _MENSAJE_MULTIMEDIA_FALLBACK
     msg_type = juntado.get("message_type") or "text"
@@ -195,10 +196,14 @@ async def _guardar_mensaje_usuario_escalado(telefono: str, juntado: dict) -> Non
         timestamp,
     )
     await pool.execute(
-        "UPDATE candidatos SET ultima_interaccion = NOW() WHERE telefono = $1",
-        telefono,
+        "UPDATE candidatos SET ultima_interaccion = NOW() "
+        "WHERE telefono = $1 AND empresa_id IS NOT DISTINCT FROM $2::uuid",
+        telefono, str(empresa_id) if empresa_id else None,
     )
-    cand_id = await pool.fetchval("SELECT id FROM candidatos WHERE telefono = $1", telefono)
+    cand_id = await pool.fetchval(
+        "SELECT id FROM candidatos WHERE telefono = $1 AND empresa_id IS NOT DISTINCT FROM $2::uuid",
+        telefono, str(empresa_id) if empresa_id else None,
+    )
     if cand_id:
         await pool.execute(
             """
@@ -233,10 +238,43 @@ async def _tool_revisar_calendario(calendar_id: str, args: dict) -> dict:
     if time_max.tzinfo is None:
         time_max = time_max.replace(tzinfo=_MX_TZ)
     eventos = await list_events(calendar_id, time_min, time_max, max_results=10)
+    # Solo los huecos ocupados: el modelo no necesita (ni debe poder repetirle
+    # al candidato) títulos, nombres o IDs de las citas de otras personas.
     return {"eventos_ocupados": [
-        {"id": e.get("id"), "summary": e.get("summary"), "start": e.get("start"), "end": e.get("end")}
+        {
+            "start": (e.get("start") or {}).get("dateTime") or (e.get("start") or {}).get("date"),
+            "end": (e.get("end") or {}).get("dateTime") or (e.get("end") or {}).get("date"),
+        }
         for e in eventos
     ]}
+
+
+_CITA_DURACION_MIN = timedelta(minutes=15)
+_CITA_DURACION_MAX = timedelta(hours=2)
+_CITA_HORIZONTE = timedelta(days=30)
+
+
+def validar_horario_cita(start: str | None, end: str | None, ahora: datetime) -> str | None:
+    """Valida los argumentos que el modelo le pasa a crear_evento. Devuelve
+    el motivo del rechazo (para el modelo) o None si el horario es válido.
+    Fechas sin zona se interpretan en America/Mexico_City, igual que en
+    google_calendar.create_event."""
+    try:
+        inicio = datetime.fromisoformat(start or "")
+        fin = datetime.fromisoformat(end or "")
+    except (TypeError, ValueError):
+        return "start/end deben ser fechas ISO 8601 válidas."
+    if inicio.tzinfo is None:
+        inicio = inicio.replace(tzinfo=_MX_TZ)
+    if fin.tzinfo is None:
+        fin = fin.replace(tzinfo=_MX_TZ)
+    if inicio <= ahora:
+        return "No se puede agendar en el pasado. Ofrece un horario futuro."
+    if inicio > ahora + _CITA_HORIZONTE:
+        return "Solo se puede agendar dentro de los próximos 30 días."
+    if not (_CITA_DURACION_MIN <= fin - inicio <= _CITA_DURACION_MAX):
+        return "La cita debe durar entre 15 minutos y 2 horas."
+    return None
 
 
 def _extraer_dict_candidato(val: object) -> dict:
@@ -252,7 +290,28 @@ def _extraer_dict_candidato(val: object) -> dict:
     return {}
 
 
+def tiene_cita_vigente(candidato: dict, ahora: datetime) -> bool:
+    """Una cita impide agendar otra solo si sigue en pie (CITA_AGENDADA con fecha
+    futura). Una cancelada desde el CRM o una ya pasada (no asistió) no obliga a
+    cancelar antes: eso sumaba una cancelación y podía terminar en RECHAZADO."""
+    if not candidato.get("event_id") or candidato.get("estado") != "CITA_AGENDADA":
+        return False
+    try:
+        fecha = datetime.fromisoformat(str(candidato.get("fecha_entrevista")))
+    except ValueError:
+        return False
+    if fecha.tzinfo is None:
+        fecha = fecha.replace(tzinfo=_MX_TZ)
+    return fecha > ahora
+
+
 async def _tool_crear_evento(candidato: dict, reclutador: dict, args: dict) -> dict:
+    if tiene_cita_vigente(candidato, datetime.now(_MX_TZ)):
+        return {"error": "El candidato ya tiene una cita agendada. Para cambiarla, primero cancélala con eliminar_evento."}
+    motivo = validar_horario_cita(args.get("start"), args.get("end"), datetime.now(_MX_TZ))
+    if motivo:
+        return {"error": motivo}
+
     datos_ine = _extraer_dict_candidato(candidato.get("datos_ine"))
     datos_rfc = _extraer_dict_candidato(candidato.get("datos_rfc"))
 
@@ -281,7 +340,11 @@ async def _tool_crear_evento(candidato: dict, reclutador: dict, args: dict) -> d
         # CrearEventoRequest.empresa_id espera str.
         empresa_id=str(candidato["empresa_id"]) if candidato.get("empresa_id") else "",
     )
-    return await _crear_evento_endpoint(payload)
+    res = await _crear_evento_endpoint(payload)
+    # Refleja la cita en el dict del turno: un segundo crear_evento en el
+    # mismo turno ve que ya existe.
+    candidato["event_id"] = res.get("event_id")
+    return res
 
 
 async def _tool_eliminar_evento(candidato: dict, reclutador: dict) -> dict:
@@ -289,8 +352,10 @@ async def _tool_eliminar_evento(candidato: dict, reclutador: dict) -> dict:
         calendar_id=reclutador.get("calendar_id") or "",
         telefono=candidato.get("telefono") or "",
         event_id=candidato.get("event_id") or "",
+        empresa_id=str(candidato["empresa_id"]) if candidato.get("empresa_id") else None,
     )
     res = await _eliminar_evento_endpoint(payload)
+    candidato["event_id"] = None
     cancel_count = res.get("cancelaciones", 1)
 
     # Alerta WhatsApp al reclutador
@@ -394,18 +459,28 @@ async def _alertar_fallo_tool(nombre_tool: str, exc: Exception, candidato: dict,
             logger.exception("_alertar_fallo_tool: no se pudo avisar a %s del fallo en %s", destino, nombre_tool)
 
 
+_ERROR_TOOL_GENERICO = "No se pudo completar la operación por un problema técnico."
+
+
 async def _ejecutar_tool(nombre: str, args: dict, candidato: dict, reclutador: dict) -> dict:
     try:
+        if nombre in ("revisar_calendario", "crear_evento") and not reclutador.get("calendar_id"):
+            # Falla cerrado: sin calendario del reclutador no se agenda en
+            # ningún calendario "de respaldo" ajeno.
+            logger.error(
+                "_ejecutar_tool: %s sin calendar_id de reclutador (telefono=%s) -- no se agenda",
+                nombre, enmascarar(candidato.get("telefono")),
+            )
+            return {"error": "No hay un calendario disponible para agendar en este momento."}
         if nombre == "revisar_calendario":
-            return await _tool_revisar_calendario(reclutador.get("calendar_id") or _DEFAULT_CALENDAR, args)
+            return await _tool_revisar_calendario(reclutador["calendar_id"], args)
         if nombre == "crear_evento":
-            # REGLA OBLIGATORIA: Solo se permite crear el evento en el calendario si el candidato
-            # ya completó sus documentos y su estado es INE_VALIDADA o CITA_AGENDADA/CITA_CANCELADA.
-            estado_cand = candidato.get("estado")
-            if estado_cand not in ("INE_VALIDADA", "CITA_AGENDADA", "CITA_CANCELADA"):
+            # REGLA OBLIGATORIA: solo se crea el evento si el candidato ya entregó INE y RFC
+            # (ver analizador.puede_agendar).
+            if not puede_agendar(candidato):
                 logger.warning(
                     "_ejecutar_tool: se bloqueó crear_evento para candidato telefono=%s (estado=%s) porque no ha completado INE/RFC",
-                    candidato.get("telefono"), estado_cand
+                    enmascarar(candidato.get("telefono")), candidato.get("estado")
                 )
                 return {
                     "error": "No es posible agendar la cita todavía. El candidato debe primero completar la recepción y validación de su INE y RFC (Estado INE_VALIDADA)."
@@ -422,7 +497,9 @@ async def _ejecutar_tool(nombre: str, args: dict, candidato: dict, reclutador: d
             await _alertar_fallo_tool(nombre, e, candidato, reclutador)
         except Exception:
             logger.exception("_ejecutar_tool: fallo al alertar del fallo en %s", nombre)
-        return {"error": str(e)}
+        # Al modelo nunca le llega el detalle interno (str(e) trae IDs de
+        # calendario, rutas, mensajes de Google): queda en logs y en la alerta.
+        return {"error": _ERROR_TOOL_GENERICO}
 
 
 async def _ejecutar_ronda_tools(
@@ -430,14 +507,20 @@ async def _ejecutar_ronda_tools(
     calls,
     candidato: dict,
     reclutador: dict,
+    ya_creado: bool = False,
 ) -> tuple[bool, bool, str | None, object]:
+    """`ya_creado`: si en una ronda anterior de este turno ya se creó una cita.
+    Se permite UN crear_evento exitoso por turno."""
     evento_creado_ok = False
     evento_eliminado_ok = False
     fecha_evento: str | None = None
     parts = []
     for fc in calls:
         args = dict(fc.args) if fc.args else {}
-        resultado = await _ejecutar_tool(fc.name, args, candidato, reclutador)
+        if fc.name == "crear_evento" and (ya_creado or evento_creado_ok):
+            resultado = {"error": "Ya se agendó una cita en este turno; no se puede crear otra."}
+        else:
+            resultado = await _ejecutar_tool(fc.name, args, candidato, reclutador)
         exito = isinstance(resultado, dict) and resultado.get("success") and not resultado.get("error")
         if fc.name == "crear_evento" and exito:
             evento_creado_ok = True
@@ -474,7 +557,9 @@ async def _ejecutar_agente(system_prompt: str, historial: list[dict], mensaje_us
         calls = gemini_client.extraer_function_calls(response)
         if not calls:
             break
-        creado, eliminado, fecha, response = await _ejecutar_ronda_tools(chat, calls, candidato, reclutador)
+        creado, eliminado, fecha, response = await _ejecutar_ronda_tools(
+            chat, calls, candidato, reclutador, ya_creado=evento_creado_ok
+        )
         if creado:
             evento_creado_ok = True
             fecha_evento = fecha or fecha_evento
@@ -588,10 +673,11 @@ async def _marcar_escalado(telefono: str, nombre: str, vacante: str, motivo: str
             escalado = TRUE,
             escalated_at = NOW(),
             escalation_reason = $2
-        WHERE telefono = $1
+        WHERE telefono = $1 AND empresa_id IS NOT DISTINCT FROM $3::uuid
         RETURNING id, asignado_a_id
         """,
         telefono, motivo or "Solicitud de atención humana",
+        str(empresa_id) if empresa_id else None,
     )
     if row is None:
         row = await pool.fetchrow(
@@ -751,9 +837,11 @@ def _sincronizar_items_con_tools(items: list[dict], ejecucion: dict, numero: str
         for item in items:
             item["fecha_entrevista_detectada"] = ejecucion["fecha_evento"]
             item["cita_creada"] = True
-    if ejecucion["evento_eliminado_ok"]:
-        for item in items:
-            item["cita_cancelada"] = True
+    # Igual que cita_creada: la cancelación solo cuenta si eliminar_evento
+    # corrió con éxito. Un "CITA_CANCELADA" escrito por el modelo (o inducido
+    # por el candidato) no basta para mover el expediente.
+    for item in items:
+        item["cita_cancelada"] = bool(ejecucion["evento_eliminado_ok"])
 
     primero = items[0]
     if primero.get("fecha_entrevista_detectada") and not evento_creado_ok:
@@ -854,7 +942,7 @@ async def procesar_turno(webhook_body: dict, contacto: dict, candidato: dict, sy
         return  # ¿HayMensajes? -- nada que procesar (carrera/reintento raro)
 
     if candidato.get("escalado"):
-        await _guardar_mensaje_usuario_escalado(numero, juntado)
+        await _guardar_mensaje_usuario_escalado(numero, juntado, candidato.get("empresa_id"))
         return
 
     # Se guarda YA (con su timestamp real), no hasta que termine todo el

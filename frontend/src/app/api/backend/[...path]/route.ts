@@ -5,12 +5,9 @@ import type { JWTPayload } from "jose";
 import { getSession } from "@/lib/auth";
 import { pool } from "@/lib/db";
 import { rateLimit } from "@/lib/rate-limit";
+import { construirDestinoBackend } from "./rutas";
 
 const BACKEND_API_BASE = process.env.BACKEND_API_BASE || "http://localhost:8000";
-// Solo los endpoints de citas que el CRM necesita desde el navegador.
-const ALLOWED_PATHS = [
-  "/internal/citas",
-];
 
 let warnedNoKey = false;
 
@@ -85,12 +82,13 @@ async function autorizarEscritura(
 
 async function handleProxy(request: Request, pathArray: string[]) {
   try {
-    const pathname = "/" + pathArray.join("/");
-
-    const isAllowed = ALLOWED_PATHS.some((allowedPath) => pathname.startsWith(allowedPath));
-    if (!isAllowed) {
+    // Solo los endpoints de citas que el CRM necesita desde el navegador
+    // (allowlist exacto de ruta + método en ./rutas.ts).
+    const target = construirDestinoBackend(BACKEND_API_BASE, request.method, pathArray, new URL(request.url).search);
+    if (!target) {
       return NextResponse.json({ success: false, error: "403 Forbidden" }, { status: 403 });
     }
+    const { pathname } = target;
 
     const session = await getSession(request);
     if (!session) {
@@ -104,14 +102,6 @@ async function handleProxy(request: Request, pathArray: string[]) {
       forwardBody = auth.body;
     }
 
-    const { searchParams } = new URL(request.url);
-    const queryString = searchParams.toString();
-
-    let targetUrl = `${BACKEND_API_BASE}${pathname}`;
-    if (queryString) {
-      targetUrl += `?${queryString}`;
-    }
-
     const headers = new Headers();
     const apiKey = process.env.PYTHON_SERVICE_API_KEY;
     if (apiKey) {
@@ -119,8 +109,8 @@ async function handleProxy(request: Request, pathArray: string[]) {
     } else if (!warnedNoKey) {
       console.warn(
         "[proxy backend] PYTHON_SERVICE_API_KEY no está configurada: las llamadas a " +
-          "/internal/citas/* saldrán sin header X-Api-Key (backend las acepta en modo " +
-          "fail-open, con su propia advertencia)."
+          "/internal/citas/* saldrán sin header X-Api-Key y el backend (que falla " +
+          "cerrado, ver backend/app/security.py) las rechazará con 401."
       );
       warnedNoKey = true;
     }
@@ -139,7 +129,7 @@ async function handleProxy(request: Request, pathArray: string[]) {
       options.body = forwardBody;
     }
 
-    const response = await fetch(targetUrl, options);
+    const response = await fetch(target, options);
     let data = await response.text();
 
     // El backend devuelve los eventos de todos los calendarios; fuera de ROOT

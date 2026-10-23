@@ -84,20 +84,26 @@ reclutador** y aceptar. El refresh token queda cifrado en la tabla
 
 ### Pendiente ahora mismo
 
-`rhumanossdvirgo@gmail.com` (**SRA PATY**) nunca se autorizó. Está
-**desactivada** en la tabla `reclutadores` para que el sistema no le asigne
-candidatos que luego no podría agendar. Cuando tengas acceso a ese correo:
+Hay una reclutadora cuyo calendario nunca se autorizó. Está **desactivada**
+en la tabla `reclutadores` para que el sistema no le asigne candidatos que
+luego no podría agendar. Su correo (no se deja en el repo):
+
+```sql
+SELECT nombre, calendar_id FROM reclutadores WHERE activo = false;
+```
+
+Cuando tengas acceso a ese correo:
 
 ```bash
 cd backend
-python -m scripts.authorize_recruiter --email rhumanossdvirgo@gmail.com
+python -m scripts.authorize_recruiter --email CORREO_DE_LA_RECLUTADORA
 ```
 
 y luego reactívala desde el panel de usuarios, o directo en la base:
 
 ```sql
 UPDATE reclutadores SET activo = true
-WHERE calendar_id = 'rhumanossdvirgo@gmail.com';
+WHERE calendar_id = 'CORREO_DE_LA_RECLUTADORA';
 ```
 
 ### Verificar quién está autorizado
@@ -173,6 +179,9 @@ ssh -L 3000:localhost:3000 usuario@servidor
 | `GOOGLE_TOKEN_ENCRYPTION_KEY` | `.env` | Cifra los refresh tokens. **Si se pierde, hay que volver a autorizar a todos.** |
 | `WAHA_API_KEY` | `.env` | Protege la API de WhatsApp. |
 | `GEMINI_API_KEY` | `.env` | Modelo de IA. |
+| `APP_DB_USER` / `APP_DB_PASSWORD` | `.env` | Rol de base sin DDL para backend y frontend (bloque 7). |
+| `WAHA_WEBHOOK_HMAC_KEY` | `.env` | Firma de los webhooks WAHA → backend (bloque 7). |
+| `META_WA_VERIFY_TOKEN` | `.env` | Solo con Meta Cloud API. Ya no tiene valor por defecto. |
 
 Genera secretos así:
 
@@ -232,6 +241,113 @@ npm run typecheck
 
 ---
 
+## 7. Endurecimiento de infraestructura (octubre 2026)
+
+Cambios que el repo ya trae pero que necesitan pasos a mano en el servidor.
+**Hazlos en este orden.**
+
+1. **Permisos de `virgo_data/` (antes de desplegar).** backend y frontend ya
+   no corren como root sino con UID 1000 (`app` y `node`). Escriben en
+   `virgo_data/uploads` (expedientes) y `virgo_data/data`
+   (`prompt_context.json`), que son bind mounts del host:
+
+   ```bash
+   sudo chown -R 1000:1000 virgo_data/uploads virgo_data/data
+   ```
+
+   Sin esto, subir un CV o guardar una vacante falla con `EACCES`.
+
+2. **`.env`.** `META_WA_VERIFY_TOKEN` y `TEST_DEV_PHONE` ya no tienen valor por
+   defecto en `docker-compose.yml`: si usas Meta, pon un token nuevo
+   (`openssl rand -hex 32`) aquí y en el panel de Meta. `APP_PASSWORD` ya no se
+   usa; puedes borrarla. `ENABLE_TEST_COMMANDS` se queda en `false`.
+
+3. **Desplegar:** `./scripts/deploy.sh`. Ahora hace un `scripts/backup.sh` antes
+   de aplicar migraciones (si falla, no toca la base), aplica la
+   `005_token_version_usuarios` y reconstruye **backend y frontend**.
+   Los contenedores pasan a dos redes (`edge`: cloudflared + frontend;
+   `internal`: el resto). La red vieja queda huérfana; bórrala con
+   `docker network rm assistantai_virgo_network`.
+
+4. **Contraseña del ROOT.** El hash bcrypt del ROOT estuvo versionado en
+   `database_setup.sql`: sigue en el historial de git. Cámbiala ya:
+
+   ```bash
+   bash scripts/crear_root.sh      # pide usuario y contraseña (mín. 10)
+   ```
+
+   Si el repo es o fue público, considera además purgar el historial
+   (`git filter-repo`) y rotar cualquier secreto que haya pasado por él.
+
+5. **Rol de base de la app (mínimo privilegio).** Hasta ahora backend y
+   frontend usaban el superusuario de Postgres.
+
+   ```bash
+   # en .env:
+   APP_DB_USER=virgo_app
+   APP_DB_PASSWORD=<openssl rand -hex 24>
+
+   bash scripts/crear_rol_app.sh
+   docker compose up -d backend frontend
+   ```
+
+   Comprueba que el bot contesta y el CRM guarda cambios. Si algo falla,
+   vacía `APP_DB_USER`/`APP_DB_PASSWORD` y `docker compose up -d backend
+   frontend`: vuelve al superusuario. Las migraciones, `backup.sh` y
+   `restore.sh` siguen usando el superusuario. Tras un `restore.sh`, vuelve a
+   correr `crear_rol_app.sh` por si acaso.
+
+6. **Firma HMAC de los webhooks de WAHA.** Genera la llave
+   (`openssl rand -hex 32`). **Primero** haz que WAHA firme: la sesión
+   `default` guarda su propio webhook (la variable de entorno solo aplica a
+   sesiones nuevas), así que mira su config y añade
+   `"hmac": {"key": "<la llave>"}` al webhook de
+   `http://backend:8000/webhook/messages`:
+
+   ```bash
+   curl -s -H "X-Api-Key: $WAHA_API_KEY" http://127.0.0.1:3000/api/sessions/default
+   curl -s -X PUT -H "X-Api-Key: $WAHA_API_KEY" -H 'Content-Type: application/json' \
+     http://127.0.0.1:3000/api/sessions/default -d '{"config": <config de arriba con hmac>}'
+   ```
+
+   **Después** pon `WAHA_WEBHOOK_HMAC_KEY=<la llave>` en `.env` y
+   `docker compose up -d waha backend`. En ese orden no se pierde ningún
+   mensaje: sin la variable el backend acepta webhooks sin firma (y lo avisa en
+   los logs); con ella rechaza los que no traen firma válida.
+
+7. **WAHA.** `WAHA_PRINT_QR=False`: el QR ya no sale en los logs; para
+   re-vincular usa el dashboard por túnel SSH (bloque 4). La multimedia de
+   WhatsApp ahora caduca a los 7 días (`WHATSAPP_FILES_LIFETIME=604800`); los
+   documentos del expediente ya están copiados en `virgo_data/uploads`.
+
+8. **Respaldos viejos.** `backup.sh` ya crea todo con permisos 600/700, pero
+   los archivos anteriores no cambian solos:
+   `chmod 700 ~/backups/assistantai && chmod 600 ~/backups/assistantai/*`.
+
+9. **Imágenes sin versión fija.** `waha` y `cloudflared` siguen en `:latest`.
+   Anota la versión que funciona hoy y fíjala en `docker-compose.yml`:
+
+   ```bash
+   docker image inspect --format '{{index .RepoDigests 0}}' devlikeapro/waha:latest cloudflare/cloudflared:latest
+   ```
+
+### Restaurar un respaldo
+
+`restore.sh` corre en **una sola transacción** y se detiene al primer error
+(`ON_ERROR_STOP`): o restaura todo o no cambia nada. Los dumps nuevos llevan
+`--clean --if-exists` y se cargan sobre la base existente. Un dump anterior a
+este cambio no trae los `DROP` y chocará con las tablas existentes: restáuralo
+sobre una base vacía (volumen nuevo de Postgres).
+
+### Sesiones
+
+Cerrar sesión o cambiar la contraseña sube `usuarios.token_version` y anula
+**todos** los JWT de ese usuario en todos sus navegadores (hasta ~30 s de
+caché). Tras 5 contraseñas fallidas seguidas, ese usuario queda bloqueado
+15 minutos (en memoria: un reinicio del frontend lo desbloquea).
+
+---
+
 ## Estado conocido al momento de escribir esta guía
 
 - ✅ Contraseñas en texto plano eliminadas de `usuarios`
@@ -252,7 +368,7 @@ npm run typecheck
   teléfono del reclutador ahora sí llegan al candidato por WhatsApp
   (antes el backend los descartaba en silencio)
 - ⏳ **Pendiente tuyo:** publicar la app OAuth (bloque 1)
-- ⏳ **Pendiente tuyo:** autorizar `rhumanossdvirgo@gmail.com` (bloque 2)
+- ⏳ **Pendiente tuyo:** autorizar el calendario de la reclutadora desactivada (bloque 2)
 - ✅ **Backups configurados:** automatizados en Linux (`scripts/backup.sh` + crontab diario a las 03:00 AM)
 - ⏳ **Pendiente tuyo:** probar en el servidor Debian 13 (GNOME) antes de
   darlo por definitivo — es la primera vez que corre fuera de desarrollo

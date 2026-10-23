@@ -10,13 +10,81 @@ export interface SessionPayload extends JWTPayload {
   empresa_id?: string | null;
   grupo_id?: string | null;
   naves_asignadas?: string[];
+  /** usuarios.token_version al firmar; los JWT anteriores a este claim valen 0. */
+  tv?: number;
+}
+
+// ponytail: caché en memoria por proceso (30 s) de usuarios.token_version para
+// no ir a la base en cada petición. Vive en globalThis porque proxy.ts y las
+// rutas se empaquetan por separado y cada bundle tendría su propio Map;
+// revocarSesiones() la limpia. Si algún día hay varias réplicas del frontend,
+// una revocación tarda hasta 30 s en llegar a las demás.
+const VERSION_TTL_MS = 30_000;
+const globalVersiones = globalThis as unknown as {
+  versionesSesion?: Map<string, { version: number; hasta: number }>;
+};
+const versiones = (globalVersiones.versionesSesion ??= new Map());
+
+/** token_version actual del usuario, o null si ya no existe. */
+async function versionActual(usuario: string): Promise<number | null> {
+  const enCache = versiones.get(usuario);
+  if (enCache && enCache.hasta > Date.now()) return enCache.version;
+  // Import diferido: los tests que solo usan helpers puros no levantan el pool.
+  const { pool } = await import("@/lib/db");
+  const res = await pool.query(`SELECT token_version FROM usuarios WHERE usuario = $1`, [usuario]);
+  if (res.rowCount === 0) {
+    versiones.delete(usuario);
+    return null;
+  }
+  const version = Number(res.rows[0].token_version);
+  versiones.set(usuario, { version, hasta: Date.now() + VERSION_TTL_MS });
+  return version;
+}
+
+/**
+ * Anula todos los JWT emitidos para `usuario` (logout, cambio de contraseña o
+ * de rol, baja). Los que ya estén firmados dejan de pasar getSession()/proxy.
+ * Devuelve la nueva versión (null si el usuario no existe).
+ */
+export async function revocarSesiones(usuario: string): Promise<number | null> {
+  const { pool } = await import("@/lib/db");
+  const res = await pool.query(
+    `UPDATE usuarios SET token_version = token_version + 1 WHERE usuario = $1 RETURNING token_version`,
+    [usuario]
+  );
+  versiones.delete(usuario);
+  return res.rowCount ? Number(res.rows[0].token_version) : null;
+}
+
+/**
+ * Verifica firma y caducidad del JWT y que su `tv` siga siendo la versión
+ * vigente del usuario. Devuelve el payload o `null`; nunca lanza.
+ */
+export async function verificarTokenSesion(token: string): Promise<SessionPayload | null> {
+  let payload: SessionPayload;
+  try {
+    const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
+    ({ payload } = await jwtVerify<SessionPayload>(token, secretKey));
+  } catch {
+    return null;
+  }
+  if (!payload.usuario) return null;
+  try {
+    const vigente = await versionActual(payload.usuario);
+    if (vigente === null || vigente !== (payload.tv ?? 0)) return null;
+    return payload;
+  } catch (err) {
+    // Falla cerrado, pero que se vea: si la base no responde nadie entra.
+    console.error("[auth] no se pudo comprobar token_version:", err);
+    return null;
+  }
 }
 
 /**
  * Verifica la sesión JWT de la cookie `tci_session`.
  * Acepta un `Request` (lee el header Cookie) o directamente el token.
- * Devuelve el payload o `null` si no hay sesión válida. Nunca usa un
- * secreto de respaldo: si JWT_SECRET no está configurado, falla cerrado.
+ * Devuelve el payload o `null` si no hay sesión válida o fue revocada. Nunca
+ * usa un secreto de respaldo: si JWT_SECRET no está configurado, falla cerrado.
  */
 export async function getSession(source: Request | string | undefined | null): Promise<SessionPayload | null> {
   let token: string | undefined;
@@ -32,14 +100,7 @@ export async function getSession(source: Request | string | undefined | null): P
   }
 
   if (!token) return null;
-
-  try {
-    const secretKey = new TextEncoder().encode(ENV.JWT_SECRET);
-    const { payload } = await jwtVerify(token, secretKey);
-    return payload as SessionPayload;
-  } catch {
-    return null;
-  }
+  return verificarTokenSesion(token);
 }
 
 /**

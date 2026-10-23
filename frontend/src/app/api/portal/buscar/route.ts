@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import { z } from 'zod';
 import { pool } from '@/lib/db';
 import { rateLimit } from '@/lib/rate-limit';
+import { normalizarTelefonoPortal } from '../telefono';
 
 const bodySchema = z.object({
   telefono: z.string().min(10, 'El número telefónico debe tener 10 dígitos'),
@@ -32,13 +33,11 @@ export async function POST(request: Request) {
 
     const { telefono, empresa_id, nave_id } = parsed.data;
 
-    // Sanitize phone number to digits only.
-    // Se exigen los 10 dígitos completos: con 8 bastaba para que el patrón
-    // `%12345678%` hiciera match por SUBCADENA contra cualquier teléfono que
-    // los contuviera, así que un tercero podía sacar el expediente de alguien
-    // más probando fragmentos, sin conocer el número completo.
-    const digitsOnly = telefono.replace(/\D/g, '');
-    if (digitsOnly.length < 10) {
+    // Se exigen los 10 dígitos completos (o 12/13 con prefijo 52/521): con
+    // menos, un patrón por SUBCADENA hacía match contra teléfonos ajenos y un
+    // tercero podía sacar el expediente de alguien más probando fragmentos.
+    const last10 = normalizarTelefonoPortal(telefono);
+    if (!last10) {
       return NextResponse.json(
         { error: 'Por favor ingresa un número de teléfono válido de 10 dígitos.' },
         { status: 400 }
@@ -46,15 +45,13 @@ export async function POST(request: Request) {
     }
 
     // Match por SUFIJO, no por subcadena: el teléfono guardado trae prefijos
-    // de país/operador variables (3323379399, 523323379399, 5213323379399),
+    // de país/operador variables (5500000001, 525500000001, 5215500000001),
     // pero siempre termina en los mismos 10 dígitos.
-    const last10 = digitsOnly.slice(-10);
     const searchPattern = `%${last10}`;
 
     let query = `
-      SELECT id, telefono, nombre, nombre_chat, nombre_solicitud, 
-             vacante_interes, nave_interes, estado, alerta_identidad_estado,
-             alerta_identidad_motivo, asignado_a_id, empresa_id, nave_id,
+      SELECT nombre, nombre_chat, nombre_solicitud,
+             vacante_interes, nave_interes, alerta_identidad_motivo,
              tiene_cv, link_cv, cv_manual, datos_ine, datos_rfc
       FROM candidatos
       WHERE (telefono ILIKE $1 OR REPLACE(telefono, '+', '') ILIKE $1)
@@ -101,13 +98,12 @@ export async function POST(request: Request) {
     return NextResponse.json({
       encontrado: true,
       candidato: {
-        id: cand.id,
-        telefono: cand.telefono,
+        // Solo lo que pinta el portal. El teléfono es el mismo que tecleó el
+        // candidato (no el guardado) y el portal lo reenvía a /api/portal/subir.
+        telefono: last10,
         nombre: nombreMostrado,
         vacante_interes: cand.vacante_interes || 'General',
         nave_interes: cand.nave_interes || 'General',
-        estado: cand.estado,
-        alerta_identidad_estado: cand.alerta_identidad_estado,
         // Mensaje GENÉRICO, no la nota interna: este endpoint es público (solo
         // pide un teléfono) y `alerta_identidad_motivo` incluye la CURP leída
         // del documento ('CURP con formato inválido ... "MESC010323MJCDNA2"'),

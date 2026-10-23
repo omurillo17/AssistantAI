@@ -86,7 +86,7 @@ def build_tool_declarations(now: datetime) -> Tool:
             description=(
                 "Usa esta herramienta ÚNICAMENTE para verificar disponibilidad de horarios "
                 "antes de ofrecer una cita nueva con crear_evento. Devuelve la lista de "
-                "eventos OCUPADOS con sus detalles e IDs.\n\n"
+                "horarios OCUPADOS (solo inicio y fin).\n\n"
                 "NO la uses para cancelaciones: eliminar_evento no necesita ningún ID ni "
                 "búsqueda previa, el sistema ya sabe internamente cuál es la cita del "
                 "candidato -- si quiere cancelar, llama a eliminar_evento directamente.\n\n"

@@ -168,12 +168,16 @@ export function proxyMediaUrl(url?: string | null): string {
 }
 
 /**
- * Extracts a media URL from a raw message text if present.
+ * Extrae del texto la URL de un adjunto PROPIO: archivos de WAHA
+ * (http://waha|localhost:<puerto>/..., que proxyMediaUrl reescribe),
+ * /api/waha-media/ o /uploads/. Un https:// cualquiera que escriba el
+ * candidato NO se trata como adjunto (se pintaría como imagen/link del CRM).
  */
 export function detectMediaUrl(content?: string | null): string | null {
   if (!content) return null;
-  const match = /https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp|mp4|ogg|opus|mp3|m4a|pdf|doc|docx)/i.exec(content);
-  return match ? match[0] : null;
+  const match = /(?:^|\s)((?:https?:\/\/(?:localhost|waha)(?::\d+)?\/|\/api\/waha-media\/|\/uploads\/)[\w.@/-]+\.(?:jpg|jpeg|png|gif|webp|mp4|ogg|opus|mp3|m4a|pdf|doc|docx))/i.exec(content);
+  // Sin `..`: el navegador lo normaliza y la URL saldría de /uploads.
+  return match && !match[1].includes("..") ? match[1] : null;
 }
 
 export function isAudioType(mt?: string | null): boolean {

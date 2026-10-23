@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
 
@@ -6,6 +7,16 @@ import { pool } from '@/lib/db';
 import { enviarMensajeCandidato, enviarImagenCandidato } from '@/lib/waha';
 import { getSession } from '@/lib/auth';
 import { getCandidateDisplayName } from '@/lib/formatters';
+import { candidatoVisible } from '@/lib/tenant';
+
+// Solo adjuntos propios ya subidos (/api/upload-cv devuelve `/uploads/<archivo>`):
+// una URL absoluta haría que WAHA/Meta descargaran lo que sea (SSRF) y quedaría
+// guardada en el historial como link clicable para el reclutador.
+const postSchema = z.object({
+  texto: z.string().nullish(),
+  media_url: z.string().regex(/^\/uploads\/\w[\w.-]*$/).nullish(),
+  asignado_a_id: z.string().nullish(),
+});
 
 // ─── GET /api/db/mensajes/[telefono] ──────────────────────
 // Devuelve historial de conversation_history para ese candidato
@@ -14,13 +25,17 @@ export async function GET(
   _request: Request,
   { params }: { params: Promise<{ telefono: string }> }
 ) {
-  if (!(await getSession(_request))) {
+  const session = await getSession(_request);
+  if (!session) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
   const { telefono } = await params;
 
   if (!telefono) {
     return NextResponse.json({ error: 'Falta el parámetro telefono' }, { status: 400 });
+  }
+  if (!(await candidatoVisible(session, telefono))) {
+    return NextResponse.json({ error: 'Candidato no encontrado' }, { status: 404 });
   }
 
   try {
@@ -100,14 +115,21 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ telefono: string }> }
 ) {
-  if (!(await getSession(request))) {
+  const session = await getSession(request);
+  if (!session) {
     return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
   }
   const { telefono } = await params;
+  if (!(await candidatoVisible(session, telefono))) {
+    return NextResponse.json({ error: 'Candidato no encontrado' }, { status: 404 });
+  }
 
   try {
-    const body = await request.json();
-    const { texto, media_url, asignado_a_id } = body;
+    const parsed = postSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Datos inválidos' }, { status: 400 });
+    }
+    const { texto, media_url, asignado_a_id } = parsed.data;
 
     if (!texto?.trim() && !media_url?.trim()) {
       return NextResponse.json({ error: 'El mensaje no puede estar vacío' }, { status: 400 });
@@ -118,7 +140,7 @@ export async function POST(
       if (media_url?.trim()) {
         savedMsg = await enviarImagenCandidato(telefono, media_url, texto || '📷 Imagen adjunta', asignado_a_id);
       } else {
-        savedMsg = await enviarMensajeCandidato(telefono, texto, asignado_a_id);
+        savedMsg = await enviarMensajeCandidato(telefono, texto || '', asignado_a_id);
       }
     } catch (sendErr) {
       const message = sendErr instanceof Error ? sendErr.message : String(sendErr);

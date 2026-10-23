@@ -34,8 +34,10 @@ _MX_TZ = ZoneInfo("America/Mexico_City")
 
 # --- Branch A: RecordatorioEntrevista -------------------------------------
 
-_TEL_RE = re.compile(r"Tel[:\s]*(\d{10,13})", re.IGNORECASE)
-_NOMBRE_RE = re.compile(r"Nombre[:\s]*([^\n]+)", re.IGNORECASE)
+# El bot escribe "Candidato: ..." y "Teléfono: ..." (routers/eventos_calendario.py);
+# las citas capturadas a mano usan "Nombre:" y "Tel:". Se aceptan ambas.
+_TEL_RE = re.compile(r"Tel(?:[eé]fono)?[:\s]*\+?(\d{10,13})", re.IGNORECASE)
+_NOMBRE_RE = re.compile(r"(?:Nombre|Candidato)[:\s]*([^\n]+)", re.IGNORECASE)
 
 _DEFAULT_NOMBRE_RECLUTADOR = "Tu equipo"
 _DEFAULT_EMOJI_RECLUTADOR = "📅"
@@ -93,7 +95,9 @@ def _match_reclutador(evento: dict, reclutadores: list[dict]) -> dict | None:
         cid = r["calendar_id"]
         if cid == organizer_email or cid == creator_email or cid in attendee_emails:
             return r
-    return reclutadores[0] if reclutadores else None
+    # Sin coincidencia: el dueño del calendario donde se encontró el evento,
+    # no el primer reclutador de la lista (le llegaban avisos ajenos).
+    return evento.get("_reclutador_calendario")
 
 
 def _preparar_aviso(evento: dict, reclutadores: list[dict]) -> dict | None:
@@ -182,8 +186,23 @@ async def _recolectar_eventos_manana(
             if not evento_id or evento_id in vistos:
                 continue
             vistos.add(evento_id)
-            eventos.append(evento)
+            eventos.append({**evento, "_reclutador_calendario": r})
     return eventos
+
+
+async def _solo_citas_del_bot(pool, eventos: list[dict]) -> list[dict]:
+    """Deja solo los eventos cuyo id es el event_id de algún candidato. Una
+    invitación externa (o un evento capturado a mano) con "Tel: ..." en la
+    descripción ya no basta para que el bot le escriba a ese número."""
+    ids = [e["id"] for e in eventos if e.get("id")]
+    if not ids:
+        return []
+    rows = await pool.fetch(
+        "SELECT event_id FROM candidatos WHERE event_id = ANY($1::text[])",
+        ids,
+    )
+    conocidos = {r["event_id"] for r in rows}
+    return [e for e in eventos if e.get("id") in conocidos]
 
 
 async def job_recordatorio_entrevista() -> None:
@@ -194,6 +213,7 @@ async def job_recordatorio_entrevista() -> None:
 
         time_min, time_max = _ventana_de_manana()
         eventos = await _recolectar_eventos_manana(reclutadores, time_min, time_max)
+        eventos = await _solo_citas_del_bot(pool, eventos)
 
         enviados = 0
         for evento in eventos:
@@ -266,8 +286,10 @@ async def job_vigilante() -> None:
                 async with conn.transaction():
                     await _enqueue_mensaje(conn, f"{telefono}@c.us", texto_candidato)
                     await conn.execute(
-                        "UPDATE candidatos SET estado = 'RECORDATORIO_ENVIADO' WHERE telefono = $1",
+                        "UPDATE candidatos SET estado = 'RECORDATORIO_ENVIADO' "
+                        "WHERE telefono = $1 AND empresa_id IS NOT DISTINCT FROM $2",
                         telefono,
+                        row["empresa_id"],
                     )
                     await conn.execute(
                         "INSERT INTO conversation_history (telefono, role, content) "

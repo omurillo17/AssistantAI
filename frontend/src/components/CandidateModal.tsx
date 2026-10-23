@@ -15,6 +15,11 @@ interface CandidateModalProps {
   onGoToChat: (telefono: string) => void;
 }
 
+// Solo rutas propias (relativas) o http(s) llegan a un href: las URLs salen
+// de BD/WhatsApp y un `javascript:`/`data:` correría en el CRM al hacer clic.
+// `//` y `/\` se excluyen porque el navegador los toma como otro host.
+const esUrlSegura = (url: string) => /^(\/(?![/\\])|https?:\/\/)/i.test(url);
+
 function getVeredictoBadgeClass(veredicto?: string | null): string {
   switch (veredicto) {
     case "VIABLE":
@@ -196,7 +201,7 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
       const alt = m as Mensaje & { url?: string | null; mediaUrl?: string | null };
       return proxyMediaUrl(alt.media_url || alt.url || alt.mediaUrl);
     })
-    .filter((url): url is string => !!url);
+    .filter((url): url is string => !!url && esUrlSegura(url));
 
   // Cada archivo va a su casilla según la clasificación por archivo que dejó la
   // IA al recibirlo (backend/app/chat/analizador.py). Lo que no se puede
@@ -204,10 +209,10 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
   // bajo Constancia, que es lo que pasaba con los expedientes AMBOS_DOCS.
   const documentos = agruparDocumentos(cand);
   const esCV = (tipo: string) => tipo === 'CV' || tipo === 'SOLICITUD';
-  const ineUrls = documentos.ine.map(a => a.url);
-  const csfUrls = documentos.csf.map(a => a.url);
-  const cvUrls = documentos.otros.filter(a => esCV(a.tipo)).map(a => a.url);
-  const otrosArchivos = documentos.otros.filter(a => !esCV(a.tipo));
+  const ineUrls = documentos.ine.map(a => a.url).filter(esUrlSegura);
+  const csfUrls = documentos.csf.map(a => a.url).filter(esUrlSegura);
+  const cvUrls = documentos.otros.filter(a => esCV(a.tipo)).map(a => a.url).filter(esUrlSegura);
+  const otrosArchivos = documentos.otros.filter(a => !esCV(a.tipo) && esUrlSegura(a.url));
 
   let cvLink = cvUrls[0] || null;
   let ineUrl = ineUrls[0] || null;
@@ -565,7 +570,10 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
 
                   {/* PANEL DE VALIDACIÓN / DECISIÓN MANUAL */}
                   {(() => {
-                    const isAlreadyValidated = cand.alerta_identidad_estado === 'VALIDADO' || cand.estado === 'INE_VALIDADA';
+                    // INE_VALIDADA con alerta PENDIENTE no está validado: el webhook deja así a los
+                    // candidatos cuya CURP no coincide, y aquí deben verse los botones para resolverlo.
+                    const isAlreadyValidated = cand.alerta_identidad_estado === 'VALIDADO' ||
+                      (cand.estado === 'INE_VALIDADA' && cand.alerta_identidad_estado !== 'PENDIENTE');
                     const hasActivePendingError = !isAlreadyValidated && (
                       charDiff >= 3 ||
                       cand.alerta_identidad_estado === 'PENDIENTE' ||
@@ -713,7 +721,8 @@ export function CandidateModal({ candidato, onClose, onStatusChange, onGoToChat 
                   );
                 }
                 return mensajes.map((m) => {
-                  const isUser = m.role === 'user';
+                  // user_temp = texto del candidato que el bot aún no consolidó (igual que en Mensajes).
+                  const isUser = m.role === 'user' || m.role === 'user_temp';
                   const isSystem = m.role === 'system';
                   const msgKey = `${m.timestamp || ''}-${m.role}-${m.content.slice(0, 16)}`;
 

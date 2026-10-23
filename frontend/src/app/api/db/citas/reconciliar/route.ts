@@ -28,6 +28,10 @@ export async function POST(request: Request) {
   if (!payload) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
+  // Sin empresa en el JWT (y sin ser ROOT) se niega: nunca se salta el filtro.
+  if (payload.rol !== 'ROOT' && !payload.empresa_id) {
+    return NextResponse.json({ error: 'No autorizado' }, { status: 403 });
+  }
 
   try {
     const body = await request.json();

@@ -73,7 +73,7 @@ function ImageMedia({ mediaUrl, isUser }: Readonly<{ mediaUrl: string | null; is
         <button
           type="button"
           className="cursor-pointer hover:opacity-90 transition-opacity text-left p-0 border-0 bg-transparent rounded-xl overflow-hidden block"
-          onClick={() => window.open(mediaUrl, "_blank")}
+          onClick={() => window.open(mediaUrl, "_blank", "noopener,noreferrer")}
         >
           {/* next/image no aplica: la URL sale de WhatsApp en tiempo de
               ejecución y ya viaja por nuestro proxy (/api/waha-media), que es
@@ -108,9 +108,16 @@ function DocumentMedia({ mediaUrl, isUser }: Readonly<{ mediaUrl: string | null;
   );
 }
 
+// Solo rutas propias (relativas) o http(s): media_url viene de BD/WhatsApp y
+// un `javascript:`/`data:` en un href o window.open correría en el CRM.
+// `//` y `/\` se excluyen porque el navegador los toma como otro host.
+function urlMediaSegura(url: string): string {
+  return /^(\/(?![/\\])|https?:\/\/)/i.test(url) ? url : "";
+}
+
 function MediaContent({ msg, isUser }: Readonly<{ msg: Mensaje; isUser: boolean }>) {
   const rawMediaUrl = msg.media_url || detectMediaUrl(msg.content || "");
-  const mediaUrl = proxyMediaUrl(rawMediaUrl);
+  const mediaUrl = urlMediaSegura(proxyMediaUrl(rawMediaUrl));
 
   if (isAudioType(msg.message_type) || (mediaUrl && /\.(ogg|opus|mp3|m4a)$/i.test(mediaUrl))) {
     return <AudioMedia mediaUrl={mediaUrl} isUser={isUser} />;

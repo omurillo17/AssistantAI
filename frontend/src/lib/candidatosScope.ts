@@ -1,6 +1,8 @@
 import type { SessionPayload } from '@/lib/auth';
 import { resolveGrupoNaveIds } from '@/lib/grupos';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export interface CandidatosScope {
   /** Condiciones SQL sobre el alias `c` (candidatos), listas para unir con AND. */
   conditions: string[];
@@ -49,6 +51,10 @@ export async function buildCandidatosScope(
   if (filter_empresa_id) {
     conditions.push(`c.empresa_id = $${idx++}`);
     values.push(filter_empresa_id);
+  } else if (rol !== 'ROOT') {
+    // Sin empresa en el JWT: falla cerrado en vez de saltarse el filtro.
+    // (Las rutas responden 403 antes de llegar aquí; esto es la red de abajo.)
+    conditions.push(`FALSE`);
   }
 
   if (filter_grupo_id) {
@@ -64,6 +70,19 @@ export async function buildCandidatosScope(
   } else if (filter_nave_id) {
     conditions.push(`(c.nave_id = $${idx++} OR c.nave_id IS NULL OR c.nave_interes IS NULL OR c.nave_interes = '' OR c.nave_interes = 'Pendiente')`);
     values.push(filter_nave_id);
+  }
+
+  // Naves del grupo (JWT) para ENCARGADO / RECLUTADOR / USER, aplicadas en el
+  // servidor: antes solo las filtraba Expedientes en el navegador. Mismo
+  // criterio que ese filtro (expedientes/page.tsx): su nave, sin nave
+  // asignada, o una vacante suya / de sus naves. Si ya hay grupo aplicado,
+  // ese filtro ya cubre sus naves.
+  const navesJwt = (payload.naves_asignadas ?? []).filter((n) => UUID_RE.test(String(n)));
+  if (rol !== 'ROOT' && rol !== 'ADMIN' && !filter_grupo_id && navesJwt.length > 0) {
+    conditions.push(`(c.nave_id = ANY($${idx}::uuid[]) OR c.nave_id IS NULL OR c.nave_interes IS NULL OR c.nave_interes = '' OR c.nave_interes = 'Pendiente'
+      OR c.vacante_interes IN (SELECT nombre FROM vacantes_def WHERE reclutador_id = $${idx + 1} OR naves LIKE ANY($${idx + 2}::text[])))`);
+    values.push(navesJwt, reclutador_id, navesJwt.map((n) => `%${n}%`));
+    idx += 3;
   }
 
   // Si hay un grupo aplicado (propio del usuario o elegido por ADMIN), el

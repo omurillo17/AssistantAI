@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from app.db import get_pool
 from app.google_calendar import create_event, delete_event
 from app.security import verify_api_key
+from app.utils.phone import enmascarar
 
 logger = logging.getLogger("eventos_calendario")
 
@@ -42,6 +43,7 @@ class EliminarEventoRequest(BaseModel):
     calendar_id: str
     telefono: str
     event_id: str
+    empresa_id: str | None = None
 
 
 def _build_summary(payload: CrearEventoRequest) -> str:
@@ -148,6 +150,14 @@ async def eliminar_evento(payload: EliminarEventoRequest) -> dict:
             logger.warning("eliminar_evento: error al borrar de Google Calendar (%s), continuando", e)
 
     pool = get_pool()
+    # Sin empresa_id explícito se toma la del candidato dueño de ese event_id,
+    # para no tocar el expediente del mismo teléfono en otra empresa.
+    empresa_id = payload.empresa_id or ""
+    if not empresa_id and payload.event_id:
+        empresa_id = await pool.fetchval(
+            "SELECT empresa_id::text FROM candidatos WHERE telefono = $1 AND event_id = $2 LIMIT 1",
+            payload.telefono, payload.event_id,
+        ) or ""
     row = await pool.fetchrow(
         """
         UPDATE candidatos 
@@ -163,14 +173,15 @@ async def eliminar_evento(payload: EliminarEventoRequest) -> dict:
                 ELSE resumen_ia 
             END,
             ultima_interaccion = NOW()
-        WHERE telefono = $1
+        WHERE telefono = $1 AND (NULLIF($2, '') IS NULL OR empresa_id = NULLIF($2, '')::uuid)
         RETURNING id, cancelaciones, asignado_a_id, nombre, vacante_interes, telefono
         """,
         payload.telefono,
+        empresa_id,
     )
 
     if not row:
-        logger.warning("eliminar_evento: ningún candidato con telefono=%s", payload.telefono)
+        logger.warning("eliminar_evento: ningún candidato con telefono=%s", enmascarar(payload.telefono))
         return {"success": True, "cancelaciones": 1, "bloqueado": False}
 
     cancel_count = row["cancelaciones"] or 1

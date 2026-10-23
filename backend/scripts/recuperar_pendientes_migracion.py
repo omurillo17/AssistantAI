@@ -20,7 +20,7 @@ Uso:
   docker compose exec backend python scripts/recuperar_pendientes_migracion.py --apply
 
   # 4. Probar con un teléfono específico:
-  docker compose exec backend python scripts/recuperar_pendientes_migracion.py --apply --phone 5213323379399
+  docker compose exec backend python scripts/recuperar_pendientes_migracion.py --apply --phone 5215500000001
 """
 
 import argparse

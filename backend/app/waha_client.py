@@ -5,6 +5,7 @@ workflows de chat. Mismo contrato REST que WAHA ya expone hoy (confirmado
 contra la instancia viva: GET /api/contacts, GET /api/sessions)."""
 
 import logging
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -100,16 +101,51 @@ async def get_chats(session: str = "default", limit: int = 10000) -> list[dict]:
         return []
 
 
+_MAX_MEDIA_BYTES = 25 * 1024 * 1024
+_PUERTOS_POR_DEFECTO = {"http": 80, "https": 443}
+
+
+def _origen(url: str) -> tuple[str, str, int | None]:
+    partes = urlsplit(url)
+    esquema = partes.scheme.lower()
+    return esquema, (partes.hostname or "").lower(), partes.port or _PUERTOS_POR_DEFECTO.get(esquema)
+
+
+def es_url_media_permitida(url: str, base_url: str) -> bool:
+    """La URL del adjunto llega en el webhook: solo se le manda la X-Api-Key
+    de WAHA si apunta al mismo esquema/host/puerto que WAHA_BASE_URL. Si no,
+    cualquiera que mande un webhook podría hacer que el backend le entregue
+    la llave (o que pida URLs internas arbitrarias)."""
+    try:
+        origen = _origen(url)
+        return bool(origen[1]) and origen == _origen(base_url)
+    except ValueError:  # puerto inválido
+        return False
+
+
 async def download_media(media_url: str) -> tuple[bytes, str]:
-    """Descarga el binario de un adjunto de WAHA o Meta Cloud API."""
+    """Descarga el binario de un adjunto de WAHA o Meta Cloud API.
+    Lanza ValueError si la URL no es de WAHA o el archivo pasa de 25 MB."""
     if media_url.startswith(META_SESSION_PREFIX):
         from app import meta_client
         media_id = media_url.split(META_SESSION_PREFIX, 1)[1]
         return await meta_client.download_media(media_id)
 
     fixed_url = media_url.replace("localhost", "waha")
+    if not es_url_media_permitida(fixed_url, ENV.WAHA_BASE_URL):
+        logger.warning("download_media: URL fuera de WAHA_BASE_URL rechazada (host=%s)", urlsplit(fixed_url).hostname)
+        raise ValueError("URL de media fuera de WAHA_BASE_URL")
+
     client = _get_client()
-    resp = await client.get(fixed_url, headers=_headers())
-    resp.raise_for_status()
-    content_type = resp.headers.get("Content-Type", "application/octet-stream")
-    return resp.content, content_type
+    async with client.stream("GET", fixed_url, headers=_headers()) as resp:
+        resp.raise_for_status()
+        largo = resp.headers.get("Content-Length") or ""
+        if largo.isdigit() and int(largo) > _MAX_MEDIA_BYTES:
+            raise ValueError(f"Adjunto demasiado grande ({largo} bytes)")
+        data = bytearray()
+        async for chunk in resp.aiter_bytes():
+            data += chunk
+            if len(data) > _MAX_MEDIA_BYTES:
+                raise ValueError("Adjunto demasiado grande (> 25 MB)")
+        content_type = resp.headers.get("Content-Type", "application/octet-stream")
+    return bytes(data), content_type

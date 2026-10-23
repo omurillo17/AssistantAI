@@ -25,8 +25,8 @@ if [[ ! -f "$BACKUP_FILE" ]]; then
 fi
 
 if [[ -f "$PROYECTO_DIR/.env" ]]; then
-  DB_USER="$(grep '^DB_POSTGRESDB_USER=' "$PROYECTO_DIR/.env" | cut -d '=' -f2- | tr -d '"'\'' ')"
-  DB_NAME="$(grep '^DB_POSTGRESDB_DATABASE=' "$PROYECTO_DIR/.env" | cut -d '=' -f2- | tr -d '"'\'' ')"
+  DB_USER="$(grep '^DB_POSTGRESDB_USER=' "$PROYECTO_DIR/.env" | cut -d '=' -f2- | tr -d '"'\''\r ')"
+  DB_NAME="$(grep '^DB_POSTGRESDB_DATABASE=' "$PROYECTO_DIR/.env" | cut -d '=' -f2- | tr -d '"'\''\r ')"
 else
   echo "ERROR: No se encontró .env"
   exit 1
@@ -51,6 +51,11 @@ echo "Verificando integridad del archivo..."
 gzip -t "$BACKUP_FILE"
 
 echo "Restaurando base de datos..."
-gunzip -c "$BACKUP_FILE" | docker exec -i "$PG_CONTAINER" psql -U "$DB_USER" -d "$DB_NAME"
+# Todo o nada: al primer error psql se detiene y la transacción se deshace, en
+# vez de dejar la base a medio restaurar. Los dumps de backup.sh llevan
+# --clean --if-exists y cargan sobre la base existente; uno anterior (sin
+# DROPs) choca con las tablas que ya existen: restáuralo en una base VACÍA.
+gunzip -c "$BACKUP_FILE" | docker exec -i "$PG_CONTAINER" \
+  psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 --single-transaction -q
 
 echo "✅ Restauración completada exitosamente."

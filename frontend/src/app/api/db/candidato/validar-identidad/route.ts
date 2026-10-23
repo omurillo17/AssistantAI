@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
-import { pool } from '@/lib/db';
+import { pool, queryComoCrm } from '@/lib/db';
 import { enviarMensajeCandidato } from '@/lib/waha';
-import { getSession } from '@/lib/auth';
+import { getSession, requireRole } from '@/lib/auth';
+import { candidatoVisible } from '@/lib/tenant';
 
 const bodySchema = z.object({
   telefono: z.string().min(1, 'Falta el campo telefono').max(20),
@@ -12,15 +13,27 @@ const bodySchema = z.object({
 
 const MENSAJE_NO_VALIDAR = 'Hola, revisamos tus documentos y notamos que la INE y el RFC no coinciden del todo. ¿Podrías enviarnos una foto más clara y completa de ambos documentos, por favor? También puedes escribirnos si prefieres hablar directamente con un reclutador. ¡Gracias! 🙏';
 
-async function handleDecisionValidar(telefono: string) {
-  const upd = await pool.query(
-    `UPDATE candidatos SET estado = 'INE_VALIDADA', alerta_identidad_estado = 'VALIDADO' WHERE telefono = $1 RETURNING id, telefono, estado`,
-    [telefono]
+// Estados anteriores a la validación de documentos. Si el candidato ya va más
+// adelante (p. ej. CITA_AGENDADA), validar no lo regresa a INE_VALIDADA.
+const ESTADOS_ANTES_DE_VALIDAR = ['NUEVO', 'INTERESADO', 'CV_RECIBIDO', 'CV_MANUAL', 'FILTROS_COMPLETADOS', 'DOCUMENTOS_NO_COINCIDEN'];
+
+// `empresa` es null solo para ROOT (sin filtro); el resto queda en su empresa.
+async function handleDecisionValidar(telefono: string, usuario: string, empresa: string | null) {
+  const upd = await queryComoCrm(
+    usuario,
+    `UPDATE candidatos
+        SET estado = CASE WHEN estado = ANY($2) THEN 'INE_VALIDADA' ELSE estado END,
+            alerta_identidad_estado = 'VALIDADO'
+      WHERE telefono = $1 AND ($3::uuid IS NULL OR empresa_id = $3)
+      RETURNING id, telefono, estado`,
+    [telefono, ESTADOS_ANTES_DE_VALIDAR, empresa]
   );
+  // Sin mensaje al candidato: no debe enterarse de la revisión
+  // (regla del prompt, virgo_data/prompts/chat_prompt.md §6.2).
   if (upd.rowCount === 0) {
     return NextResponse.json({ error: 'Candidato no encontrado' }, { status: 404 });
   }
-  return NextResponse.json({ success: true, estado: 'INE_VALIDADA' });
+  return NextResponse.json({ success: true, estado: upd.rows[0].estado });
 }
 
 async function cancelarCitaEnBackend(telefono: string, eventoId: string, calendarId: string): Promise<boolean> {
@@ -45,11 +58,11 @@ async function cancelarCitaEnBackend(telefono: string, eventoId: string, calenda
   }
 }
 
-async function handleDecisionNoValidar(telefono: string) {
+async function handleDecisionNoValidar(telefono: string, usuario: string, empresa: string | null) {
   const pre = await pool.query(
     `SELECT event_id, (SELECT calendar_id FROM reclutadores WHERE id = candidatos.asignado_a_id) AS calendar_id
-     FROM candidatos WHERE telefono = $1`,
-    [telefono]
+     FROM candidatos WHERE telefono = $1 AND ($2::uuid IS NULL OR empresa_id = $2)`,
+    [telefono, empresa]
   );
   if (pre.rowCount === 0) {
     return NextResponse.json({ error: 'Candidato no encontrado' }, { status: 404 });
@@ -61,9 +74,10 @@ async function handleDecisionNoValidar(telefono: string) {
     citaCancelada = await cancelarCitaEnBackend(telefono, eventoId, calendarId);
   }
 
-  const upd = await pool.query(
-    `UPDATE candidatos SET estado = 'DOCUMENTOS_NO_COINCIDEN', alerta_identidad_estado = 'RECHAZADO' WHERE telefono = $1 RETURNING id, telefono, estado`,
-    [telefono]
+  const upd = await queryComoCrm(
+    usuario,
+    `UPDATE candidatos SET estado = 'DOCUMENTOS_NO_COINCIDEN', alerta_identidad_estado = 'RECHAZADO' WHERE telefono = $1 AND ($2::uuid IS NULL OR empresa_id = $2) RETURNING id, telefono, estado`,
+    [telefono, empresa]
   );
   if (upd.rowCount === 0) {
     return NextResponse.json({ error: 'Candidato no encontrado' }, { status: 404 });
@@ -84,8 +98,12 @@ async function handleDecisionNoValidar(telefono: string) {
 // Body: { telefono, decision: 'validar' | 'no_validar' }
 export async function POST(request: Request) {
   try {
-    if (!(await getSession(request))) {
+    const session = await getSession(request);
+    if (!session) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+    }
+    if (!requireRole(session, 'ADMIN', 'ROOT', 'ENCARGADO', 'RECLUTADOR')) {
+      return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
     }
     const parsed = bodySchema.safeParse(await request.json());
     if (!parsed.success) {
@@ -93,10 +111,16 @@ export async function POST(request: Request) {
     }
     const { telefono, decision } = parsed.data;
 
-    if (decision === 'validar') {
-      return await handleDecisionValidar(telefono);
+    // Mismo 404 que un teléfono inexistente: no revela candidatos de otra empresa.
+    if (!(await candidatoVisible(session, telefono))) {
+      return NextResponse.json({ error: 'Candidato no encontrado' }, { status: 404 });
     }
-    return await handleDecisionNoValidar(telefono);
+    const empresa = session.rol === 'ROOT' ? null : (session.empresa_id ?? null);
+
+    if (decision === 'validar') {
+      return await handleDecisionValidar(telefono, String(session.usuario ?? ''), empresa);
+    }
+    return await handleDecisionNoValidar(telefono, String(session.usuario ?? ''), empresa);
   } catch (err) {
     console.error('Error en validar-identidad:', err);
     return NextResponse.json({ error: 'Error interno al validar identidad' }, { status: 500 });

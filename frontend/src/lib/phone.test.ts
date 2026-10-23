@@ -11,7 +11,7 @@ describe('Utilidades de Teléfono (phone.ts)', () => {
   describe('limpiarDigitos', () => {
     it('extrae solo los dígitos eliminando caracteres no numéricos y dominios @c.us / @lid', () => {
       expect(limpiarDigitos('+52 (33) 3248-3278')).toBe('523332483278');
-      expect(limpiarDigitos('5213323379399@c.us')).toBe('5213323379399');
+      expect(limpiarDigitos('5215500000001@c.us')).toBe('5215500000001');
       expect(limpiarDigitos(null)).toBe('');
       expect(limpiarDigitos(undefined)).toBe('');
     });

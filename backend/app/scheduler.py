@@ -1,8 +1,8 @@
 """Arranca los jobs que reemplazan los scheduleTrigger de n8n del workflow
 5_Sofia - Mantenimiento y Errores.json. Cada job corre aislado con su
 propio try/except: uno que falla se loguea pero no debe tumbar el
-scheduler ni el resto de jobs (mismo espíritu fail-soft que verify_api_key
-con PYTHON_SERVICE_API_KEY sin configurar, ver security.py).
+scheduler ni el resto de jobs. (Ojo: esto es fail-soft solo para los jobs;
+la autenticación de security.py falla CERRADO.)
 
 No se duplica lógica de negocio aquí: process-outbox (envío/reintento de
 WhatsApp) y limpiar-archivos (borra archivos del filesystem del host, algo

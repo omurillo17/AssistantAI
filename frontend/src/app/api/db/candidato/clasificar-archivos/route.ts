@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
 import { getSession } from '@/lib/auth';
+import { candidatoVisible } from '@/lib/tenant';
 
 const bodySchema = z.object({
   telefono: z.string().min(1, 'Falta el campo telefono').max(20),
@@ -18,12 +19,18 @@ const bodySchema = z.object({
 // /api/backend no valida usuario.
 export async function POST(request: Request) {
   try {
-    if (!(await getSession(request))) {
+    const session = await getSession(request);
+    if (!session) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
     }
     const parsed = bodySchema.safeParse(await request.json());
     if (!parsed.success) {
       return NextResponse.json({ error: 'Datos inválidos', detail: z.flattenError(parsed.error) }, { status: 400 });
+    }
+    // El backend busca solo por teléfono: sin esto se podían reclasificar
+    // (y leer) los archivos de un candidato de otra empresa.
+    if (!(await candidatoVisible(session, parsed.data.telefono))) {
+      return NextResponse.json({ error: 'Candidato no encontrado' }, { status: 404 });
     }
 
     const backendBase = process.env.BACKEND_API_BASE || 'http://backend:8000'; // NOSONAR

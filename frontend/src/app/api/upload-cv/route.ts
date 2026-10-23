@@ -91,7 +91,7 @@ export async function POST(request: Request) {
     const safeTelefono = telefono.replace(/[^a-zA-Z0-9]/g, "");
     const timestamp = Date.now();
 
-    // Example: 5213323379399_17300000000.pdf
+    // Example: 5215500000001_17300000000.pdf
     const finalFilename = `${safeTelefono}_${timestamp}${ext}`;
 
     const uploadDir = path.join(process.cwd(), 'public', 'uploads');

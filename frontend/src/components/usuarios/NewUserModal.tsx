@@ -204,9 +204,9 @@ function NewUserModalContent({
                 name="password"
                 type="password"
                 required
-                minLength={5}
+                minLength={10}
                 className={CAMPO}
-                placeholder="Mínimo 5 caracteres"
+                placeholder="Mínimo 10 caracteres"
                 value={passwordInput}
                 onChange={(e) => setPasswordInput(e.target.value)}
               />

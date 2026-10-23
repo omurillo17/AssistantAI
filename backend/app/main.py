@@ -33,7 +33,10 @@ app.include_router(whatsapp.router)
 
 @app.exception_handler(CredencialesNoEncontradas)
 async def credenciales_no_encontradas_handler(request: Request, exc: CredencialesNoEncontradas):
-    return JSONResponse(status_code=424, content={"error": str(exc)})
+    # El detalle (correo del calendario, comando a correr) va al log, no al
+    # que llama.
+    logging.getLogger("main").warning("%s: %s", request.url.path, exc)
+    return JSONResponse(status_code=424, content={"error": "Calendario sin autorizar con Google"})
 
 
 @app.get("/health")

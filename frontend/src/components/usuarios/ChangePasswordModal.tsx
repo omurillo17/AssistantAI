@@ -45,8 +45,8 @@ function ChangePasswordModalContent({
       setError("Por favor ingresa tu contraseña actual");
       return;
     }
-    if (newPassword.length < 6) {
-      setError("La nueva contraseña debe tener al menos 6 caracteres");
+    if (newPassword.length < 10) {
+      setError("La nueva contraseña debe tener al menos 10 caracteres");
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -144,7 +144,7 @@ function ChangePasswordModalContent({
           {/* Nueva Contraseña */}
           <div>
             <label htmlFor="cp-new-password" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-              Nueva Contraseña (mínimo 6 caracteres)
+              Nueva Contraseña (mínimo 10 caracteres)
             </label>
             <div className="relative">
               <input

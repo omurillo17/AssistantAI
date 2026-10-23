@@ -149,10 +149,7 @@ export const candidatoMachine = createMachine(
             actions: 'setFechaEntrevista',
           },
           ENTREGA_DOCS: 'INE_VALIDADA',
-          RECIBE_CV: {
-            target: 'CV_RECIBIDO',
-            actions: 'setTieneCV',
-          },
+          // Sin RECIBE_CV: ya entregó documentos; un CV tardío no lo regresa.
           ESCALA_HUMANO: {
             target: 'ESCALADO',
             actions: 'setEscalado',
@@ -198,10 +195,7 @@ export const candidatoMachine = createMachine(
       DOCUMENTOS_NO_COINCIDEN: {
         on: {
           ENTREGA_DOCS: 'INE_VALIDADA',
-          RECIBE_CV: {
-            target: 'CV_RECIBIDO',
-            actions: 'setTieneCV',
-          },
+          // Sin RECIBE_CV: debe reenviar documentos; mandar un CV no borra la discrepancia.
           ESCALA_HUMANO: {
             target: 'ESCALADO',
             actions: 'setEscalado',

@@ -115,7 +115,7 @@ class _Env:
         Va aquí y no en la BD porque es configuración de despliegue: tiene que
         funcionar aunque la base esté vacía o inaccesible, que es justo cuando
         más falta hace enterarse. Formato: solo dígitos, con código de país
-        (ej. 5213323379399). Si no se define, solo se avisa al reclutador."""
+        (ej. 5213300000000). Si no se define, solo se avisa al reclutador."""
         valor = (os.environ.get("ALERTAS_ADMIN_TELEFONO") or "").strip()
         return valor or None
 
@@ -140,8 +140,9 @@ class _Env:
         return os.environ.get("META_WA_WABA_ID") or None
 
     @property
-    def META_WA_VERIFY_TOKEN(self) -> str:  # NOSONAR
-        return os.environ.get("META_WA_VERIFY_TOKEN") or "virgo_meta_secret_webhook_2026"
+    def META_WA_VERIFY_TOKEN(self) -> str | None:  # NOSONAR
+        # Sin valor por defecto: un token conocido públicamente no verifica nada.
+        return os.environ.get("META_WA_VERIFY_TOKEN") or None
 
     @property
     def DEFAULT_RECRUITER_PHONE(self) -> str:  # NOSONAR
@@ -149,11 +150,27 @@ class _Env:
 
     @property
     def DEFAULT_CALENDAR_ID(self) -> str:  # NOSONAR
-        return os.environ.get("DEFAULT_CALENDAR_ID") or "talreclutamiento01@gmail.com"
+        """Calendario de respaldo cuando el equipo no tiene ninguno usable.
+        Sin valor por defecto: si falta, no se agenda (falla cerrado) en vez
+        de mandar citas al calendario personal de alguien."""
+        return os.environ.get("DEFAULT_CALENDAR_ID", "")
 
     @property
     def TEST_DEV_PHONE(self) -> str:  # NOSONAR
-        return os.environ.get("TEST_DEV_PHONE", "5213323379399")
+        return os.environ.get("TEST_DEV_PHONE", "")
+
+    @property
+    def ENABLE_TEST_COMMANDS(self) -> bool:  # NOSONAR
+        """Habilita comandos de prueba por WhatsApp (p.ej. '/reset_sofia'),
+        y solo para TEST_DEV_PHONE. Apagado por defecto en producción."""
+        return os.environ.get("ENABLE_TEST_COMMANDS", "").strip().lower() in ("1", "true", "yes", "si", "sí")
+
+    @property
+    def WAHA_WEBHOOK_HMAC_KEY(self) -> str | None:  # NOSONAR
+        """Llave HMAC configurada en el webhook de la sesión de WAHA
+        (webhooks[].hmac.key). WAHA firma cada POST con HMAC-SHA512 del cuerpo
+        crudo en el header X-Webhook-Hmac. Ver routers/whatsapp.py."""
+        return os.environ.get("WAHA_WEBHOOK_HMAC_KEY") or None
 
 
 ENV = _Env()

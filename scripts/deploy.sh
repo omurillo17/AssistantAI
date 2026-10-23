@@ -136,8 +136,11 @@ paso "4/7 · Migraciones de la base"
 # database_setup.sql solo se ejecuta cuando Postgres arranca con el volumen
 # vacío, así que sobre una base que ya existe no aplica nada. Los cambios de
 # esquema van en migrations/*.sql y se registran aquí para no repetirlos.
-DB_USER="$(grep -E '^DB_POSTGRESDB_USER=' .env | cut -d= -f2-)"
-DB_NAME="$(grep -E '^DB_POSTGRESDB_DATABASE=' .env | cut -d= -f2-)"
+# Igual que backup.sh: fuera comillas, espacios y el \r de un .env editado en
+# Windows, que si no acaban pegados al nombre de usuario de psql.
+leer_env() { grep -E "^$1=" .env | tail -n1 | cut -d= -f2- | tr -d '"'\''\r '; }
+DB_USER="$(leer_env DB_POSTGRESDB_USER)"
+DB_NAME="$(leer_env DB_POSTGRESDB_DATABASE)"
 [[ -n "$DB_USER" && -n "$DB_NAME" ]] || fallo "Falta DB_POSTGRESDB_USER o DB_POSTGRESDB_DATABASE en .env"
 
 psql_prod() { docker compose exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" "$@"; }
@@ -168,6 +171,15 @@ if [[ ${#PENDIENTES[@]} -eq 0 ]]; then
 else
   echo "   pendientes:"
   printf '     %s\n' "${PENDIENTES[@]}"
+  # Las migraciones no se revierten solas (ver migrations/README.md): sin un
+  # respaldo recién hecho no se toca la base.
+  if [[ $DRY_RUN -eq 1 ]]; then
+    gris "   [dry-run] ejecutaría scripts/backup.sh"
+  else
+    gris "   respaldo previo · scripts/backup.sh"
+    ./scripts/backup.sh | sed "s/^/     /" || fallo "El respaldo falló; no se aplicó ninguna migración."
+    verde "   ✓ respaldo hecho"
+  fi
   for f in "${PENDIENTES[@]}"; do
     v="$(basename "$f" .sql)"
     if [[ $DRY_RUN -eq 1 ]]; then
@@ -188,23 +200,29 @@ else
 fi
 
 # ─────────────────────────────────────────────────────────────
-paso "5/7 · Construir la imagen"
+paso "5/7 · Construir las imágenes"
 
 if [[ $SIN_CONFIRMAR -eq 0 && $DRY_RUN -eq 0 ]]; then
   echo
-  echo "   Se va a reconstruir el frontend y recrear los contenedores."
+  echo "   Se van a reconstruir backend y frontend y recrear los contenedores."
   echo "   El CRM queda inaccesible entre 1 y 2 minutos."
   read -r -p "   ¿Seguimos? [s/N] " r
   [[ "$r" =~ ^[sSyY]$ ]] || { echo "   Cancelado."; exit 0; }
 fi
 
-# Se anota la imagen actual para poder volver si el arranque sale mal.
-IMAGEN_PREVIA="$(docker compose images -q frontend 2>/dev/null || true)"
-gris "   imagen previa: ${IMAGEN_PREVIA:0:12}"
+# Se anotan las imágenes actuales para poder volver si el arranque sale mal.
+# El backend no está montado como volumen: sin reconstruirlo aquí, sus cambios
+# de código nunca llegaban a producción.
+SERVICIOS_BUILD=(backend frontend)
+declare -A IMAGEN_PREVIA=()
+for s in "${SERVICIOS_BUILD[@]}"; do
+  IMAGEN_PREVIA[$s]="$(docker compose images -q "$s" 2>/dev/null || true)"
+  gris "   imagen previa $s: ${IMAGEN_PREVIA[$s]:0:12}"
+done
 
 # El build ocurre antes de tocar nada: mientras compila, producción sigue
 # sirviendo la versión anterior.
-ejecutar docker compose build frontend
+ejecutar docker compose build "${SERVICIOS_BUILD[@]}"
 
 # ─────────────────────────────────────────────────────────────
 paso "6/7 · Recrear los contenedores"
@@ -226,12 +244,13 @@ if [[ $DRY_RUN -eq 0 ]]; then
   if [[ $SANO -eq 0 ]]; then
     rojo "✗ Los servicios no llegaron a estar sanos."
     docker compose ps
-    if [[ -n "$IMAGEN_PREVIA" ]]; then
-      rojo "   Volviendo a la imagen anterior..."
-      docker tag "$IMAGEN_PREVIA" assistantai-frontend:latest
-      docker compose up -d --no-build frontend
-      rojo "   Revertido el frontend. OJO: las migraciones de base ya aplicadas NO se revierten."
-    fi
+    for s in "${SERVICIOS_BUILD[@]}"; do
+      [[ -n "${IMAGEN_PREVIA[$s]}" ]] || continue
+      rojo "   Volviendo a la imagen anterior de $s..."
+      docker tag "${IMAGEN_PREVIA[$s]}" "assistantai-$s:latest"
+      docker compose up -d --no-build "$s"
+    done
+    rojo "   OJO: las migraciones de base ya aplicadas NO se revierten."
     exit 1
   fi
   verde "   ✓ servicios sanos"

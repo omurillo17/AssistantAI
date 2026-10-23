@@ -574,8 +574,16 @@ def _elegir_gerente(equipo: list[dict], calendarios_ok: set[str]) -> dict:
         logger.warning("_elegir_gerente: ningun reclutador del equipo tiene OAuth de calendario configurado")
         return equipo[0]
 
-    tel_respaldo = ENV.DEFAULT_RECRUITER_PHONE or ENV.TEST_DEV_PHONE or "5213323379399"
-    cal_respaldo = ENV.DEFAULT_CALENDAR_ID or "talreclutamiento01@gmail.com"
+    # Falla cerrado: sin equipo y sin respaldo configurado no se inventa un
+    # calendario/teléfono; agente._ejecutar_tool no agenda y las alertas
+    # buscan otro reclutador en la BD.
+    tel_respaldo = ENV.DEFAULT_RECRUITER_PHONE
+    cal_respaldo = ENV.DEFAULT_CALENDAR_ID
+    if not (tel_respaldo and cal_respaldo):
+        logger.error(
+            "_elegir_gerente: equipo vacío y DEFAULT_RECRUITER_PHONE/DEFAULT_CALENDAR_ID sin configurar "
+            "-- no se podrá agendar ni avisar al reclutador"
+        )
     return {"nombre": _NOMBRE_GERENTE, "telefono": tel_respaldo, "calendar_id": cal_respaldo}
 
 
@@ -720,6 +728,25 @@ async def definir_agenda(
 
 _ESTADOS_SIN_CATALOGO = {"CITA_AGENDADA", "DOCUMENTOS_NO_COINCIDEN", "INE_VALIDADA"}
 
+_ESTADOS_CON_AGENDA = frozenset({"INE_VALIDADA", "CITA_AGENDADA", "CITA_CANCELADA"})
+_ESTADOS_SIN_AGENDA = frozenset({"RECHAZADO", "DOCUMENTOS_NO_COINCIDEN", "OTRA_CIUDAD", "INACTIVO"})
+
+
+def puede_agendar(candidato: dict) -> bool:
+    """¿El candidato ya puede agendar entrevista?
+
+    Basta con que la BD tenga su INE y su Constancia, aunque el estado diga
+    otra cosa: mandar el CV después de los documentos lo regresaba a
+    CV_RECIBIDO y se quedaba sin poder agendar con todo entregado. Los estados
+    de descarte nunca agendan. Los que ya agendaban por estado lo siguen haciendo.
+    """
+    estado = candidato.get("estado")
+    if estado in _ESTADOS_CON_AGENDA:
+        return True
+    tiene_ine = bool(candidato.get("curp_ine") or candidato.get("datos_ine") or candidato.get("nombre_ine"))
+    tiene_rfc = bool(candidato.get("curp_rfc") or candidato.get("datos_rfc") or candidato.get("nombre_constancia"))
+    return tiene_ine and tiene_rfc and estado not in _ESTADOS_SIN_AGENDA
+
 
 def _formatear_fecha_hora_larga(dt: datetime) -> str:
     dia = DIAS_ES[dt.weekday()]
@@ -769,6 +796,11 @@ async def cargar_prompt(webhook_payload: dict, contacto: dict, candidato: dict) 
 
     nave_actual = db_data.get("nave_interes") or "Pendiente"
     estado_actual = db_data.get("estado") or "NUEVO"
+    # El prompt (empresas.prompt_ia) solo ofrece horarios si ESTADO_ACTUAL es
+    # INE_VALIDADA. Si los documentos están completos pero el estado quedó
+    # atrás, se le presenta así para que coincida con puede_agendar().
+    if estado_actual not in _ESTADOS_CON_AGENDA and puede_agendar(db_data):
+        estado_actual = "INE_VALIDADA"
 
     now_mx = datetime.now(_MX_TZ)
     fecha_actual = _formatear_fecha_hora_larga(now_mx)
@@ -915,6 +947,8 @@ async def analizar_mensaje(webhook_payload: dict, contacto: dict, candidato: dic
     telefono = contacto.get("number")
     chat_id = contacto.get("chat_id") or (f"{telefono}@c.us" if str(telefono).isdigit() else f"{telefono}@lid")
     body_text = (webhook_payload.get("body") or "").strip()
+    # Los UPDATE por teléfono se limitan a la empresa del expediente cargado.
+    empresa_candidato = str(candidato["empresa_id"]) if (candidato or {}).get("empresa_id") else None
 
     # 1. VERIFICACIÓN DE CIUDAD NO APTA (ZMG / JALISCO) EN TEXTO
     ciudad_detectada = _detectar_ciudad_no_apta_en_texto(body_text)
@@ -923,10 +957,11 @@ async def analizar_mensaje(webhook_payload: dict, contacto: dict, candidato: dic
         pool = get_pool()
         await pool.execute(
             "UPDATE candidatos SET estado = 'OTRA_CIUDAD', lugar_residencia = $1, "
-            "resumen_ia = $2 WHERE telefono = $3",
+            "resumen_ia = $2 WHERE telefono = $3 AND empresa_id IS NOT DISTINCT FROM $4::uuid",
             ciudad_detectada,
             f"Descalificado automáticamente: Radica en otra ciudad ({ciudad_detectada})",
             telefono,
+            empresa_candidato,
         )
         await waha_client.send_text(session, chat_id, DESCALIFICACION_CIUDAD_MSG)
         return {"mensaje_para_agente": None, "detuvo_flujo": True}
@@ -945,10 +980,12 @@ async def analizar_mensaje(webhook_payload: dict, contacto: dict, candidato: dic
             # con un placeholder adornado guardado ('{Ninguna}') no recibía la
             # vacante del anuncio. Se compara sobre el valor sin adornos.
             "UPDATE candidatos SET vacante_interes = $1 WHERE telefono = $2 "
+            "AND empresa_id IS NOT DISTINCT FROM $3::uuid "
             """AND UPPER(BTRIM(COALESCE(vacante_interes, ''), '{}[]"''| ')) """
             "IN ('', 'GENERAL', 'NINGUNA', 'PENDIENTE', 'DESCONOCIDA', 'X')",
             vacante_canon,
             telefono,
+            empresa_candidato,
         )
         mensaje_para_agente = (
             f"[SISTEMA: El candidato ingresó a través de un anuncio de Facebook Ads para la vacante: *{vacante_canon}*. "

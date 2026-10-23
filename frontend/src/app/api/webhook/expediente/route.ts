@@ -119,7 +119,9 @@ function resolveDocumentStateAndAlerts({
 }) {
   if (esCV) {
     return {
-      estado_final: 'CV_RECIBIDO',
+      // Lo decide la máquina (evento RECIBE_CV): un CV que llega después de los
+      // documentos o de la cita ya no regresa al candidato a CV_RECIBIDO.
+      estado_final: newStateValue,
       resumen_ia_final: 'CV Recibido y Analizado por Gemini',
       alertaIdentidadEstadoFinal: dbCandidato.alerta_identidad_estado ?? null,
       alertaIdentidadMotivoFinal: dbCandidato.alerta_identidad_motivo ?? null,
@@ -228,26 +230,59 @@ async function resolveReclutadorAsignadoId(nombre_reclutador?: string): Promise<
   return null;
 }
 
+/**
+ * Aviso por WhatsApp (y campana del CRM) al reclutador cuando la CURP de la
+ * INE y la de la Constancia no coinciden. Solo se manda cuando la alerta pasa
+ * a PENDIENTE (ver resolveIdAlertState), así que no se repite.
+ *
+ * Destino: el teléfono que mande el backend, si lo manda; si no, el
+ * reclutador asignado al candidato. Sin reclutador con teléfono no hay
+ * WhatsApp: la alerta queda en el modal de alertas del CRM.
+ */
 async function notificarDiscrepanciaIdentidad({
   debeNotificar,
-  telefono_reclutador,
-  safe_nombre,
+  candidatoId,
   telefono,
-  safe_vacante,
+  telefono_reclutador,
   alertaIdentidadMotivoFinal,
-  reclutadorAsignadoId,
 }: {
   debeNotificar: boolean;
-  telefono_reclutador?: string;
-  safe_nombre: string;
+  candidatoId: string | undefined;
   telefono: string;
-  safe_vacante: string;
+  telefono_reclutador?: string;
   alertaIdentidadMotivoFinal: string | null;
-  reclutadorAsignadoId: string | null;
 }) {
-  if (!debeNotificar || !telefono_reclutador) return;
-  const mensajeAlerta = `⚠️ *Verificación de identidad requerida*\n\nCandidato: ${safe_nombre}\nTel: wa.me/${telefono}\nVacante: ${safe_vacante || 'Sin vacante'}\n\n${alertaIdentidadMotivoFinal || 'La CURP del INE y del RFC no coinciden.'}\n\nRevisa el candidato en la plataforma para validar o rechazar.`;
-  await enviarNotificacionReclutador(String(telefono_reclutador), mensajeAlerta, reclutadorAsignadoId || null);
+  if (!debeNotificar || !candidatoId) return;
+
+  const res = await pool.query(
+    `SELECT c.nombre, c.nombre_chat, c.nombre_ine, c.nombre_constancia, c.curp_ine, c.curp_rfc,
+            c.vacante_interes, c.nave_interes, r.id AS reclutador_id, r.telefono AS reclutador_telefono
+       FROM candidatos c
+       LEFT JOIN reclutadores r ON r.id = c.asignado_a_id AND r.activo = TRUE
+      WHERE c.id = $1`,
+    [candidatoId]
+  );
+  const c = res.rows[0];
+  if (!c) return;
+  const destino = telefono_reclutador || c.reclutador_telefono;
+  if (!destino) return;
+
+  const digitos = telefono.replace(/\D/g, '');
+  const linkPlataforma = process.env.APP_PUBLIC_URL
+    ? `\n\n👉 Valídalo o recházalo aquí: ${process.env.APP_PUBLIC_URL.replace(/\/$/, '')}/expedientes?tel=${digitos}`
+    : '\n\n👉 Valídalo o recházalo en la plataforma (Expedientes o el aviso de alertas).';
+
+  const mensajeAlerta =
+    `⚠️ *Verificación de identidad requerida*\n\n` +
+    `👤 *Candidato:* ${c.nombre || c.nombre_chat || 'Sin nombre'}\n` +
+    `📱 *WhatsApp:* https://wa.me/${digitos}\n` +
+    `💼 *Vacante:* ${c.vacante_interes || 'Sin vacante'}${c.nave_interes ? ` · ${c.nave_interes}` : ''}\n\n` +
+    `🪪 *INE:* ${c.nombre_ine || '—'}\n    CURP: ${c.curp_ine || '—'}\n` +
+    `🧾 *Constancia:* ${c.nombre_constancia || '—'}\n    CURP: ${c.curp_rfc || '—'}\n\n` +
+    `📝 ${alertaIdentidadMotivoFinal || 'La CURP de la INE y la de la Constancia no coinciden.'}` +
+    linkPlataforma;
+
+  await enviarNotificacionReclutador(String(destino), mensajeAlerta, c.reclutador_id || null);
 }
 
 export async function POST(request: Request) {
@@ -263,7 +298,6 @@ export async function POST(request: Request) {
       vacante,
       tipo_origen,
       experiencia,
-      mensaje_usuario,
       datos_documento,
       veredicto,
       motivo,
@@ -476,20 +510,19 @@ export async function POST(request: Request) {
       await asignarReclutadorPorVacante(candidatoIdExpediente, safe_vacante, null, targetEmpresaId);
     }
 
-    if (mensaje_usuario) {
-       await pool.query(`INSERT INTO conversation_history (telefono, role, content, message_type) VALUES ($1, 'user', $2, 'text')`,
-        [telefono, mensaje_usuario]
-      );
-    }
+    // `mensaje_usuario` NO se guarda en conversation_history: es una indicación
+    // del analizador para el bot ("El candidato acaba de enviar su solicitud…"),
+    // no algo que escribió el candidato. Guardarla como role='user' la mostraba
+    // en el chat del CRM. El texto real del candidato ya lo guarda el agente.
 
+    // Va después del upsert y de asignarReclutadorPorVacante: lee de la BD
+    // las dos CURP y el reclutador ya asignado.
     await notificarDiscrepanciaIdentidad({
       debeNotificar: debeNotificarReclutador,
-      telefono_reclutador,
-      safe_nombre,
+      candidatoId: candidatoIdExpediente,
       telefono,
-      safe_vacante,
+      telefono_reclutador,
       alertaIdentidadMotivoFinal,
-      reclutadorAsignadoId,
     });
 
     return NextResponse.json({ success: true, estado: estado_final });

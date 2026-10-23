@@ -26,8 +26,10 @@ export async function GET(
     const segments = p.path ?? [];
 
     // `..` nunca aparece en un path legítimo de WAHA y es la vía obvia para
-    // salirse del prefijo permitido.
-    if (segments.some((segment) => segment === "." || segment === "..")) {
+    // salirse del prefijo permitido. Next ya decodificó los segmentos: un
+    // `/` o `\` dentro de uno venía de `%2F`/`%5C`, y un `%` restante sería
+    // doble codificación. Uno vacío daría `//host/...`.
+    if (segments.some((s) => !s || s.includes("..") || /[/\\%]/.test(s))) {
       return new NextResponse("Ruta inválida", { status: 400 });
     }
 
@@ -40,7 +42,16 @@ export async function GET(
       return new NextResponse("Ruta no permitida", { status: 403 });
     }
 
-    const targetUrl = `${WAHA_BASE}/${path}${req.nextUrl.search}`;
+    // Se revalida sobre la URL ya construida: el pathname final (normalizado
+    // por URL) y el host tienen que seguir siendo los de WAHA.
+    const targetUrl = new URL(`/${path}`, WAHA_BASE);
+    targetUrl.search = req.nextUrl.search;
+    if (
+      targetUrl.origin !== new URL(WAHA_BASE).origin ||
+      !ALLOWED_PREFIXES.some((prefix) => targetUrl.pathname.startsWith(`/${prefix}`))
+    ) {
+      return new NextResponse("Ruta no permitida", { status: 403 });
+    }
 
     // Fetch the media from WAHA API with the required X-Api-Key header
     const response = await fetch(targetUrl, {
@@ -56,10 +67,20 @@ export async function GET(
       return new NextResponse(`Error fetching media: ${response.statusText}`, { status: response.status });
     }
 
-    // Set the appropriate headers for the file
-    const headers = new Headers();
-    const contentType = response.headers.get("content-type");
-    if (contentType) headers.set("Content-Type", contentType);
+    // Solo imagen/audio/video se sirven inline (el chat los pinta con
+    // <img>/<audio>/<video>). Lo demás (PDF, HTML, SVG que mande un candidato)
+    // se fuerza a descarga para que no corra en el origen del CRM.
+    const headers = new Headers({
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "sandbox",
+    });
+    const contentType = response.headers.get("content-type") || "";
+    if (/^(image\/(?!svg)|audio\/|video\/)/i.test(contentType)) {
+      headers.set("Content-Type", contentType);
+    } else {
+      headers.set("Content-Type", "application/octet-stream");
+      headers.set("Content-Disposition", "attachment");
+    }
 
     // Pipe the binary data to the client
     return new NextResponse(response.body, {

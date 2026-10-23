@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 import { getSession, verifyInternalApiKey } from "@/lib/auth";
+import { empresaDeSesion } from "@/lib/tenant";
 
 /**
  * GET /api/db/reclutador_vacantes?empresa_id=xxx
@@ -77,11 +78,19 @@ function buildReclutadoresVacantesMap(rows: Record<string, unknown>[], naveMap: 
 
 export async function GET(request: Request) {
   const session = await getSession(request);
-  if (!session && !verifyInternalApiKey(request)) {
+  const porApiKey = verifyInternalApiKey(request);
+  if (!session && !porApiKey) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
   const { searchParams } = new URL(request.url);
-  const empresa_id = searchParams.get("empresa_id");
+  // Con llave interna (backend) o ROOT manda ?empresa_id=; con sesión de
+  // cualquier otro rol se fuerza la empresa del JWT.
+  const empresa_id = porApiKey || session?.rol === "ROOT"
+    ? searchParams.get("empresa_id")
+    : empresaDeSesion(session!);
+  if (!porApiKey && session?.rol !== "ROOT" && !empresa_id) {
+    return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+  }
 
   try {
     const whereClause = empresa_id

@@ -55,11 +55,25 @@ def test_si_nadie_tiene_oauth_no_se_queda_sin_reclutador():
     assert elegido["nombre"] == "MICHELLE"  # el primero por antigüedad
 
 
-def test_equipo_vacio_devuelve_un_respaldo_utilizable():
+def test_equipo_vacio_usa_el_respaldo_configurado(monkeypatch):
+    monkeypatch.setenv("DEFAULT_CALENDAR_ID", "respaldo@x.com")
+    monkeypatch.setenv("DEFAULT_RECRUITER_PHONE", "5210000000000")
+
     elegido = _elegir_gerente([], calendarios_ok=set())
 
-    assert elegido.get("calendar_id")
-    assert elegido.get("telefono")
+    assert elegido["calendar_id"] == "respaldo@x.com"
+    assert elegido["telefono"] == "5210000000000"
+
+
+def test_equipo_vacio_sin_respaldo_no_inventa_calendario(monkeypatch):
+    """Antes caía a un calendario y teléfono personales escritos en el código."""
+    monkeypatch.delenv("DEFAULT_CALENDAR_ID", raising=False)
+    monkeypatch.delenv("DEFAULT_RECRUITER_PHONE", raising=False)
+
+    elegido = _elegir_gerente([], calendarios_ok=set())
+
+    assert not elegido["calendar_id"]
+    assert not elegido["telefono"]
 
 
 # --- Reclutador ya asignado al candidato ------------------------------------

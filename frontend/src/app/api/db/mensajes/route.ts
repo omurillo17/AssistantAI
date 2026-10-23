@@ -6,6 +6,7 @@ import { pool } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { resolveGrupoNaveIds } from '@/lib/grupos';
 import { getCandidateDisplayName } from '@/lib/formatters';
+import { empresaDeSesion } from '@/lib/tenant';
 
 const postSchema = z.object({
   candidato_id: z.uuid("ID de candidato inválido").optional(),
@@ -15,6 +16,12 @@ const postSchema = z.object({
   asignado_a_id: z.string().max(100).optional().nullable(),
   mensajes_no_leidos: z.number().int().min(0).optional().default(0),
   activo: z.boolean().optional().default(true),
+});
+
+const patchSchema = z.object({
+  candidato_id: z.uuid("ID de candidato inválido").optional(),
+  telefono: z.string().min(1).max(20).optional(),
+  asignado_a_id: z.string().max(100).nullable(),
 });
 
 // ─── GET /api/db/mensajes ──────────────────────────────────
@@ -214,7 +221,12 @@ export async function POST(request: Request) {
     if (!payload) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
-    const jwt_empresa_id = (payload.empresa_id as string | null) ?? null;
+    const { searchParams } = new URL(request.url);
+    // Solo ROOT elige empresa por ?empresa_id=; el resto queda en la de su JWT.
+    const target_empresa = empresaDeSesion(payload, searchParams.get('empresa_id'));
+    if (!target_empresa && payload.rol !== "ROOT") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
     const body = await request.json();
     const parsed = postSchema.safeParse(body);
 
@@ -224,13 +236,26 @@ export async function POST(request: Request) {
 
     let targetCandidatoId = parsed.data.candidato_id;
 
+    if (targetCandidatoId && target_empresa) {
+      const own = await pool.query('SELECT 1 FROM candidatos WHERE id = $1 AND empresa_id = $2', [targetCandidatoId, target_empresa]);
+      if (own.rowCount === 0) {
+        return NextResponse.json({ error: "No se encontró candidato para este teléfono" }, { status: 404 });
+      }
+    }
+
     if (!targetCandidatoId && parsed.data.telefono) {
-      const { searchParams } = new URL(request.url);
-      const target_empresa = searchParams.get('empresa_id') || jwt_empresa_id;
       targetCandidatoId = await resolveCandidatoIdByPhone(parsed.data.telefono, target_empresa) || undefined;
       
       if (!targetCandidatoId) {
         return NextResponse.json({ error: "No se encontró candidato para este teléfono" }, { status: 404 });
+      }
+    }
+
+    // Solo se asigna a reclutadores de la misma empresa.
+    if (parsed.data.asignado_a_id && target_empresa) {
+      const rec = await pool.query('SELECT 1 FROM reclutadores WHERE id = $1 AND empresa_id = $2', [parsed.data.asignado_a_id, target_empresa]);
+      if (rec.rowCount === 0) {
+        return NextResponse.json({ error: "Reclutador fuera de la empresa" }, { status: 403 });
       }
     }
 
@@ -260,26 +285,41 @@ export async function PATCH(request: Request) {
     if (!payload) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
     }
-    const body = await request.json();
-    const { candidato_id, telefono, asignado_a_id } = body;
+    // null = ROOT sin filtro de empresa.
+    const empresa = payload.rol === "ROOT" ? null : empresaDeSesion(payload);
+    if (!empresa && payload.rol !== "ROOT") {
+      return NextResponse.json({ error: "No autorizado" }, { status: 403 });
+    }
+    const parsed = patchSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
+    }
+    const { candidato_id, telefono, asignado_a_id } = parsed.data;
 
     let targetCandidatoId = candidato_id;
 
     if (!targetCandidatoId && telefono) {
-      const candRes = await pool.query('SELECT id FROM candidatos WHERE telefono = $1 ORDER BY updated_at DESC LIMIT 1', [telefono]);
-      if (candRes.rowCount && candRes.rowCount > 0) {
-        targetCandidatoId = candRes.rows[0].id;
-      }
+      targetCandidatoId = await resolveCandidatoIdByPhone(telefono, empresa) || undefined;
     }
 
     if (!targetCandidatoId) {
       return NextResponse.json({ error: "Falta identificador del candidato" }, { status: 400 });
     }
 
+    // El candidato debe ser de la empresa de la sesión, y el reclutador
+    // destino (si hay) de la misma empresa que el candidato.
     const res = await pool.query(
-      `UPDATE mensajes_bandeja SET asignado_a_id = $1, updated_at = NOW() WHERE candidato_id = $2 RETURNING *`,
-      [asignado_a_id, targetCandidatoId]
+      `UPDATE mensajes_bandeja mb SET asignado_a_id = $1, updated_at = NOW()
+         FROM candidatos c
+        WHERE mb.candidato_id = $2 AND c.id = mb.candidato_id
+          AND ($3::uuid IS NULL OR c.empresa_id = $3)
+          AND ($1::varchar IS NULL OR EXISTS (SELECT 1 FROM reclutadores r WHERE r.id = $1 AND r.empresa_id = c.empresa_id))
+        RETURNING mb.*`,
+      [asignado_a_id, targetCandidatoId, empresa]
     );
+    if (res.rowCount === 0) {
+      return NextResponse.json({ error: "Candidato no encontrado" }, { status: 404 });
+    }
 
     return NextResponse.json({ success: true, updated: res.rows[0] });
   } catch (err) {

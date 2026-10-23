@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { z } from "zod";
 
 import { pool } from '@/lib/db';
-import { getSession, normalizeUsername } from '@/lib/auth';
+import { getSession, normalizeUsername, revocarSesiones } from '@/lib/auth';
 
 import crypto from 'node:crypto';
 
@@ -41,7 +41,7 @@ const userSchema = z.object({
   nombre: z.string().max(255).optional().or(z.literal("")),
   password: z
     .string({ error: "La contraseña es obligatoria" })
-    .min(5, "La contraseña debe tener al menos 5 caracteres")
+    .min(10, "La contraseña debe tener al menos 10 caracteres")
     .max(100),
   rol: z.enum(["ADMIN", "USER", "RECLUTADOR", "ENCARGADO", "ROOT"], { error: "Rol inválido" }),
   correo: z.email("Correo inválido").optional().or(z.literal("")),
@@ -95,6 +95,8 @@ export async function GET(request: Request) {
       if (userEmpresaId) {
         conditions.push(`u.empresa_id = $${params.length + 1}`);
         params.push(userEmpresaId);
+      } else {
+        conditions.push(`FALSE`); // sin empresa no ve a nadie (falla cerrado)
       }
     }
 
@@ -230,7 +232,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "El usuario ya existe" }, { status: 409 });
     }
 
-    const hash = await bcrypt.hash(password, 10);
+    const hash = await bcrypt.hash(password, 12);
     const { empresa_id, error: empresaError } = await resolveNewUserEmpresaId({
       creatorRole,
       creatorEmpresaId,
@@ -271,7 +273,8 @@ export async function POST(request: Request) {
  * solo dentro de su propia empresa (el empresa_id del JWT).
  */
 function mismaEmpresa(rol: string, requesterEmpresaId: string | null, empresaId: string | null): boolean {
-  return rol === 'ROOT' || empresaId === requesterEmpresaId;
+  // Sin empresa en el JWT no se iguala null === null: falla cerrado.
+  return rol === 'ROOT' || (!!requesterEmpresaId && empresaId === requesterEmpresaId);
 }
 
 /** Empresa de un reclutador (destino de una transferencia), o undefined si no existe. */
@@ -503,6 +506,10 @@ export async function PATCH(request: Request) {
     if (!mismaEmpresa(adminRole, adminEmpresaId, currentUser.empresa_id)) {
       return NextResponse.json({ error: "Usuario a modificar no encontrado" }, { status: 404 });
     }
+    // Misma regla que DELETE: a un ROOT solo lo toca otro ROOT.
+    if (currentUser.rol === 'ROOT' && adminRole !== 'ROOT') {
+      return NextResponse.json({ error: "No tienes permiso para modificar este usuario" }, { status: 403 });
+    }
     if (grupo_id && !mismaEmpresa(adminRole, adminEmpresaId, (await empresaDeGrupo(grupo_id)) ?? null)) {
       return NextResponse.json({ error: "No tienes permiso para asignar este grupo" }, { status: 403 });
     }
@@ -524,7 +531,10 @@ export async function PATCH(request: Request) {
     }
 
     if (newPassword && newPassword.trim().length > 0) {
-      const newHash = await bcrypt.hash(newPassword, 10);
+      if (newPassword.length < 10) {
+        return NextResponse.json({ error: "La contraseña debe tener al menos 10 caracteres" }, { status: 400 });
+      }
+      const newHash = await bcrypt.hash(newPassword, 12);
       await pool.query(
         `UPDATE usuarios SET password_hash = $1 WHERE id = $2`,
         [newHash, targetUserId]
@@ -551,6 +561,11 @@ export async function PATCH(request: Request) {
       telefono,
       newRol,
     });
+
+    // Contraseña, rol y grupo van en el JWT (o lo invalidan): cierra sus sesiones abiertas.
+    if (newPassword?.trim() || (newRol && newRol !== currentUser.rol) || (grupo_id !== undefined && grupo_id !== currentUser.grupo_id)) {
+      await revocarSesiones(currentUser.usuario);
+    }
 
     return NextResponse.json({ success: true });
   } catch (err) {
@@ -593,7 +608,7 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ error: "Falta el ID del usuario" }, { status: 400 });
     }
 
-    const targetRes = await pool.query(`SELECT id, rol, grupo_id, reclutador_id, protegido, empresa_id FROM usuarios WHERE id = $1`, [id]);
+    const targetRes = await pool.query(`SELECT id, usuario, rol, grupo_id, reclutador_id, protegido, empresa_id FROM usuarios WHERE id = $1`, [id]);
     if (targetRes.rowCount === 0) {
       return NextResponse.json({ error: "Usuario no encontrado" }, { status: 404 });
     }
@@ -657,6 +672,9 @@ export async function DELETE(request: Request) {
     } finally {
       client.release();
     }
+
+    // Ya no existe: limpia su versión en caché para que su JWT deje de pasar al instante.
+    await revocarSesiones(targetUser.usuario);
 
     return NextResponse.json({ success: true });
   } catch (err) {

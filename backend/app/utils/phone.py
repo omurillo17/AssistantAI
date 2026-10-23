@@ -19,6 +19,12 @@ def obtener_ultimos_10_digitos(telefono: str | None) -> str:
     return digitos[-10:] if len(digitos) >= 10 else digitos
 
 
+def enmascarar(telefono: str | None) -> str:
+    """Para logs: solo los últimos 4 dígitos (ej. '***9399')."""
+    digitos = limpiar_digitos(telefono)
+    return f"***{digitos[-4:]}" if digitos else "?"
+
+
 def normalizar_numero_meta(telefono: str | None) -> str:
     """Normaliza números para Meta Graph API.
     Para México: Meta exige 52 + 10 dígitos (12 dígitos).
