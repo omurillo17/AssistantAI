@@ -15,11 +15,11 @@ import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.db import get_pool
-from app.google_calendar import create_event, delete_event, list_events, update_event
+from app.google_calendar import create_event, delete_event, list_events, obtener_conflictos_calendario, update_event
 from app.security import verify_api_key
 
 logger = logging.getLogger("citas")
@@ -249,6 +249,28 @@ async def cancelar(payload: CancelarCitaRequest) -> dict:
 
 @router.post("/reagendar")
 async def reagendar(payload: ReagendarCitaRequest) -> dict:
+    try:
+        start_dt = datetime.fromisoformat(payload.start)
+        end_dt = datetime.fromisoformat(payload.end)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Formato de fecha inválido en start/end.")
+
+    tz = ZoneInfo("America/Mexico_City")
+    if start_dt.tzinfo is None:
+        start_dt = start_dt.replace(tzinfo=tz)
+    if end_dt.tzinfo is None:
+        end_dt = end_dt.replace(tzinfo=tz)
+
+    conflictos = await obtener_conflictos_calendario(
+        payload.calendar_id, start_dt, end_dt, exclude_event_id=payload.event_id
+    )
+    if conflictos:
+        motivo = conflictos[0].get("summary") or "Evento previo o bloqueo de agenda"
+        raise HTTPException(
+            status_code=400,
+            detail=f"El horario seleccionado colisiona con '{motivo}'. Por favor selecciona otro horario.",
+        )
+
     await update_event(
         calendar_id=payload.calendar_id,
         event_id=payload.event_id,

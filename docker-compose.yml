@@ -203,6 +203,7 @@ services:
     mem_limit: 256m
     networks:
       - virgo_network
+      - virtab-prod_default
     command: tunnel run
     environment:
       - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
@@ -212,6 +213,8 @@ services:
 networks:
   virgo_network:
     driver: bridge
+  virtab-prod_default:
+    external: true
 
 volumes:
   postgres_data_final:

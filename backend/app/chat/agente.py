@@ -37,7 +37,12 @@ from app.chat import memoria, parser, vacantes
 from app.chat.vacantes import es_placeholder_vacante, limpiar_vacante
 from app.config import ENV
 from app.db import get_pool
-from app.google_calendar import list_events
+from app.google_calendar import (
+    calcular_slots_disponibles,
+    formatear_disponibilidad_para_prompt,
+    list_events,
+    _formatear_hora_es,
+)
 from app.internal_api import auth_headers
 from app.routers.eventos_calendario import (
     CrearEventoRequest,
@@ -232,11 +237,23 @@ async def _tool_revisar_calendario(calendar_id: str, args: dict) -> dict:
         time_min = time_min.replace(tzinfo=_MX_TZ)
     if time_max.tzinfo is None:
         time_max = time_max.replace(tzinfo=_MX_TZ)
-    eventos = await list_events(calendar_id, time_min, time_max, max_results=10)
-    return {"eventos_ocupados": [
-        {"id": e.get("id"), "summary": e.get("summary"), "start": e.get("start"), "end": e.get("end")}
-        for e in eventos
-    ]}
+
+    now = datetime.now(_MX_TZ)
+    eventos = await list_events(calendar_id, time_min, time_max, max_results=100)
+    slots_por_dia = calcular_slots_disponibles(eventos, time_min, time_max, now)
+    resumen_disponibilidad = formatear_disponibilidad_para_prompt(slots_por_dia)
+
+    return {
+        "resumen_disponibilidad": resumen_disponibilidad,
+        "horarios_disponibles": {
+            d.isoformat(): [_formatear_hora_es(h, m) for h, m in slots]
+            for d, slots in slots_por_dia.items()
+        },
+        "eventos_ocupados": [
+            {"id": e.get("id"), "summary": e.get("summary"), "start": e.get("start"), "end": e.get("end")}
+            for e in eventos
+        ],
+    }
 
 
 def _extraer_dict_candidato(val: object) -> dict:
