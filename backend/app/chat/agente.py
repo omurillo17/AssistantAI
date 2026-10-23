@@ -38,7 +38,12 @@ from app.chat.analizador import puede_agendar
 from app.chat.vacantes import es_placeholder_vacante, limpiar_vacante
 from app.config import ENV
 from app.db import get_pool
-from app.google_calendar import list_events
+from app.google_calendar import (
+    calcular_slots_disponibles,
+    formatear_disponibilidad_para_prompt,
+    list_events,
+    _formatear_hora_es,
+)
 from app.internal_api import auth_headers
 from app.routers.eventos_calendario import (
     CrearEventoRequest,
@@ -237,16 +242,28 @@ async def _tool_revisar_calendario(calendar_id: str, args: dict) -> dict:
         time_min = time_min.replace(tzinfo=_MX_TZ)
     if time_max.tzinfo is None:
         time_max = time_max.replace(tzinfo=_MX_TZ)
-    eventos = await list_events(calendar_id, time_min, time_max, max_results=10)
-    # Solo los huecos ocupados: el modelo no necesita (ni debe poder repetirle
-    # al candidato) títulos, nombres o IDs de las citas de otras personas.
-    return {"eventos_ocupados": [
-        {
-            "start": (e.get("start") or {}).get("dateTime") or (e.get("start") or {}).get("date"),
-            "end": (e.get("end") or {}).get("dateTime") or (e.get("end") or {}).get("date"),
-        }
-        for e in eventos
-    ]}
+
+    now = datetime.now(_MX_TZ)
+    eventos = await list_events(calendar_id, time_min, time_max, max_results=100)
+    slots_por_dia = calcular_slots_disponibles(eventos, time_min, time_max, now)
+    resumen_disponibilidad = formatear_disponibilidad_para_prompt(slots_por_dia)
+
+    # Huecos ocupados sin título, nombre ni ID: el modelo no necesita (ni debe
+    # poder repetirle al candidato) datos de las citas de otras personas.
+    return {
+        "resumen_disponibilidad": resumen_disponibilidad,
+        "horarios_disponibles": {
+            d.isoformat(): [_formatear_hora_es(h, m) for h, m in slots]
+            for d, slots in slots_por_dia.items()
+        },
+        "eventos_ocupados": [
+            {
+                "start": (e.get("start") or {}).get("dateTime") or (e.get("start") or {}).get("date"),
+                "end": (e.get("end") or {}).get("dateTime") or (e.get("end") or {}).get("date"),
+            }
+            for e in eventos
+        ],
+    }
 
 
 _CITA_DURACION_MIN = timedelta(minutes=15)

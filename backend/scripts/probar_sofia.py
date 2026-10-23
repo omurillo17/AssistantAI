@@ -55,6 +55,11 @@ os.environ["VIRGO_FILES_DIR"] = os.path.join(WORKTREE, "virgo_data")
 
 from app import gemini_client  # noqa: E402
 from app.chat import analizador, parser  # noqa: E402
+from app.google_calendar import (  # noqa: E402
+    calcular_slots_disponibles,
+    formatear_disponibilidad_para_prompt,
+    _formatear_hora_es,
+)
 
 CONTEXT_WINDOW = 8
 
@@ -144,8 +149,24 @@ def _tool_stub(nombre: str, args: dict, candidato: dict) -> dict:
                 "start": candidato.get("event_start"),
                 "end": candidato.get("event_end"),
             }]
-        print(f"   🔧 [SIMULADO] llamó a revisar_calendario({args}) -> {len(eventos)} evento(s) simulado(s) ocupados")
-        return {"success": True, "eventos_ocupados": eventos}
+        # Calcular slots libres simulados
+        after_str = args.get("after")
+        before_str = args.get("before")
+        now = datetime.now()
+        t_min = datetime.fromisoformat(after_str) if after_str else now
+        t_max = datetime.fromisoformat(before_str) if before_str else now
+        slots = calcular_slots_disponibles(eventos, t_min, t_max, now)
+        resumen = formatear_disponibilidad_para_prompt(slots)
+        print(f"   🔧 [SIMULADO] llamó a revisar_calendario({args}) -> {len(eventos)} evento(s) ocupados")
+        return {
+            "success": True,
+            "resumen_disponibilidad": resumen,
+            "horarios_disponibles": {
+                d.isoformat(): [_formatear_hora_es(h, m) for h, m in horas]
+                for d, horas in slots.items()
+            },
+            "eventos_ocupados": eventos,
+        }
     if nombre == "crear_evento":
         if _TOOL_MODE["exito"]:
             eid = f"evento-simulado-{abs(hash((args.get('start'), args.get('end')))) % 10000}"

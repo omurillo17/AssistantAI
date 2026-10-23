@@ -222,6 +222,8 @@ services:
     # hace con el token del túnel no puede apuntarlo a postgres, waha o backend.
     networks:
       - edge
+      # Túnel compartido: también publica el proyecto Virtab (red externa).
+      - virtab-prod_default
     command: tunnel run
     environment:
       - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
@@ -236,6 +238,8 @@ networks:
     driver: bridge
   internal:
     driver: bridge
+  virtab-prod_default:
+    external: true
 
 volumes:
   postgres_data_final:

@@ -5,12 +5,14 @@ Google Calendar falla, el UPDATE de Postgres no se ejecuta (mismo orden
 causal que el grafo de n8n original)."""
 
 import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from app.db import get_pool
-from app.google_calendar import create_event, delete_event
+from app.google_calendar import create_event, delete_event, obtener_conflictos_calendario
 from app.security import verify_api_key
 from app.utils.phone import enmascarar
 
@@ -76,6 +78,60 @@ def _build_description(payload: CrearEventoRequest) -> str:
 
 @router.post("/crear")
 async def crear_evento(payload: CrearEventoRequest) -> dict:
+    try:
+        start_dt = datetime.fromisoformat(payload.start)
+        end_dt = datetime.fromisoformat(payload.end)
+    except (ValueError, TypeError):
+        return {"success": False, "error": "Formato de fecha inválido en start/end (se requiere ISO 8601)."}
+
+    tz = ZoneInfo("America/Mexico_City")
+    if start_dt.tzinfo is None:
+        start_dt = start_dt.replace(tzinfo=tz)
+    if end_dt.tzinfo is None:
+        end_dt = end_dt.replace(tzinfo=tz)
+
+    now = datetime.now(tz)
+    if start_dt < now:
+        return {"success": False, "error": "No es posible agendar en una fecha u hora pasada."}
+
+    # Domingo cerrado
+    if start_dt.weekday() == 6:
+        return {"success": False, "error": "No se pueden agendar citas los domingos (oficinas cerradas)."}
+
+    # Validar horario laboral general de la empresa
+    hora_ini = start_dt.hour + start_dt.minute / 60.0
+    hora_fin = end_dt.hour + end_dt.minute / 60.0
+    if start_dt.weekday() < 5:
+        if hora_ini < 9.0 or hora_fin > 17.0:
+            return {
+                "success": False,
+                "error": "El horario solicitado está fuera de la jornada laboral oficial (Lunes a Viernes de 09:00 a 17:00 hrs).",
+            }
+    elif start_dt.weekday() == 5:
+        if hora_ini < 9.0 or hora_fin > 12.0:
+            return {
+                "success": False,
+                "error": "El horario solicitado está fuera de la jornada laboral de sábado (09:00 a 12:00 hrs).",
+            }
+
+    # Validar colisión con eventos o bloqueos existentes en Google Calendar
+    try:
+        conflictos = await obtener_conflictos_calendario(payload.calendar_id, start_dt, end_dt)
+        if conflictos:
+            motivo = conflictos[0].get("summary") or "Evento previo o bloqueo de agenda"
+            logger.warning(
+                "crear_evento: rechazado para candidato telefono=%s (%s a %s) por colisión con '%s'",
+                enmascarar(payload.telefono), payload.start, payload.end, motivo,
+            )
+            # Sin el título del evento: suele ser "Nombre - Vacante" de otro
+            # candidato y este texto le llega al bot, que podría repetirlo.
+            return {
+                "success": False,
+                "error": f"El horario seleccionado ({payload.start}) ya está ocupado en la agenda del reclutador. Por favor solicita al candidato que elija otro horario disponible.",
+            }
+    except Exception as e:
+        logger.exception("crear_evento: error al verificar colisiones en calendario: %s", e)
+
     event_id = await create_event(
         calendar_id=payload.calendar_id,
         summary=_build_summary(payload),
