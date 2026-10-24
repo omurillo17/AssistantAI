@@ -7,7 +7,9 @@ import { pool } from '@/lib/db';
 import { rateLimit } from '@/lib/rate-limit';
 import { sniffDocumentType } from '@/lib/file-validation';
 import { deleteUploadedFile, UPLOAD_DIR } from '@/lib/fileStorage';
-import { normalizarTelefonoPortal } from '../telefono';
+import { verificarTokenPortal } from '@/lib/portalOtp';
+import { quitarMetadatosImagen } from '@/lib/stripMetadata';
+import { buscarCandidatoPortal } from '../candidatos';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB limit
 // Tope del request completo (INE + RFC + CV de 10 MB + overhead multipart),
@@ -16,7 +18,6 @@ const MAX_REQUEST_SIZE = 3 * MAX_FILE_SIZE + 1024 * 1024;
 const ALLOWED_EXTENSIONS = new Set(['.pdf', '.jpg', '.jpeg', '.png', '.webp']);
 // Valores de `tipo_documento` para el envío de un solo archivo (`file`).
 const tipoDocumentoSchema = z.enum(['ine', 'rfc', 'cv']);
-const empresaIdSchema = z.guid().nullable();
 const ERROR_ASOCIAR = 'No pudimos asociar los archivos a tu expediente. Contacta a tu reclutador.';
 
 function validateFile(fileObj: File | null, label: string) {
@@ -46,7 +47,8 @@ async function saveFile(fileObj: File, suffix: string, safeTelefono: string) {
   if (!filePath.startsWith(path.resolve(UPLOAD_DIR) + path.sep)) {
     throw new Error('FORMATO_NO_PERMITIDO');
   }
-  await writeFile(filePath, buffer);
+  // Las fotos de INE pueden traer GPS en el EXIF: se quita antes de guardar.
+  await writeFile(filePath, quitarMetadatosImagen(buffer, ext));
   return `/uploads/${finalFilename}`;
 }
 
@@ -111,15 +113,16 @@ export async function POST(request: Request) {
 
   try {
     const formData = await request.formData();
-    const safeTelefono = normalizarTelefonoPortal(formData.get('telefono'));
-
-    if (!safeTelefono) {
-      return NextResponse.json({ error: 'Ingresa un número de teléfono válido de 10 dígitos.' }, { status: 400 });
+    // Teléfono y empresa salen SOLO del token que entregó /api/portal/buscar
+    // tras validar el código de WhatsApp; el `telefono` del formulario se ignora.
+    const sesion = verificarTokenPortal(request.headers.get('x-portal-token') ?? formData.get('token'));
+    if (!sesion) {
+      return NextResponse.json({ error: 'Tu sesión venció. Vuelve a pedir el código por WhatsApp.' }, { status: 401 });
     }
+    const safeTelefono = sesion.telefono;
 
     const tipoDoc = tipoDocumentoSchema.safeParse(formData.get('tipo_documento') ?? 'ine');
-    const empresaId = empresaIdSchema.safeParse(formData.get('empresa_id') || null);
-    if (!tipoDoc.success || !empresaId.success) {
+    if (!tipoDoc.success) {
       return NextResponse.json({ error: 'Datos inválidos' }, { status: 400 });
     }
 
@@ -145,32 +148,12 @@ export async function POST(request: Request) {
       await mkdir(UPLOAD_DIR, { recursive: true });
     }
 
-    // Match por SUFIJO exacto de 10 dígitos (igual que /api/portal/buscar),
-    // nunca por subcadena: con LIKE '%...%' un fragmento bastaba para
-    // sobrescribir los documentos de otra persona.
-    const candRes = await pool.query(
-      `SELECT id, empresa_id, nombre, nombre_chat, nombre_solicitud, asignado_a_id, datos_ine, datos_rfc, link_cv
-       FROM candidatos
-       WHERE RIGHT(regexp_replace(telefono, '\\D', '', 'g'), 10) = $1
-         AND ($2::uuid IS NULL OR empresa_id = $2::uuid)
-       ORDER BY updated_at DESC`,
-      [safeTelefono, empresaId.data]
-    );
-
-    if (candRes.rowCount === 0) {
-      return NextResponse.json(
-        { error: 'Candidato no encontrado para asociar los archivos.' },
-        { status: 404 }
-      );
-    }
-
-    // El mismo teléfono en dos empresas: sin empresa_id no hay forma segura
-    // de saber a qué expediente pertenecen los archivos.
-    if (new Set(candRes.rows.map((r) => r.empresa_id)).size > 1) {
+    // Mismo candidato al que se le mandó el código (sufijo exacto de 10
+    // dígitos + empresa); null si el teléfono existe en varias empresas.
+    const cand = await buscarCandidatoPortal(safeTelefono, sesion.empresaId);
+    if (!cand) {
       return NextResponse.json({ error: ERROR_ASOCIAR }, { status: 409 });
     }
-
-    const cand = candRes.rows[0];
     const nombreCandidato = cand.nombre || cand.nombre_chat || cand.nombre_solicitud || 'Candidato';
 
     let datosIneObj = typeof cand.datos_ine === 'string' ? (() => { try { return JSON.parse(cand.datos_ine); } catch { return {}; } })() : (cand.datos_ine || {});

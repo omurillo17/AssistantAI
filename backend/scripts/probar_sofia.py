@@ -38,8 +38,6 @@ import os
 import sys
 from datetime import datetime
 
-import google.generativeai as genai
-
 WORKTREE = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MAIN_REPO = "/home/sdvirgo/proyectos/AssistantAI"
 
@@ -206,9 +204,7 @@ async def _enviar_con_tools(chat, mensaje_usuario: str, candidato: dict) -> str:
         for fc in calls:
             args = dict(fc.args) if fc.args else {}
             resultado = _tool_stub(fc.name, args, candidato)
-            parts.append(genai.protos.Part(function_response=genai.protos.FunctionResponse(
-                name=fc.name, response={"result": resultado},
-            )))
+            parts.append(gemini_client.parte_respuesta_tool(fc.name, resultado))
         response = await gemini_client.enviar_mensaje(chat, parts)
     return gemini_client.extraer_texto(response)
 

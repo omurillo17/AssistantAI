@@ -30,8 +30,6 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
-import google.generativeai as genai
-
 from app import gemini_client, waha_client
 from app.chat import memoria, parser, vacantes
 from app.chat.analizador import puede_agendar
@@ -544,9 +542,7 @@ async def _ejecutar_ronda_tools(
             fecha_evento = args.get("start") or fecha_evento
         if fc.name == "eliminar_evento" and exito:
             evento_eliminado_ok = True
-        parts.append(genai.protos.Part(function_response=genai.protos.FunctionResponse(
-            name=fc.name, response={"result": resultado},
-        )))
+        parts.append(gemini_client.parte_respuesta_tool(fc.name, resultado))
     response = await gemini_client.enviar_mensaje(chat, parts)
     return evento_creado_ok, evento_eliminado_ok, fecha_evento, response
 

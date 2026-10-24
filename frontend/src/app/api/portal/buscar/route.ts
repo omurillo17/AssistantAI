@@ -1,88 +1,49 @@
 import { NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 import { z } from 'zod';
-import { pool } from '@/lib/db';
+import { verificarCodigo, firmarTokenPortal } from '@/lib/portalOtp';
 import { rateLimit } from '@/lib/rate-limit';
 import { normalizarTelefonoPortal } from '../telefono';
+import { buscarCandidatoPortal } from '../candidatos';
 
 const bodySchema = z.object({
-  telefono: z.string().min(10, 'El número telefónico debe tener 10 dígitos'),
-  empresa_id: z.string().optional().nullable(),
-  nave_id: z.string().optional().nullable(),
+  telefono: z.string(),
+  codigo: z.string().regex(/^\d{6}$/),
+  empresa_id: z.guid().optional().nullable(),
 });
 
+const CODIGO_INVALIDO = 'Código inválido o vencido';
+
 // POST /api/portal/buscar
-// Busca al candidato por teléfono y empresa/nave
+// Verifica el código que llegó por WhatsApp y devuelve los datos que pinta el
+// portal más el token que exige /api/portal/subir.
 export async function POST(request: Request) {
-  // Endpoint público: rate limit para frenar la enumeración de teléfonos
+  // Endpoint público: rate limit por IP; el código además se invalida a los 5 fallos.
   const rl = rateLimit(request, 20);
   if (!rl.success) {
     return NextResponse.json({ error: 'Demasiados intentos, espera un momento.' }, { status: 429 });
   }
 
   try {
-    const rawBody = await request.json();
-    const parsed = bodySchema.safeParse(rawBody);
+    const parsed = bodySchema.safeParse(await request.json());
+    const last10 = parsed.success ? normalizarTelefonoPortal(parsed.data.telefono) : null;
+    if (!parsed.success || !last10) {
+      return NextResponse.json({ error: CODIGO_INVALIDO }, { status: 401 });
+    }
+    const empresaId = parsed.data.empresa_id ?? null;
 
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: 'Datos inválidos', detail: z.flattenError(parsed.error) },
-        { status: 400 }
-      );
+    if (!verificarCodigo(last10, empresaId, parsed.data.codigo)) {
+      return NextResponse.json({ error: CODIGO_INVALIDO }, { status: 401 });
     }
 
-    const { telefono, empresa_id, nave_id } = parsed.data;
-
-    // Se exigen los 10 dígitos completos (o 12/13 con prefijo 52/521): con
-    // menos, un patrón por SUBCADENA hacía match contra teléfonos ajenos y un
-    // tercero podía sacar el expediente de alguien más probando fragmentos.
-    const last10 = normalizarTelefonoPortal(telefono);
-    if (!last10) {
-      return NextResponse.json(
-        { error: 'Por favor ingresa un número de teléfono válido de 10 dígitos.' },
-        { status: 400 }
-      );
-    }
-
-    // Match por SUFIJO, no por subcadena: el teléfono guardado trae prefijos
-    // de país/operador variables (5500000001, 525500000001, 5215500000001),
-    // pero siempre termina en los mismos 10 dígitos.
-    const searchPattern = `%${last10}`;
-
-    let query = `
-      SELECT nombre, nombre_chat, nombre_solicitud,
-             vacante_interes, nave_interes, alerta_identidad_motivo,
-             tiene_cv, link_cv, cv_manual, datos_ine, datos_rfc
-      FROM candidatos
-      WHERE (telefono ILIKE $1 OR REPLACE(telefono, '+', '') ILIKE $1)
-    `;
-    const params: unknown[] = [searchPattern];
-    let idx = 2;
-
-    if (empresa_id) {
-      query += ` AND (empresa_id = $${idx} OR empresa_id IS NULL)`;
-      params.push(empresa_id);
-      idx++;
-    }
-
-    if (nave_id) {
-      query += ` AND (nave_id = $${idx} OR nave_id IS NULL)`;
-      params.push(nave_id);
-      idx++;
-    }
-
-    query += ` ORDER BY updated_at DESC LIMIT 1`;
-
-    const res = await pool.query(query, params);
-
-    if (res.rowCount === 0) {
+    const cand = await buscarCandidatoPortal(last10, empresaId);
+    if (!cand) {
       return NextResponse.json({
         encontrado: false,
         mensaje: 'No se encontró una solicitud activa registrada con ese número de teléfono en la empresa seleccionada. Tu expediente sigue en espera de autorización del reclutador.',
       });
     }
 
-    const cand = res.rows[0];
     const nombreMostrado = cand.nombre || cand.nombre_chat || cand.nombre_solicitud || 'Candidato';
 
     const tieneCvRegistrado = Boolean(
@@ -97,9 +58,12 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       encontrado: true,
+      // El teléfono y la empresa salen del servidor (no del formulario): es lo
+      // único que /api/portal/subir usa para encontrar el expediente.
+      token: firmarTokenPortal(last10, cand.empresa_id ?? empresaId),
       candidato: {
         // Solo lo que pinta el portal. El teléfono es el mismo que tecleó el
-        // candidato (no el guardado) y el portal lo reenvía a /api/portal/subir.
+        // candidato (no el guardado).
         telefono: last10,
         nombre: nombreMostrado,
         vacante_interes: cand.vacante_interes || 'General',

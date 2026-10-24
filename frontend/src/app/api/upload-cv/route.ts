@@ -4,6 +4,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { verifyInternalApiKey } from '@/lib/auth';
 import { sniffDocumentType } from '@/lib/file-validation';
+import { quitarMetadatosImagen } from '@/lib/stripMetadata';
 
 const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15 MB
 
@@ -101,7 +102,8 @@ export async function POST(request: Request) {
     }
 
     const filePath = path.join(uploadDir, finalFilename);
-    await writeFile(filePath, buffer);
+    // Sin EXIF/GPS: las fotos de INE que llegan por WhatsApp pueden traerlo.
+    await writeFile(filePath, quitarMetadatosImagen(buffer, ext));
 
     // The public URL path
     const fileUrl = `/uploads/${finalFilename}`;

@@ -98,7 +98,9 @@ services:
         condition: service_healthy
 
   waha:
-    image: devlikeapro/waha:latest
+    # Fijada por digest a la versión que corría en producción el 2026-10-23.
+    # Para actualizar: probar la nueva y reemplazar el digest (no volver a :latest).
+    image: devlikeapro/waha@sha256:65e593e30bb702f891550b9da5d65e9e0eff8a926f5451fac6a582db84d3a323
     restart: always
     mem_limit: 2g
     security_opt: [no-new-privileges:true]
@@ -214,7 +216,8 @@ services:
         condition: service_healthy
 
   cloudflared:
-    image: cloudflare/cloudflared:latest
+    # Fijada por digest (producción 2026-10-23); es la entrada pública, no usar :latest.
+    image: cloudflare/cloudflared@sha256:e39ee8da81ad5e05d77f38d2f51c60ca51bf2a8450ac3abab50c17fdb91d91bf
     restart: always
     mem_limit: 256m
     security_opt: [no-new-privileges:true]

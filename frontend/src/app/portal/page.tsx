@@ -51,6 +51,13 @@ export default function PortalCandidatoPage() {
   const [candidato, setCandidato] = useState<CandidatoEnc | null>(null);
   const [notFoundMsg, setNotFoundMsg] = useState("");
 
+  // Código por WhatsApp: sin él no se ven datos ni se suben archivos.
+  const [codigoEnviado, setCodigoEnviado] = useState(false);
+  const [codigo, setCodigo] = useState("");
+  const [infoMsg, setInfoMsg] = useState("");
+  const [cooldown, setCooldown] = useState(0);
+  const [token, setToken] = useState("");
+
   // Multi-file upload states
   const [fileIne, setFileIne] = useState<File | null>(null);
   const [fileRfc, setFileRfc] = useState<File | null>(null);
@@ -80,19 +87,66 @@ export default function PortalCandidatoPage() {
     loadEmpresas();
   }, []);
 
+  // Cuenta regresiva para "Reenviar código".
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
+
   const navesDisponibles = empresas.find(e => e.id === selectedEmpresaId)?.naves || [];
 
-  const handleBuscar = async (e: React.SyntheticEvent) => {
-    e.preventDefault();
-    setNotFoundMsg("");
-    setUploadError("");
-    setSuccessMsg("");
+  const reiniciar = (limpiarTelefono = false) => {
+    setCandidato(null);
+    setToken("");
+    setCodigoEnviado(false);
+    setCodigo("");
+    setInfoMsg("");
     setFileIne(null);
     setFileRfc(null);
     setFileCv(null);
+    if (limpiarTelefono) setTelefono("");
+  };
 
-    if (!telefono || telefono.replace(/\D/g, "").length < 8) {
+  const handleEnviarCodigo = async () => {
+    setNotFoundMsg("");
+    setInfoMsg("");
+    setUploadError("");
+    setSuccessMsg("");
+
+    if (telefono.replace(/\D/g, "").length < 10) {
       setNotFoundMsg("Por favor ingresa un número de teléfono válido de 10 dígitos.");
+      return;
+    }
+
+    setSearching(true);
+    try {
+      const res = await fetch("/api/portal/codigo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ telefono, empresa_id: selectedEmpresaId || null }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setCodigoEnviado(true);
+        setCodigo("");
+        setCooldown(60);
+        setInfoMsg(data.mensaje || "Si el número está registrado, te enviamos un código por WhatsApp.");
+      } else {
+        setNotFoundMsg(data.error || "No pudimos enviar el código. Intenta nuevamente.");
+      }
+    } catch {
+      setNotFoundMsg("Ocurrió un error al enviar el código. Intenta nuevamente.");
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleVerificar = async () => {
+    setNotFoundMsg("");
+
+    if (!/^\d{6}$/.test(codigo)) {
+      setNotFoundMsg("El código tiene 6 dígitos. Revisa el mensaje que te llegó por WhatsApp.");
       return;
     }
 
@@ -101,20 +155,20 @@ export default function PortalCandidatoPage() {
       const res = await fetch("/api/portal/buscar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          telefono,
-          empresa_id: selectedEmpresaId || null,
-          nave_id: selectedNaveId || null,
-        }),
+        body: JSON.stringify({ telefono, codigo, empresa_id: selectedEmpresaId || null }),
       });
 
       const data = await res.json();
       if (res.ok && data.encontrado) {
         setCandidato(data.candidato);
+        setToken(data.token);
+        setInfoMsg("");
+      } else if (res.status === 401) {
+        setNotFoundMsg("Código inválido o vencido. Revisa el código o pide uno nuevo.");
       } else {
         setCandidato(null);
         setNotFoundMsg(
-          data.mensaje ||
+          data.mensaje || data.error ||
           "No se encontró ninguna solicitud registrada con ese número. Tu proceso aún sigue esperando la autorización de un reclutador."
         );
       }
@@ -123,6 +177,12 @@ export default function PortalCandidatoPage() {
     } finally {
       setSearching(false);
     }
+  };
+
+  const handleBuscar = (e: React.SyntheticEvent) => {
+    e.preventDefault();
+    if (codigoEnviado) handleVerificar();
+    else handleEnviarCodigo();
   };
 
   // Verificación de si se pueden enviar los archivos
@@ -145,22 +205,25 @@ export default function PortalCandidatoPage() {
     setSuccessMsg("");
 
     try {
+      // El teléfono y la empresa viajan dentro del token firmado.
       const formData = new FormData();
-      formData.append("telefono", candidato.telefono);
-      // Desambigua cuando el mismo teléfono existe en varias empresas.
-      if (selectedEmpresaId) formData.append("empresa_id", selectedEmpresaId);
       if (fileIne) formData.append("file_ine", fileIne);
       if (fileRfc) formData.append("file_rfc", fileRfc);
       if (fileCv) formData.append("file_cv", fileCv);
 
       const res = await fetch("/api/portal/subir", {
         method: "POST",
+        headers: { "x-portal-token": token },
         body: formData,
       });
 
       const data = await res.json();
       if (res.ok && data.success) {
         setSuccessMsg(data.mensaje || "¡Todos los documentos fueron enviados con éxito!");
+      } else if (res.status === 401) {
+        // Token vencido (30 min): de vuelta a pedir código.
+        reiniciar();
+        setNotFoundMsg(data.error || "Tu sesión venció. Vuelve a pedir el código por WhatsApp.");
       } else {
         setUploadError(data.error || "Ocurrió un error al subir los documentos.");
       }
@@ -204,7 +267,7 @@ export default function PortalCandidatoPage() {
                 </span>
                 <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-800">Identifica tu Solicitud</h2>
                 <p className="text-xs sm:text-sm text-slate-500 max-w-md mx-auto">
-                  Selecciona la empresa e ingresa el número telefónico que registraste en WhatsApp.
+                  Selecciona la empresa e ingresa el número telefónico que registraste en WhatsApp. Te enviaremos un código para confirmar que eres tú.
                 </p>
               </div>
 
@@ -221,6 +284,7 @@ export default function PortalCandidatoPage() {
                       id="portal-empresa"
                       name="empresa"
                       value={selectedEmpresaId}
+                      disabled={codigoEnviado}
                       onChange={(e) => {
                         setSelectedEmpresaId(e.target.value);
                         setSelectedNaveId("");
@@ -246,6 +310,7 @@ export default function PortalCandidatoPage() {
                       id="portal-nave"
                       name="nave"
                       value={selectedNaveId}
+                      disabled={codigoEnviado}
                       onChange={(e) => setSelectedNaveId(e.target.value)}
                       className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-slate-800 font-bold focus:outline-none focus:border-[#0c66ac] focus:ring-2 focus:ring-[#0c66ac]/20 transition-all cursor-pointer shadow-xs text-sm sm:text-base"
                     >
@@ -270,11 +335,58 @@ export default function PortalCandidatoPage() {
                     type="tel"
                     placeholder="Ej. 33 3248 3278"
                     value={telefono}
+                    readOnly={codigoEnviado}
                     onChange={(e) => setTelefono(e.target.value)}
                     className="w-full px-4 py-3.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 font-mono font-bold text-base sm:text-lg tracking-wider focus:outline-none focus:border-[#0c66ac] focus:ring-2 focus:ring-[#0c66ac]/20 transition-all placeholder:text-slate-400 placeholder:font-normal placeholder:text-sm shadow-xs"
                     required
                   />
                 </div>
+
+                {/* CÓDIGO DE WHATSAPP */}
+                {codigoEnviado && (
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5 flex items-center gap-1.5">
+                      <Lock size={16} className="text-[#0c66ac]" /> Código de 6 dígitos
+                    </label>
+                    <input
+                      id="portal-codigo"
+                      name="codigo"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      placeholder="123456"
+                      value={codigo}
+                      onChange={(e) => setCodigo(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      className="w-full px-4 py-3.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 font-mono font-bold text-lg tracking-[0.5em] text-center focus:outline-none focus:border-[#0c66ac] focus:ring-2 focus:ring-[#0c66ac]/20 transition-all placeholder:text-slate-300 shadow-xs"
+                      required
+                    />
+                    <div className="flex items-center justify-between mt-2 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => reiniciar()}
+                        className="font-bold text-[#0c66ac] hover:underline"
+                      >
+                        ← Cambiar de número
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleEnviarCodigo}
+                        disabled={cooldown > 0 || searching}
+                        className="font-bold text-[#0c66ac] hover:underline disabled:text-slate-400 disabled:no-underline"
+                      >
+                        {cooldown > 0 ? `Reenviar código (${cooldown} s)` : "Reenviar código"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {infoMsg && (
+                  <div className="p-4 rounded-xl bg-blue-50 border border-blue-200 text-blue-900 text-xs sm:text-sm flex items-start gap-3 shadow-xs">
+                    <ShieldCheck size={18} className="text-[#0c66ac] shrink-0 mt-0.5" />
+                    <p className="font-bold">{infoMsg}</p>
+                  </div>
+                )}
 
                 {/* ERROR NOT FOUND */}
                 {notFoundMsg && (
@@ -296,11 +408,11 @@ export default function PortalCandidatoPage() {
                 >
                   {searching ? (
                     <>
-                      <RefreshCw size={18} className="animate-spin" /> Buscando solicitud...
+                      <RefreshCw size={18} className="animate-spin" /> {codigoEnviado ? "Verificando..." : "Enviando código..."}
                     </>
                   ) : (
                     <>
-                      Buscar Solicitud <ArrowRight size={18} />
+                      {codigoEnviado ? "Verificar" : "Enviar código"} <ArrowRight size={18} />
                     </>
                   )}
                 </button>
@@ -316,12 +428,7 @@ export default function PortalCandidatoPage() {
                   Paso 2 de 2: Adjuntar Documentación
                 </span>
                 <button
-                  onClick={() => {
-                    setCandidato(null);
-                    setFileIne(null);
-                    setFileRfc(null);
-                    setFileCv(null);
-                  }}
+                  onClick={() => reiniciar()}
                   className="text-xs font-bold text-[#0c66ac] hover:underline transition-all"
                 >
                   ← Cambiar de número
@@ -602,11 +709,7 @@ export default function PortalCandidatoPage() {
               <button
                 onClick={() => {
                   setSuccessMsg("");
-                  setCandidato(null);
-                  setFileIne(null);
-                  setFileRfc(null);
-                  setFileCv(null);
-                  setTelefono("");
+                  reiniciar(true);
                 }}
                 className="px-6 py-3 bg-[#0c66ac] hover:bg-[#09518a] text-white font-bold rounded-xl text-xs transition-colors shadow-sm"
               >
