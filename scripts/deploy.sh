@@ -118,6 +118,10 @@ paso "3/7 · Verificar el código"
 
 gris "   backend · pytest"
 if [[ -x backend/.venv/bin/python ]]; then
+  # El venv vive fuera de git: sin esto los tests corren con las dependencias
+  # de un despliegue anterior y fallan al cambiar requirements.txt.
+  ( cd backend && ./.venv/bin/python -m pip install -q --disable-pip-version-check \
+      -r requirements.txt -r requirements-dev.txt ) || fallo "No se pudieron instalar las dependencias del backend en backend/.venv."
   ( cd backend && ./.venv/bin/python -m pytest -q ) || fallo "Fallan los tests del backend."
 else
   gris "   (sin backend/.venv, se omite pytest)"
